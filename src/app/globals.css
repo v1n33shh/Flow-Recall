@@ -1,0 +1,37 @@
+@import "tailwindcss";
+@config "../../tailwind.config.ts";
+
+/* "Black Card" luxury theme - matte black background, gold accents, graphite
+   card surfaces, clean readable zinc body text. */
+:root {
+  --background: #0A0A0A;
+  --foreground: #d4d4d8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  /* Brand colors are also declared in tailwind.config.ts (loaded via @config);
+     mirrored here so the utilities resolve even if the config isn't picked up. */
+  --color-gold: #D4AF37;
+  --color-matte: #0A0A0A;
+  --color-graphite: #1A1A1A;
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  /* Retro cursive display font (Pacifico), wired up in layout.tsx. */
+  --font-retro: var(--font-pacifico);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

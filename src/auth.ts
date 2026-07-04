@@ -25,7 +25,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     // address, NextAuth throws `OAuthAccountNotLinked` rather than silently linking.
     // Enabling it is only safe because Google verifies email ownership — turn it on
     // (add `allowDangerousEmailAccountLinking: true` below) if you want auto-linking.
-    Google,
+    Google({
+      allowDangerousEmailAccountLinking: true,
+    }),
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },

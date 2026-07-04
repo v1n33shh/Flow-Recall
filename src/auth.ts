@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
+import Google from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -18,6 +19,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
+    // Reads AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET from the environment automatically.
+    // NOTE: `allowDangerousEmailAccountLinking` is intentionally left OFF. If a user
+    // registered with email+password and later signs in with Google using the same
+    // address, NextAuth throws `OAuthAccountNotLinked` rather than silently linking.
+    // Enabling it is only safe because Google verifies email ownership — turn it on
+    // (add `allowDangerousEmailAccountLinking: true` below) if you want auto-linking.
+    Google,
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },

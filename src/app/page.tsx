@@ -267,7 +267,7 @@ export default function Home() {
       {/* Ambient glow orbs - purely decorative, blurred color washes that sit
           behind the hero to give the dark page depth. pointer-events-none and
           -z-10 keep them clear of the marquee, cards, and interactive content. */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden hidden md:block">
         <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-emerald-500/5 blur-3xl" />
         <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-purple-600/5 blur-3xl" />
         <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-gold/5 blur-3xl" />
@@ -277,7 +277,7 @@ export default function Home() {
           whole viewport for a physical, filmic surface. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03]"
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03] hidden md:block"
         style={{ backgroundImage: NOISE_BACKGROUND }}
       />
 

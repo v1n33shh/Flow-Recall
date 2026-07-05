@@ -39,6 +39,24 @@ model User {
 
   accounts Account[]
   sessions Session[]
+  // One row per calendar day the user studied - powers the weekly streak
+  // calendar. currentStreak above stays the fast path for the navbar badge;
+  // this is the detailed history the Streak modal renders.
+  studyDays StudyDay[]
+}
+
+// A single day on which a user studied. Upserted (one row per user per day) by
+// the study-tracking route, so the weekly calendar is a cheap indexed range
+// query. `day` is normalized to local midnight so a same-day repeat hits the
+// same row rather than creating duplicates.
+model StudyDay {
+  id     String   @id @default(cuid())
+  userId String
+  day    DateTime
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([userId, day])
 }
 
 // The next four models match the exact shape @auth/prisma-adapter expects -

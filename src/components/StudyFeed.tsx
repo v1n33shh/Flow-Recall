@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "motion/react";
+import Link from "next/link";
+import { AnimatePresence, motion } from "motion/react";
+import { useSession } from "next-auth/react";
 import type { ChallengeLevel, ChallengeOutcome, Concept, QueueItem, StudyProgress } from "@/lib/types";
-import { getProgress, saveProgress } from "@/lib/storage";
+import { addConceptsToDeck, getProgress, saveProgress } from "@/lib/storage";
 import FeedSlide from "./FeedSlide";
 import type { SwipeChallengeHandle } from "./SwipeChallenge";
 import CompletionSlide from "./CompletionSlide";
@@ -65,6 +67,20 @@ function reconstructResolvedKeys(progress: StudyProgress): Set<string> {
   return resolved;
 }
 
+/** A small Electric-Azure spinner with a soft glow behind it - the premium
+ * loading state while Infinite Recall generates fresh cards. */
+function GlowSpinner() {
+  return (
+    <span className="relative flex h-4 w-4">
+      <span className="absolute inset-0 rounded-full bg-accent/40 blur-[6px]" />
+      <svg className="relative h-4 w-4 animate-spin text-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 export default function StudyFeed({ deckId, concepts }: { deckId: string; concepts: Concept[] }) {
   const router = useRouter();
 
@@ -93,8 +109,91 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // register a handle - see FeedSlide's challengeRef.
   const slideRefs = useRef(new Map<number, SwipeChallengeHandle>());
 
-  const totalConcepts = concepts.length;
+  // Total distinct concepts in this session. Grows when Infinite Recall Mode
+  // appends new cards, so the progress denominator stays honest. On resume,
+  // derive it from the restored queue (which already contains any appended
+  // cards) rather than the smaller sessionStorage handoff in `concepts`.
+  const [totalConcepts, setTotalConcepts] = useState<number>(() =>
+    savedProgress
+      ? new Set([
+          ...savedProgress.queue.map((item) => item.concept.id),
+          ...(savedProgress.masteredIds ?? []),
+        ]).size
+      : concepts.length,
+  );
   const progress = totalConcepts === 0 ? 0 : Math.min(masteredIds.size / totalConcepts, 1);
+
+  // --- Infinite Recall Mode (Pro) ---------------------------------------
+  const { data: session } = useSession();
+  const isPro = session?.user?.plan === "PRO";
+
+  const [showUpsell, setShowUpsell] = useState(false);
+  const [shuffling, setShuffling] = useState(false);
+  const [shuffleError, setShuffleError] = useState<string | null>(null);
+
+  async function handleInfiniteRecall() {
+    // Growth hook: free users get the upsell modal instead of the feature.
+    if (!isPro) {
+      setShowUpsell(true);
+      return;
+    }
+    if (shuffling) return;
+
+    setShuffling(true);
+    setShuffleError(null);
+    try {
+      // The server keeps no copy of the deck (this app is localStorage-only),
+      // so send it a distilled view of the concepts we have - enough to riff on
+      // the material and avoid repeating questions. Dedupe by concept id since
+      // the same concept can appear multiple times in the queue.
+      const seen = new Map<string, Concept>();
+      for (const item of queue) {
+        if (!seen.has(item.concept.id)) seen.set(item.concept.id, item.concept);
+      }
+      const seed = Array.from(seen.values()).map((c) => ({
+        concept: c.concept,
+        question: c.question,
+        answer: c.answer,
+        explanation: c.explanation,
+      }));
+
+      const res = await fetch(`/api/decks/${deckId}/shuffle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ concepts: seed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error ?? "Couldn't generate new cards. Please try again.");
+      }
+
+      const newConcepts = (data.concepts as Concept[] | undefined) ?? [];
+      if (newConcepts.length === 0) {
+        throw new Error("No new cards came back. Please try again.");
+      }
+
+      // Seamlessly append to the live feed (before the completion slide) so the
+      // user just keeps swiping, and grow the denominator so progress stays honest.
+      setQueue((prev) => [
+        ...prev,
+        ...newConcepts.map((concept) => ({
+          key: `${concept.id}::1`,
+          concept,
+          level: getRandomLevel(),
+          attempt: 1,
+        })),
+      ]);
+      setTotalConcepts((t) => t + newConcepts.length);
+
+      // Persist to the saved deck so re-studying later includes these, without
+      // clobbering any leftover pendingChunks.
+      addConceptsToDeck(deckId, newConcepts);
+    } catch (err) {
+      setShuffleError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setShuffling(false);
+    }
+  }
 
   function resolve(item: QueueItem, outcome: ChallengeOutcome) {
     if (resolvedKeys.current.has(item.key)) return;
@@ -263,6 +362,98 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         ))}
         <CompletionSlide total={totalConcepts} />
       </div>
+
+      {/* Infinite Recall Mode - floating Electric-Azure CTA + inline error. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-2"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
+      >
+        <AnimatePresence>
+          {shuffleError && (
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-center text-xs font-medium text-red-300 backdrop-blur-md"
+            >
+              {shuffleError}
+            </motion.p>
+          )}
+        </AnimatePresence>
+
+        <motion.button
+          type="button"
+          onClick={handleInfiniteRecall}
+          disabled={shuffling}
+          whileTap={{ scale: 0.96 }}
+          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent shadow-[0_0_24px_-6px_rgba(59,130,246,0.7)] backdrop-blur-md transition-all duration-200 hover:bg-accent/20 hover:shadow-[0_0_32px_-4px_rgba(59,130,246,0.9)] active:scale-[0.98] disabled:cursor-wait"
+        >
+          {shuffling ? (
+            <>
+              <GlowSpinner />
+              Generating new angles…
+            </>
+          ) : (
+            "Infinite Recall Mode"
+          )}
+        </motion.button>
+      </div>
+
+      {/* Free-plan upsell - the growth hook. */}
+      <AnimatePresence>
+        {showUpsell && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-40 flex items-center justify-center p-6"
+          >
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setShowUpsell(false)}
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ type: "spring", stiffness: 320, damping: 26 }}
+              className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-surface p-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.8)]"
+            >
+              {/* Azure ambient glow */}
+              <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-accent/20 blur-3xl" />
+              <div className="relative">
+                <span className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-accent">
+                  Pro · Infinite Recall
+                </span>
+                <h2 className="mt-5 text-2xl font-bold tracking-tight text-white">
+                  Don&apos;t memorize the card. Master the concept.
+                </h2>
+                <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                  Static flashcards trick your brain into recognizing words instead
+                  of understanding concepts. Infinite Recall dynamically generates
+                  high-yield questions from new angles—exposing your blind spots
+                  so you never freeze on an exam again.
+                </p>
+                <Link
+                  href="/pricing"
+                  className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3.5 text-sm font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(59,130,246,0.75)] active:scale-[0.98]"
+                >
+                  Upgrade to Pro
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setShowUpsell(false)}
+                  className="mt-3 block w-full text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+                >
+                  Maybe later
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

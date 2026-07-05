@@ -128,6 +128,22 @@ export function appendConceptsToDeck(
   notifyLocalStorageUpdate();
 }
 
+/** Appends freshly generated concepts (e.g. from Infinite Recall Mode) to an
+ * already-saved deck, leaving its `pendingChunks` untouched - a no-op if the
+ * deck has since been deleted. Unlike appendConceptsToDeck (which rewrites
+ * pendingChunks from the JIT continuation flow), this never clears leftover
+ * source text, so shuffling and continuing a deck don't clobber each other. */
+export function addConceptsToDeck(deckId: string, newConcepts: Concept[]): void {
+  if (newConcepts.length === 0) return;
+  const next = getSavedDecks().map((deck) =>
+    deck.id === deckId
+      ? { ...deck, concepts: [...deck.concepts, ...newConcepts] }
+      : deck,
+  );
+  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  notifyLocalStorageUpdate();
+}
+
 export function deleteDeck(id: string): void {
   const next = getSavedDecks().filter((deck) => deck.id !== id);
   window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));

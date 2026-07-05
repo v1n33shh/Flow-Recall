@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import StreakCounter from "@/components/StreakCounter";
+import StreakModal from "@/components/StreakModal";
 
 const LINKS = [
   { href: "/ingest", label: "Ingest" },
@@ -16,14 +18,21 @@ export default function Navbar() {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const streak = session?.user?.currentStreak ?? 0;
+  const [streakOpen, setStreakOpen] = useState(false);
 
   // The study feed is meant to be full-bleed and immersive, like the
   // TikTok-style apps it's modeled on - no persistent chrome on top of it.
   if (pathname?.startsWith("/study")) return null;
 
   return (
-    <header
-      className="sticky top-4 z-20 flex justify-center px-4 sm:top-6"
+    <>
+      <StreakModal
+        open={streakOpen}
+        onClose={() => setStreakOpen(false)}
+        fallbackStreak={streak}
+      />
+      <header
+        className="sticky top-4 z-20 flex justify-center px-4 sm:top-6"
       style={{ marginTop: "env(safe-area-inset-top)" }}
     >
       <nav className="flex w-full max-w-2xl items-center justify-between gap-2 rounded-full border border-white/10 bg-surface px-3 py-2.5 sm:gap-3 sm:px-5">
@@ -40,7 +49,7 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="relative rounded-full px-2.5 py-1.5 text-sm font-medium sm:px-4 sm:py-2"
+                className="relative rounded-full px-2 py-1 text-xs font-medium sm:text-sm sm:px-4 sm:py-2"
               >
                 {active && (
                   <motion.span
@@ -59,11 +68,13 @@ export default function Navbar() {
               </Link>
             );
           })}
-          {status === "authenticated" && <StreakCounter streak={streak} />}
+          {status === "authenticated" && (
+            <StreakCounter streak={streak} onClick={() => setStreakOpen(true)} />
+          )}
           {status === "authenticated" ? (
             <Link
               href="/account"
-              className="flex shrink-0 items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-300 sm:pr-3"
+              className="flex shrink-0 items-center gap-1.5 rounded-full p-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-300 sm:py-1 sm:pl-1 sm:pr-3"
             >
               {session.user?.image ? (
                 <Image
@@ -92,6 +103,7 @@ export default function Navbar() {
           )}
         </div>
       </nav>
-    </header>
+      </header>
+    </>
   );
 }

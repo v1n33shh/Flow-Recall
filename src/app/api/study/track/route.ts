@@ -41,11 +41,22 @@ export async function POST() {
     currentStreak = 1;
   }
 
-  // Always stamp the latest study time, even on a same-day repeat.
-  await prisma.user.update({
-    where: { id: session.user.id },
-    data: { currentStreak, lastStudyDate: now },
-  });
+  // Always stamp the latest study time, even on a same-day repeat, and record
+  // today in the study-history table (upsert => at most one row per day) so the
+  // weekly streak calendar has a source of truth. Runs in a transaction so the
+  // streak counter and the history row can never disagree.
+  const today = startOfDay(now);
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: session.user.id },
+      data: { currentStreak, lastStudyDate: now },
+    }),
+    prisma.studyDay.upsert({
+      where: { userId_day: { userId: session.user.id, day: today } },
+      create: { userId: session.user.id, day: today },
+      update: {},
+    }),
+  ]);
 
   return Response.json({ currentStreak });
 }

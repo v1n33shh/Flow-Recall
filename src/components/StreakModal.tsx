@@ -121,8 +121,8 @@ function DayCell({ day, index }: { day: StreakDay; index: number }) {
       <div
         className={
           day.studied
-            ? "flex h-9 w-9 items-center justify-center rounded-lg bg-accent text-white shadow-[0_0_16px_-2px_rgba(59,130,246,0.8)]"
-            : `flex h-9 w-9 items-center justify-center rounded-lg border ${
+            ? "flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-accent text-white shadow-[0_0_16px_-2px_rgba(59,130,246,0.8)]"
+            : `flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border ${
                 day.isToday ? "border-accent/60" : "border-white/12"
               } ${day.future ? "opacity-40" : ""}`
         }
@@ -222,8 +222,8 @@ export default function StreakModal({
             initial={{ opacity: 0, scale: 0.94, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ type: "spring", stiffness: 340, damping: 28 }}
-            className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-black p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.9)]"
+            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-black p-6 sm:p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.9)]"
           >
             {/* Streak Freeze pill - paywall bait. Static count (0 for free). */}
             <div className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
@@ -243,7 +243,7 @@ export default function StreakModal({
               </p>
 
               {/* Weekly row */}
-              <div className="mt-7 flex w-full items-end justify-between gap-1.5">
+              <div className="mt-7 flex w-full items-end justify-between gap-1 sm:gap-1.5">
                 {days.map((day, i) => (
                   <DayCell key={day.date} day={day} index={i} />
                 ))}

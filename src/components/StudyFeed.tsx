@@ -418,7 +418,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               initial={{ opacity: 0, scale: 0.94, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 8 }}
-              transition={{ type: "spring", stiffness: 320, damping: 26 }}
+              transition={{ type: "spring", stiffness: 500, damping: 35 }}
               className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-surface p-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.8)]"
             >
               {/* Azure ambient glow */}

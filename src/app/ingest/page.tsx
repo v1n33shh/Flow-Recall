@@ -284,7 +284,7 @@ export default function IngestPage() {
             </span>
           </div>
           <p className="mt-3 text-lg font-semibold text-zinc-100">
-            You&apos;ve reached your free limit of 1 deck per day.
+            You&apos;ve reached your lifetime free limit of 1 deck.
           </p>
           <p className="mt-1.5 text-sm text-zinc-400">
             Upgrade to Pro to unlock unlimited AI studying.

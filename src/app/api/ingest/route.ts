@@ -122,23 +122,14 @@ export async function POST(request: Request) {
     );
   }
 
-  // Roll the daily counter over: if the last generation was on an earlier
-  // calendar day (or never), today's count is effectively 0. Compare local
-  // Y/M/D rather than a 24h delta so "per day" means the calendar day.
-  const now = new Date();
-  const lastGenerated = user?.lastDeckGeneratedDate ?? null;
-  const generatedToday =
-    lastGenerated !== null &&
-    lastGenerated.getFullYear() === now.getFullYear() &&
-    lastGenerated.getMonth() === now.getMonth() &&
-    lastGenerated.getDate() === now.getDate()
-      ? user?.decksGeneratedToday ?? 0
-      : 0;
+  // We are pivoting to a LIFETIME free limit (1 deck forever) rather than daily.
+  // We just read the raw counter and never roll it over. We leave the DB column
+  // named `decksGeneratedToday` for now to avoid a Supabase DB migration.
+  const generatedTotal = user?.decksGeneratedToday ?? 0;
 
-  // Paywall: FREE plans get 1 deck per calendar day. Only the first chunk of
-  // a deck is gated so a multi-chunk deck isn't blocked partway through. This
-  // is the authoritative enforcement point - the client just renders the upsell.
-  if (plan !== "PRO" && isFirstChunk && generatedToday >= 1) {
+  // Paywall: FREE plans get exactly 1 deck for life. Only the first chunk of
+  // a stream increments the limit (checked by `generatedTotal >= 1`).
+  if (plan !== "PRO" && isFirstChunk && generatedTotal >= 1) {
     return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
   }
 
@@ -177,15 +168,12 @@ export async function POST(request: Request) {
       ...concept,
     }));
 
-    // Record this deck against the daily quota - only on the first chunk, so
-    // a multi-chunk deck counts once. Write the rolled-over count
-    // (generatedToday + 1) rather than a raw DB increment so a stale count
-    // from a previous day resets to 1 instead of climbing.
+    // Record this deck against the lifetime quota - only on the first chunk.
     if (isFirstChunk) {
       await prisma.user.update({
         where: { id: session.user.id },
         data: {
-          decksGeneratedToday: generatedToday + 1,
+          decksGeneratedToday: generatedTotal + 1,
           lastDeckGeneratedDate: new Date(),
         },
       });

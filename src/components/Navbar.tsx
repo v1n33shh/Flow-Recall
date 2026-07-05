@@ -42,14 +42,14 @@ export default function Navbar() {
         >
           FlowRecall
         </Link>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           {LINKS.map((link) => {
             const active = pathname === link.href;
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className="relative rounded-full px-2 py-1 text-xs font-medium sm:text-sm sm:px-4 sm:py-2"
+                className="relative rounded-full px-1.5 py-1 text-xs font-medium sm:text-sm sm:px-4 sm:py-2"
               >
                 {active && (
                   <motion.span
@@ -95,7 +95,7 @@ export default function Navbar() {
             status !== "loading" && (
               <Link
                 href="/login"
-                className="shrink-0 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(37,99,235,0.55)] px-3 py-1.5 text-sm font-medium text-white transition-all duration-200 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97]"
+                className="shrink-0 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(37,99,235,0.55)] px-2.5 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium text-white transition-all duration-200 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97]"
               >
                 Sign In
               </Link>

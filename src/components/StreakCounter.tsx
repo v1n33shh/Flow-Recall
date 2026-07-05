@@ -42,7 +42,7 @@ export default function StreakCounter({
                 }
               : undefined
           }
-          className={`flex items-center gap-1 rounded-full border bg-surface px-3 py-1 text-sm font-semibold text-accent outline-none ${
+          className={`flex items-center gap-1 rounded-full border bg-surface px-2 sm:px-3 py-1 text-sm font-semibold text-accent outline-none ${
             onFire ? "border-white/20" : "border-white/10"
           } ${onClick ? "cursor-pointer select-none transition-transform hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent/60" : ""}`}
         >

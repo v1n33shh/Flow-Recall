@@ -207,22 +207,23 @@ export default function StreakModal({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
         >
-          {/* Backdrop - pure black. Opacity-only fade via the parent. */}
+          {/* Backdrop - solid black, no backdrop-blur (blur forces a costly
+              full-viewport GPU pass every frame on cheap phones). */}
           <button
             type="button"
             aria-label="Close streak details"
             onClick={onClose}
-            className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/80"
           />
 
           <motion.div
             role="dialog"
             aria-modal="true"
             aria-label="Streak details"
-            initial={{ opacity: 0, scale: 0.94, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ type: "spring", stiffness: 500, damping: 35 }}
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
             className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-black p-6 sm:p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.9)]"
           >
             {/* Streak Freeze pill - paywall bait. Static count (0 for free). */}

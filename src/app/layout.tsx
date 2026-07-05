@@ -35,27 +35,23 @@ export const metadata: Metadata = {
   // `default` is the premium title; `template` suffixes any child page that
   // sets its own title (e.g. "Pricing" -> "Pricing | FlowRecall").
   title: {
-    default: title,
+    default: "FlowRecall | AI Flashcards & Active Recall App",
     template: "%s | FlowRecall",
   },
-  description,
+  description: "Upload any PDF and instantly convert it into a gamified active recall study feed. The ultimate AI study app for college and medical students.",
   applicationName: "FlowRecall",
   keywords: [
-    "active recall",
-    "spaced repetition",
-    "flashcards",
-    "study app",
-    "Anki alternative",
-    "AI flashcards",
+    "active recall app",
+    "AI flashcards generator",
+    "study faster",
     "PDF to flashcards",
+    "spaced repetition",
+    "Anki alternative",
     "exam prep",
   ],
   authors: [{ name: "FlowRecall" }],
   creator: "FlowRecall",
   publisher: "FlowRecall",
-  alternates: {
-    canonical: "/",
-  },
   // Let search engines fully index the marketing surface.
   robots: {
     index: true,

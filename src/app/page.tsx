@@ -299,7 +299,7 @@ export default function Home() {
           initial={{ opacity: 0, y: 32 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.05 }}
-          className="font-retro max-w-2xl text-white pb-4 text-4xl leading-tight drop-shadow-sm [text-wrap:balance] sm:text-6xl"
+          className="font-retro max-w-2xl text-white pb-4 text-4xl leading-tight [text-wrap:balance] sm:text-6xl"
         >
           Drop your notes in. Scroll your way to remembering everything.
         </motion.h1>

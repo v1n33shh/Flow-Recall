@@ -23,7 +23,22 @@ model User {
   // Bcrypt hash - null for any user created via a future OAuth provider,
   // which is why it's optional rather than required.
   password      String?
-  plan          String    @default("FREE")
+
+  // ── Billing / dual-gateway subscription state ──────────────────────────────
+  // `plan` is the entitlement the whole app gates on ("FREE" | "PRO"); it stays
+  // a plain String (not an enum) to match the existing default and the session
+  // typing in src/types/next-auth.d.ts. `planStatus` mirrors the gateway's
+  // subscription status ("ACTIVE" | "CANCELED"), null while a user is on FREE.
+  plan             String    @default("FREE")
+  planStatus       String?
+  currentPeriodEnd DateTime?
+  // Gateway ids are nullable + unique: a given user pays through exactly one
+  // gateway (Razorpay for IN, Stripe for INTL), and an id maps to one user.
+  stripeCustomerId       String? @unique
+  stripeSubscriptionId   String? @unique
+  razorpayCustomerId     String? @unique
+  razorpaySubscriptionId String? @unique
+
   // Gamification: consecutive-day study streak and the last day it advanced.
   // lastStudyDate is nullable so existing users start with no recorded study.
   currentStreak Int       @default(0)

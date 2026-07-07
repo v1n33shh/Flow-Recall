@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import Script from "next/script";
 
 const FREE_FEATURES = [
   "Unlimited micro-concept generation",
@@ -26,9 +27,26 @@ function Check() {
   );
 }
 
+// Defensive JSON reader. If an API route ever fails at the framework level it
+// returns an HTML error page, and calling res.json() on that throws the classic
+// `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`. We read the body as
+// text first and surface a clean, human error instead of that cryptic one.
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(
+      res.ok
+        ? "Received an unexpected response from the server."
+        : "The server returned an error. Please try again in a moment.",
+    );
+  }
+}
+
 export default function PricingPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const isPro = session?.user?.plan === "PRO";
 
   const [loading, setLoading] = useState(false);
@@ -45,17 +63,76 @@ export default function PricingPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/stripe/checkout", { method: "POST" });
-      const data = await res.json();
+      const res = await fetch("/api/razorpay/order", { method: "POST" });
+      const data = await readJson(res);
 
-      if (!res.ok || !data.url) {
-        throw new Error(data.error ?? "Could not start checkout. Please try again.");
+      if (!res.ok || typeof data.id !== "string") {
+        throw new Error(
+          (typeof data.error === "string" && data.error) ||
+            "Could not start checkout. Please try again.",
+        );
       }
 
-      // Hand off to Stripe's hosted Checkout page. (stripe-js v9 removed the
-      // old redirectToCheckout helper; redirecting to the Session URL is the
-      // current recommended flow.)
-      window.location.href = data.url;
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: data.amount,
+        currency: data.currency,
+        name: "FlowRecall",
+        description: "Pro Plan - Unlock the smartest AI models.",
+        order_id: data.id,
+        handler: async function (response: any) {
+          try {
+            // Note: no userId is sent. The server re-derives it from the order's
+            // notes after verifying the signature, so the browser can't attribute
+            // a payment to an account it doesn't own.
+            const verifyRes = await fetch("/api/razorpay/verify", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+            const verifyData = await readJson(verifyRes);
+
+            if (verifyRes.ok) {
+              // Refresh the JWT so the navbar/plan gates see PRO without a
+              // re-login, then land on the account page.
+              await update();
+              window.location.href = "/account?upgraded=1";
+            } else {
+              setError(
+                (typeof verifyData.error === "string" && verifyData.error) ||
+                  "Payment verification failed.",
+              );
+              setLoading(false);
+            }
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Payment verification failed.");
+            setLoading(false);
+          }
+        },
+        prefill: {
+          name: session?.user?.name,
+          email: session?.user?.email,
+        },
+        theme: {
+          color: "#3B82F6",
+        },
+        modal: {
+          ondismiss: function () {
+            setLoading(false);
+          },
+        },
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", function (response: any) {
+        setError(response.error.description);
+        setLoading(false);
+      });
+      rzp.open();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setLoading(false);
@@ -64,6 +141,7 @@ export default function PricingPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
       <h1 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">
         Simple, honest pricing
       </h1>
@@ -101,11 +179,14 @@ export default function PricingPage() {
             Most popular
           </span>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</h2>
-          <div className="mt-3 flex items-baseline gap-1">
-            <span className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-semibold text-transparent">
-              $10
-            </span>
-            <span className="text-sm font-medium text-zinc-400">/mo</span>
+          <div className="mt-3 flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-zinc-500 line-through">₹1499/mo</span>
+            <div className="flex items-baseline gap-1">
+              <span className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-semibold text-transparent">
+                ₹899
+              </span>
+              <span className="text-sm font-medium text-zinc-400">/mo</span>
+            </div>
           </div>
           <p className="mt-2 text-sm text-zinc-300">The frontier models, unlocked for serious study.</p>
 
@@ -134,7 +215,7 @@ export default function PricingPage() {
           </button>
 
           <p className="mt-3 text-center text-[11px] font-medium text-zinc-500">
-            🔒 Secure, encrypted payment via Stripe
+            🔒 Secure, encrypted payment via Razorpay
           </p>
         </div>
       </div>

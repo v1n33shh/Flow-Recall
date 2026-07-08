@@ -23,9 +23,9 @@ const MODEL_OPTIONS = [
 const CHUNK_DELAY_MS = 1000;
 
 // Speed-First Cap: sequential chunking is safe from rate limits.
-// We use smaller chunks (5000 chars) so Claude 3.5 Sonnet doesn't hit
-// Vercel's 60-second timeout. 12 chunks * 5000 = ~60,000 total chars.
-const MAX_CHUNKS = 12;
+// We use smaller chunks (1500 chars) so Claude 3.5 Sonnet doesn't hit
+// Vercel's 60-second timeout. 40 chunks * 1500 = ~60,000 total chars.
+const MAX_CHUNKS = 40;
 
 function titleFromFileName(fileName: string): string {
   const withoutExtension = fileName.replace(/\.pdf$/i, "");
@@ -36,7 +36,7 @@ function titleFromFileName(fileName: string): string {
  * boundaries (blank lines) so a chunk edge doesn't land mid-sentence. A
  * single paragraph longer than chunkSize (e.g. a wall of text with no blank
  * lines) has to be hard-split on its own, since there's nothing else to break on. */
-function chunkText(text: string, chunkSize = 5000): string[] {
+function chunkText(text: string, chunkSize = 1500): string[] {
   const paragraphs = text.split(/\n{2,}/);
   const chunks: string[] = [];
   let current = "";

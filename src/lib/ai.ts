@@ -47,9 +47,12 @@ export function getProviderModel(plan: string, requestedModel: string): Language
     case "claude-haiku-latest":
       // Routed through AICredits API Gateway (OpenAI-compatible) because Anthropic
       // strictly blocks Indian Debit Cards. Haiku is 5x faster than Sonnet.
+      // `compatibility: 'compatible'` forces /v1/chat/completions instead of the
+      // newer /v1/responses endpoint that AICredits does not support.
       return createOpenAI({ 
         baseURL: "https://api.aicredits.in/v1",
-        apiKey: process.env.ANTHROPIC_API_KEY 
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        compatibility: "compatible",
       })("anthropic/claude-haiku-latest");
     default:
       // A PRO user who left the free model selected (or sent an unknown id)

@@ -52,12 +52,16 @@ export default function FillBlankChallenge({ concept, onAnswered }: FillBlankCha
             style={{ transformStyle: "preserve-3d" }}
             animate={{ rotateY: flipped ? 180 : 0 }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
-            className="relative h-64 w-full"
+            className="relative w-full"
           >
             {/* FRONT: the cloze sentence with the fillable blank. */}
-            <div className="absolute inset-0 flex flex-col rounded-3xl border border-white/10 bg-surface p-6 [backface-visibility:hidden]">
-              <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto no-scrollbar">
-                <p className="text-center text-lg leading-relaxed text-zinc-300">
+            <div
+              className={`flex flex-col rounded-3xl border border-white/10 bg-surface p-6 [backface-visibility:hidden] ${
+                flipped ? "invisible" : ""
+              }`}
+            >
+              <div className="flex flex-1 items-center justify-center py-2">
+                <p className="text-center text-base leading-relaxed text-zinc-300">
                   {before}
                   <input
                     value={value}
@@ -81,9 +85,12 @@ export default function FillBlankChallenge({ concept, onAnswered }: FillBlankCha
               </button>
             </div>
 
-            {/* BACK: ultra-bright neon verdict + the master sentence. Pre-rotated
-                180° so it reads upright once the card has flipped. */}
-            <div className="absolute inset-0 flex flex-col rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-[#0A0A0A] p-6 text-center [transform:rotateY(180deg)] [backface-visibility:hidden]">
+            {/* BACK: verdict + the completed sentence. Pre-rotated 180° so it
+                reads upright once the card has flipped. */}
+            <div
+              className="absolute inset-0 flex flex-col rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-[#0A0A0A] p-6 text-center [transform:rotateY(180deg)] [backface-visibility:hidden]"
+              style={{ minHeight: "100%" }}
+            >
               <div
                 className={`shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold ${
                   isCorrect

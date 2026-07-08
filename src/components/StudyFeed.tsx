@@ -130,6 +130,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   const [showUpsell, setShowUpsell] = useState(false);
   const [shuffling, setShuffling] = useState(false);
   const [shuffleError, setShuffleError] = useState<string | null>(null);
+  const [shuffleSuccess, setShuffleSuccess] = useState<number | null>(null);
 
   async function handleInfiniteRecall() {
     // Growth hook: free users get the upsell modal instead of the feature.
@@ -184,6 +185,10 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         })),
       ]);
       setTotalConcepts((t) => t + newConcepts.length);
+
+      // Show success toast and auto-dismiss after 3 seconds.
+      setShuffleSuccess(newConcepts.length);
+      setTimeout(() => setShuffleSuccess(null), 3000);
 
       // Persist to the saved deck so re-studying later includes these, without
       // clobbering any leftover pendingChunks.
@@ -369,8 +374,22 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
       >
         <AnimatePresence>
+          {shuffleSuccess !== null && (
+            <motion.p
+              key="success"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-emerald-500/40 bg-emerald-500/10 px-5 py-2 text-center text-xs font-semibold text-emerald-300 backdrop-blur-md shadow-[0_0_20px_-4px_rgba(16,185,129,0.4)]"
+            >
+              {shuffleSuccess} new cards added to your session
+            </motion.p>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
           {shuffleError && (
             <motion.p
+              key="error"
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
@@ -393,6 +412,8 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               <GlowSpinner />
               Generating new angles…
             </>
+          ) : shuffleSuccess !== null ? (
+            `+${shuffleSuccess} cards added`
           ) : (
             "Infinite Recall Mode"
           )}

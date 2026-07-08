@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { generateText } from "ai";
 import { z } from "zod";
 import { auth } from "@/auth";

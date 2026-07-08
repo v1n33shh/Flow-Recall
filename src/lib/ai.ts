@@ -50,7 +50,7 @@ export function getProviderModel(plan: string, requestedModel: string): Language
       return createOpenAI({ 
         baseURL: "https://api.aicredits.in/v1",
         apiKey: process.env.ANTHROPIC_API_KEY 
-      })("anthropic/claude-3-5-sonnet-20241022");
+      })("anthropic/claude-sonnet-latest");
     default:
       // A PRO user who left the free model selected (or sent an unknown id)
       // still gets a working model rather than a hard error.

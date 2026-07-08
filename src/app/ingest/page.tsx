@@ -142,7 +142,14 @@ export default function IngestPage() {
           body: JSON.stringify({ text: chunks[i], model: selectedModel, isFirstChunk: i === 0 }),
         });
 
-        const data = await res.json();
+        const rawText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (e) {
+          console.error("Failed to parse JSON. Raw response:", rawText);
+          throw new Error(`Server crashed: ${rawText.slice(0, 80)}...`);
+        }
 
         if (!res.ok) {
           throw new Error(data.error ?? `Something went wrong on part ${i + 1} of ${chunks.length}.`);

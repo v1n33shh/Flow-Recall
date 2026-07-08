@@ -23,7 +23,7 @@ const MODEL_OPTIONS = [
 const CHUNK_DELAY_MS = 1000;
 
 // Speed-First Cap: sequential chunking is safe from rate limits.
-// We use smaller chunks (1500 chars) so Claude 3.5 Sonnet doesn't hit
+// We use smaller chunks (1500 chars) so Claude Haiku doesn't hit
 // Vercel's 60-second timeout. 40 chunks * 1500 = ~60,000 total chars.
 const MAX_CHUNKS = 40;
 

@@ -123,9 +123,28 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   );
   const progress = totalConcepts === 0 ? 0 : Math.min(masteredIds.size / totalConcepts, 1);
 
-  // --- Infinite Recall Mode (Pro) ---------------------------------------
-  const { data: session } = useSession();
+  // --- Streak tracking ---------------------------------------------------
+  // Fire once when the user actually opens a study session. The server
+  // increments the streak if this is a new calendar day, and we refresh
+  // the session so the navbar flame updates instantly without a reload.
+  const { data: session, update: updateSession } = useSession();
   const isPro = session?.user?.plan === "PRO";
+  useEffect(() => {
+    fetch("/api/study/track", { method: "POST" })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const { currentStreak } = await res.json();
+        // Inject the fresh streak into the JWT so the navbar flame
+        // updates instantly without a full page reload.
+        if (typeof currentStreak === "number") {
+          updateSession({ currentStreak });
+        }
+      })
+      .catch(() => {}); // silent — streak tracking is non-critical
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Infinite Recall Mode (Pro) ---------------------------------------
 
   const [showUpsell, setShowUpsell] = useState(false);
   const [shuffling, setShuffling] = useState(false);

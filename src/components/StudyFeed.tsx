@@ -150,6 +150,9 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   const [shuffling, setShuffling] = useState(false);
   const [shuffleError, setShuffleError] = useState<string | null>(null);
   const [shuffleSuccess, setShuffleSuccess] = useState<number | null>(null);
+  // Mid-session nudge: shown once to free users after they answer their 15th card.
+  const [showMidNudge, setShowMidNudge] = useState(false);
+  const answeredCountRef = useRef(0);
 
   async function handleInfiniteRecall() {
     // Growth hook: free users get the upsell modal instead of the feature.
@@ -222,6 +225,15 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   function resolve(item: QueueItem, outcome: ChallengeOutcome) {
     if (resolvedKeys.current.has(item.key)) return;
     resolvedKeys.current.add(item.key);
+
+    // Mid-session nudge: fire once for free users after 15 answers.
+    if (!isPro) {
+      answeredCountRef.current += 1;
+      if (answeredCountRef.current === 15) {
+        setShowMidNudge(true);
+        setTimeout(() => setShowMidNudge(false), 6000);
+      }
+    }
 
     if (outcome === "correct") {
       setStreak((s) => s + 1);
@@ -384,8 +396,32 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
             onResolve={(outcome) => resolve(item, outcome)}
           />
         ))}
-        <CompletionSlide total={totalConcepts} />
+        <CompletionSlide total={totalConcepts} mastered={masteredIds.size} />
       </div>
+
+      {/* Mid-session Pro nudge — shown once after card 15 for free users. */}
+      <AnimatePresence>
+        {showMidNudge && (
+          <motion.div
+            key="mid-nudge"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            className="pointer-events-auto absolute left-4 right-4 top-16 z-30 rounded-2xl border border-accent/30 bg-black/90 px-4 py-3 text-left shadow-[0_8px_32px_-8px_rgba(37,99,235,0.5)] backdrop-blur-md"
+          >
+            <p className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</p>
+            <p className="mt-1 text-sm font-medium text-white">
+              15 concepts studied. Pro users never hit a wall.
+            </p>
+            <Link
+              href="/pricing"
+              className="mt-2 inline-block text-xs font-semibold text-accent hover:underline"
+            >
+              Unlock unlimited decks
+            </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Infinite Recall Mode - floating Electric-Azure CTA + inline error. */}
       <div

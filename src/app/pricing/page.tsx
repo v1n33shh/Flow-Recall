@@ -6,16 +6,19 @@ import { useSession } from "next-auth/react";
 import Script from "next/script";
 
 const FREE_FEATURES = [
-  "Unlimited micro-concept generation",
-  "Llama 3 (fast, free model)",
-  "Spaced-repetition study feed",
+  "1 deck per day (up to 60,000 chars)",
+  "Llama 3.3 70B — fast, capable free model",
+  "Active-recall study feed with spaced repetition",
+  "Daily streak tracking",
   "Save decks to your library",
 ];
 
 const PRO_FEATURES = [
   "Everything in Free",
-  "Claude 3.5 Sonnet for deep material",
-  "Priority generation speed",
+  "Unlimited deck generation per day",
+  "Claude Haiku — smarter AI, optimised for deep material",
+  "Infinite Recall Mode — AI generates new angles forever",
+  "Streak Freezes — protect your flame on off-days",
 ];
 
 function Check() {
@@ -210,11 +213,11 @@ export default function PricingPage() {
             disabled={loading || isPro}
             className="mt-6 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3.5 text-base font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(59,130,246,0.75)] hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:shadow-none"
           >
-            {isPro ? "You're on Pro 🎉" : loading ? "Starting checkout..." : "Upgrade Now"}
+            {isPro ? "You are on Pro" : loading ? "Starting checkout..." : "Upgrade Now"}
           </button>
 
           <p className="mt-3 text-center text-[11px] font-medium text-zinc-500">
-            🔒 Secure, encrypted payment via Razorpay
+            Secure, encrypted payment via Razorpay
           </p>
         </div>
       </div>

@@ -72,11 +72,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       // The study feed calls useSession().update({ currentStreak }) after a
       // completed session so the navbar flame reflects the new streak without
-      // forcing a re-login. Merge that value into the token here.
-      if (trigger === "update" && session && typeof session === "object") {
-        const next = session as { currentStreak?: number };
-        if (typeof next.currentStreak === "number") {
-          token.currentStreak = next.currentStreak;
+      // forcing a re-login. The pricing page calls update() after a payment so
+      // the plan reflects the upgrade without a sign-out. Re-read both from
+      // the DB on any update trigger so they're always fresh.
+      if (trigger === "update" && token.id) {
+        try {
+          const fresh = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { plan: true, currentStreak: true },
+          });
+          if (fresh) {
+            token.plan = fresh.plan ?? "FREE";
+            token.currentStreak = fresh.currentStreak ?? 0;
+          }
+        } catch {
+          // Non-critical — stale token is still valid for auth.
+        }
+        // Also merge any explicit values passed via update() as a fast path
+        // (e.g. streak from the study feed response without a DB round-trip).
+        if (session && typeof session === "object") {
+          const next = session as { currentStreak?: number };
+          if (typeof next.currentStreak === "number") {
+            token.currentStreak = next.currentStreak;
+          }
         }
       }
       return token;

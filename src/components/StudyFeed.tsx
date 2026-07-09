@@ -169,11 +169,16 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       // so send it a distilled view of the concepts we have - enough to riff on
       // the material and avoid repeating questions. Dedupe by concept id since
       // the same concept can appear multiple times in the queue.
+      // Cap at 10 concepts so the prompt never exceeds Groq's 12,000 TPM limit
+      // on large decks — a random sample gives the AI diverse context without
+      // blowing the limit.
       const seen = new Map<string, Concept>();
       for (const item of queue) {
         if (!seen.has(item.concept.id)) seen.set(item.concept.id, item.concept);
       }
-      const seed = Array.from(seen.values()).map((c) => ({
+      const allUnique = Array.from(seen.values());
+      const shuffledSample = allUnique.sort(() => Math.random() - 0.5).slice(0, 10);
+      const seed = shuffledSample.map((c) => ({
         concept: c.concept,
         question: c.question,
         answer: c.answer,
@@ -195,17 +200,23 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         throw new Error("No new cards came back. Please try again.");
       }
 
-      // Seamlessly append to the live feed (before the completion slide) so the
-      // user just keeps swiping, and grow the denominator so progress stays honest.
-      setQueue((prev) => [
-        ...prev,
-        ...newConcepts.map((concept) => ({
+      // Insert the new cards RIGHT AFTER the current card position so the
+      // student sees them on the very next swipe — not buried at the end.
+      setQueue((prev) => {
+        const insertAt = Math.min(currentIndexRef.current + 1, prev.length);
+        const newItems = newConcepts.map((concept) => ({
           key: `${concept.id}::1`,
           concept,
           level: getRandomLevel(),
           attempt: 1,
-        })),
-      ]);
+          isNew: true, // triggers materialisation sweep in FeedSlide
+        }));
+        return [
+          ...prev.slice(0, insertAt),
+          ...newItems,
+          ...prev.slice(insertAt),
+        ];
+      });
       setTotalConcepts((t) => t + newConcepts.length);
 
       // Show success toast and auto-dismiss after 3 seconds.
@@ -380,6 +391,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         {queue.map((item, index) => (
           <FeedSlide
             key={item.key}
+            isNew={item.isNew}
             concept={item.concept}
             level={item.level}
             attempt={item.attempt}
@@ -435,9 +447,9 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
-              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-emerald-500/40 bg-emerald-500/10 px-5 py-2 text-center text-xs font-semibold text-emerald-300 backdrop-blur-md shadow-[0_0_20px_-4px_rgba(16,185,129,0.4)]"
+              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-accent/40 bg-accent/10 px-5 py-2 text-center text-xs font-semibold text-accent backdrop-blur-md shadow-[0_0_20px_-4px_rgba(59,130,246,0.6)]"
             >
-              {shuffleSuccess} new cards added to your session
+              Swipe down — {shuffleSuccess} new cards await
             </motion.p>
           )}
         </AnimatePresence>

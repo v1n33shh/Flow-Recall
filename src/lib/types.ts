@@ -32,12 +32,15 @@ export type ChallengeOutcome = "correct" | "incorrect" | "skipped";
 
 /** One card in a study session's live queue - the same concept can appear
  * more than once across a session (D.I.E. requeues a failed concept at an
- * easier level), distinguished by `attempt`. */
+ * easier level), distinguished by `attempt`. `isNew` is set to true on
+ * cards freshly injected by Infinite Recall so they can play a
+ * "materialised" entrance animation the first time they enter the viewport. */
 export type QueueItem = {
   key: string;
   concept: Concept;
   level: ChallengeLevel;
   attempt: number;
+  isNew?: boolean;
 };
 
 /** A snapshot of an in-progress (or finished) study session for one deck,

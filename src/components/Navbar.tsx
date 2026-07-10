@@ -78,7 +78,7 @@ export default function Navbar() {
             </svg>
             <div className="absolute inset-0 rounded-[10px] ring-1 ring-inset ring-white/5 pointer-events-none" />
           </div>
-          <span className="font-retro text-xl text-white transition-colors group-hover:text-zinc-200 sm:text-2xl mt-1">
+          <span className="font-retro hidden text-xl text-white transition-colors group-hover:text-zinc-200 sm:inline-block sm:text-2xl mt-1">
             FlowRecall
           </span>
         </Link>

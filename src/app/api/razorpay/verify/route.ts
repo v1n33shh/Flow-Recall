@@ -48,6 +48,7 @@ export async function POST(req: Request) {
       const entity =
         event?.payload?.payment?.entity ?? event?.payload?.order?.entity ?? null;
       const userId: string | undefined = entity?.notes?.userId;
+      const planType: string | undefined = entity?.notes?.planType;
 
       if (event?.event === "payment.captured" || event?.event === "order.paid") {
         if (!userId) {
@@ -56,7 +57,16 @@ export async function POST(req: Request) {
           console.error("[razorpay/verify] webhook missing notes.userId", event?.event);
           return NextResponse.json({ received: true }, { status: 200 });
         }
-        await grantPro({ userId, gateway: "razorpay", subscriptionId: entity?.order_id ?? null });
+        
+        const days = planType === "YEARLY" ? 365 : 30;
+        const currentPeriodEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        
+        await grantPro({ 
+          userId, 
+          gateway: "razorpay", 
+          subscriptionId: entity?.order_id ?? null,
+          currentPeriodEnd
+        });
       }
 
       // 200 acknowledges receipt for every event type we don't act on too.
@@ -92,14 +102,24 @@ export async function POST(req: Request) {
     const razorpay = getRazorpay();
     const order = await razorpay.orders.fetch(razorpay_order_id);
     const userId = (order.notes as Record<string, string> | undefined)?.userId;
+    const planType = (order.notes as Record<string, string> | undefined)?.planType;
+    
     if (!userId) {
       console.error("[razorpay/verify] callback order missing notes.userId", razorpay_order_id);
       return NextResponse.json({ error: "Could not attribute this payment." }, { status: 422 });
     }
 
+    const days = planType === "YEARLY" ? 365 : 30;
+    const currentPeriodEnd = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
     // Idempotent: this may also be granted by the webhook - grantPro just
     // re-writes the same row.
-    await grantPro({ userId, gateway: "razorpay", subscriptionId: razorpay_order_id });
+    await grantPro({ 
+      userId, 
+      gateway: "razorpay", 
+      subscriptionId: razorpay_order_id,
+      currentPeriodEnd
+    });
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {

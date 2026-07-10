@@ -53,6 +53,7 @@ export default function PricingPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isYearly, setIsYearly] = useState(true);
 
   async function handleUpgrade() {
     // Can't attribute a payment without a logged-in user - send them to log in.
@@ -65,7 +66,12 @@ export default function PricingPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/razorpay/order", { method: "POST" });
+      const planType = isYearly ? "YEARLY" : "MONTHLY";
+      const res = await fetch("/api/razorpay/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planType }),
+      });
       const data = await readJson(res);
 
       if (!res.ok || typeof data.id !== "string") {
@@ -151,6 +157,35 @@ export default function PricingPage() {
         Start free. Upgrade when you want the smartest models on your side.
       </p>
 
+      {/* Monthly / Yearly Toggle */}
+      <div className="mx-auto mt-10 flex items-center justify-center gap-3">
+        <span
+          className={`text-sm font-medium transition-colors ${
+            !isYearly ? "text-white" : "text-zinc-500"
+          }`}
+        >
+          Monthly
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsYearly(!isYearly)}
+          className="relative inline-flex h-6 w-11 items-center rounded-full bg-white/10 transition-colors hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-zinc-950"
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              isYearly ? "translate-x-6" : "translate-x-1"
+            }`}
+          />
+        </button>
+        <span
+          className={`text-sm font-medium transition-colors ${
+            isYearly ? "text-white" : "text-zinc-500"
+          }`}
+        >
+          Yearly <span className="ml-1 rounded-full bg-accent/20 px-2 py-0.5 text-[10px] text-accent">Save 30%</span>
+        </span>
+      </div>
+
       <div className="mt-10 grid gap-6 sm:grid-cols-2">
         {/* Free tier - frosted glass */}
         <div className="flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl">
@@ -182,13 +217,22 @@ export default function PricingPage() {
           </span>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</h2>
           <div className="mt-3 flex flex-col gap-0.5">
-            <span className="text-xs font-medium text-zinc-500 line-through">₹1499/mo</span>
+            <span className="text-xs font-medium text-zinc-500 line-through">
+              {isYearly ? "₹3588/yr" : "₹499/mo"}
+            </span>
             <div className="flex items-baseline gap-1">
               <span className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-semibold text-transparent">
-                ₹899
+                {isYearly ? "₹2499" : "₹299"}
               </span>
-              <span className="text-sm font-medium text-zinc-400">/mo</span>
+              <span className="text-sm font-medium text-zinc-400">
+                {isYearly ? "/yr" : "/mo"}
+              </span>
             </div>
+            {isYearly && (
+              <p className="mt-1 text-xs font-medium text-accent">
+                That's just ₹208/month
+              </p>
+            )}
           </div>
           <p className="mt-2 text-sm text-zinc-300">The frontier models, unlocked for serious study.</p>
 

@@ -8,12 +8,16 @@ import { getRazorpay } from "@/lib/razorpay";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// ₹899/mo, quoted to Razorpay in paise.
-const PRO_AMOUNT_PAISE = 899 * 100;
+const MONTHLY_PAISE = 299 * 100;
+const YEARLY_PAISE = 2499 * 100;
 const CURRENCY = "INR";
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    const body = await req.json().catch(() => ({}));
+    const planType = body.planType === "YEARLY" ? "YEARLY" : "MONTHLY";
+    const amountPaise = planType === "YEARLY" ? YEARLY_PAISE : MONTHLY_PAISE;
+
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "You must be signed in to upgrade." }, { status: 401 });
@@ -35,13 +39,13 @@ export async function POST() {
 
     const razorpay = getRazorpay();
     const order = await razorpay.orders.create({
-      amount: PRO_AMOUNT_PAISE,
+      amount: amountPaise,
       currency: CURRENCY,
       receipt: `rcpt_${user.id.slice(0, 30)}`,
       // notes.userId is the ONLY trusted link between this order and our user.
       // The verify route/webhook reads it back - it never trusts a userId sent
       // from the browser.
-      notes: { userId: user.id },
+      notes: { userId: user.id, planType },
     });
 
     return NextResponse.json({ id: order.id, amount: order.amount, currency: order.currency });

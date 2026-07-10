@@ -17,8 +17,7 @@ function getFlameTier(streak: number): FlameTier {
     return { from: "#F43F5E", via: "#E11D48", to: "#BE123C", core: "#FFE4E6" }; // Ruby red
   if (streak >= 3)
     return { from: "#FBBF24", via: "#F59E0B", to: "#EA580C", core: "#FEF3C7" }; // Inferno — amber/orange
-  // Base tier: Needs to look like a spark of fire, not a blue water drop!
-  return { from: "#FCA5A5", via: "#EF4444", to: "#B91C1C", core: "#FEE2E2" };   // The Spark — red/orange
+  return { from: "#93C5FD", via: "#3B82F6", to: "#2563EB", core: "#DBEAFE" };   // The Spark — electric azure
 }
 
 /** A tiny SVG flame whose gradient evolves with the streak tier.

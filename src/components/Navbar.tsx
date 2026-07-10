@@ -83,6 +83,9 @@ export default function Navbar() {
           </span>
         </Link>
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+          {/* Secondary nav moves to the glass Bottom Tab Bar on mobile; these
+              inline links only appear from sm: upward. */}
+          <div className="hidden items-center gap-0.5 sm:flex sm:gap-1">
           {LINKS.map((link) => {
             const active = pathname === link.href;
             return (
@@ -108,6 +111,9 @@ export default function Navbar() {
               </Link>
             );
           })}
+          </div>
+          {/* Streak is now ALWAYS visible (was `hidden sm:block`) — the whole
+              point of the mobile refactor: keep the retention hook on screen. */}
           {status === "authenticated" && (
             <StreakCounter streak={streak} onClick={() => setStreakOpen(true)} />
           )}

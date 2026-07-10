@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Pacifico } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
+import MobileTabBar from "@/components/MobileTabBar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -116,6 +117,7 @@ export default function RootLayout({
         <SessionProvider>
           <Navbar />
           <div className="flex flex-1 flex-col">{children}</div>
+          <MobileTabBar />
         </SessionProvider>
       </body>
     </html>

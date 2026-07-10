@@ -7,8 +7,6 @@ import { useSession } from "next-auth/react";
 import type { Concept } from "@/lib/types";
 import { saveDeck, setStudyDeck } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
-import StreakCounter from "@/components/StreakCounter";
-import StreakModal from "@/components/StreakModal";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -93,8 +91,6 @@ export default function IngestPage() {
   const [currentChunk, setCurrentChunk] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
   const [truncated, setTruncated] = useState(false);
-  const [streakOpen, setStreakOpen] = useState(false);
-  const streak = session?.user?.currentStreak ?? 0;
 
   const selectedIsPro = MODEL_OPTIONS.find((m) => m.id === selectedModel)?.pro ?? false;
   // A free user who picked a Pro model - the one state we hard-block generation on.
@@ -200,25 +196,12 @@ export default function IngestPage() {
   }
 
   return (
-    <>
-      <StreakModal
-        open={streakOpen}
-        onClose={() => setStreakOpen(false)}
-        fallbackStreak={streak}
-      />
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Auto-Ingest</h1>
-          {isAuthenticated && (
-            <div className="sm:hidden">
-              <StreakCounter streak={streak} onClick={() => setStreakOpen(true)} />
-            </div>
-          )}
-        </div>
-        <p className="mt-2 text-sm text-zinc-400">
-          Paste your lecture notes, textbook chapter, or a PDF below. We&apos;ll
-          break it into micro-concepts ready for recall practice.
-        </p>
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+      <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Auto-Ingest</h1>
+      <p className="mt-2 text-sm text-zinc-400">
+        Paste your lecture notes, textbook chapter, or a PDF below. We&apos;ll
+        break it into micro-concepts ready for recall practice.
+      </p>
 
       {status === "unauthenticated" && (
         <div className="mt-6 rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm text-zinc-300">
@@ -370,6 +353,5 @@ export default function IngestPage() {
         </div>
       )}
     </main>
-    </>
   );
 }

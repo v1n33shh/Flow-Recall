@@ -1,36 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <rect width="24" height="24" rx="5" fill="#0A0A0A" />
-  <rect width="24" height="24" rx="5" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1" fill="none" />
-  
-  <path
-    d="M8 20V9a5 5 0 0 1 5-5h5"
-    stroke="url(#grad-f)"
-    stroke-width="3.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    fill="none"
-  />
-  
-  <path
-    d="M8 12h5"
-    stroke="#F1F5F9"
-    stroke-width="3.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    fill="none"
-  />
-  
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
   <defs>
-    <linearGradient
-      id="grad-f"
-      x1="8"
-      y1="4"
-      x2="18"
-      y2="20"
-      gradientUnits="userSpaceOnUse"
-    >
+    <!-- Premium tile: zinc-800 -> zinc-950 diagonal, matching the Navbar logo. -->
+    <linearGradient id="bg" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#27272a" />
+      <stop offset="1" stop-color="#09090b" />
+    </linearGradient>
+    <!-- Subtle inset top highlight (the Navbar's inset white 1px sheen). -->
+    <linearGradient id="sheen" x1="20" y1="0" x2="20" y2="15" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.10" />
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    <!-- Electric-azure gradient for the 'F' spine, matching the Navbar. -->
+    <linearGradient id="grad-f" x1="8" y1="4" x2="18" y2="20" gradientUnits="userSpaceOnUse">
       <stop stop-color="#3B82F6" />
       <stop offset="1" stop-color="#93C5FD" />
     </linearGradient>
   </defs>
+
+  <rect width="40" height="40" rx="10" fill="url(#bg)" />
+  <rect width="40" height="40" rx="10" fill="url(#sheen)" />
+  <rect x="0.5" y="0.5" width="39" height="39" rx="9.5" fill="none" stroke="#ffffff" stroke-opacity="0.1" />
+
+  <!-- 24x24 glyph, centered with ~20% padding (mirrors the Navbar's 38px tile). -->
+  <g transform="translate(8,8)" fill="none" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 20V9a5 5 0 0 1 5-5h5" stroke="url(#grad-f)" />
+    <path d="M8 12h5" stroke="#F1F5F9" />
+  </g>
 </svg>

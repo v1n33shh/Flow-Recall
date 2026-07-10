@@ -270,7 +270,7 @@ function FeaturesSection() {
         </p>
         <h2
           id="features-heading"
-          className="text-3xl font-semibold tracking-tight text-white [text-wrap:balance] sm:text-5xl"
+          className="font-sans text-3xl font-bold leading-tight tracking-tight text-zinc-100 [text-wrap:balance] sm:text-5xl"
         >
           The ultimate active recall study tool for medical students and polymaths.
         </h2>
@@ -295,7 +295,7 @@ function FeaturesSection() {
                 <path d="M13 3v6h6" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 text-xl font-semibold text-white sm:text-2xl">
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100 sm:text-2xl">
               PDF to Flashcards in Seconds
             </h3>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-zinc-400 sm:text-base">
@@ -338,7 +338,7 @@ function FeaturesSection() {
                 <path d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z" fill="currentColor" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 text-xl font-semibold text-white">
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100">
               Spaced Repetition &amp; Gamification
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
@@ -362,7 +362,7 @@ function FeaturesSection() {
                 <path d="m8.5 12 2.4 2.4 4.6-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 text-xl font-semibold text-white">Better than Anki</h3>
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100">Better than Anki</h3>
             <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
               All of Anki&apos;s retention power, none of the friction. No add-ons, no
               template-wrangling, no hours spent building decks — just upload and
@@ -393,7 +393,7 @@ function FaqSection() {
       <motion.h2
         {...reveal()}
         id="faq-heading"
-        className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+        className="text-center font-sans text-3xl font-bold leading-tight tracking-tight text-zinc-100 sm:text-4xl"
       >
         Frequently asked questions
       </motion.h2>
@@ -575,7 +575,7 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.05 }}
           id="hero-heading"
-          className="font-retro max-w-2xl text-white pb-4 text-4xl leading-tight [text-wrap:balance] sm:text-6xl"
+          className="max-w-2xl bg-gradient-to-br from-white via-zinc-200 to-zinc-500 bg-clip-text pb-2 font-sans text-5xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] md:text-7xl"
         >
           The AI Flashcards App That Turns PDFs Into Active Recall
         </motion.h1>

@@ -1,6 +1,6 @@
 "use client";
 
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,42 @@ const SNAP = { type: "spring" as const, stiffness: 700, damping: 18 };
 // blazing-fast-and-rate-limit-safe reasons.
 const MAX_CHUNKS = 4;
 const CHUNK_DELAY_MS = 1000;
+
+// Keep in sync with layout.tsx's metadataBase.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
+
+// Google Rich Results structured data. Even though this is a Client Component,
+// Next still server-renders it into the initial HTML, so crawlers see the
+// JSON-LD on first fetch — no JS execution required.
+// NOTE: deliberately NO `aggregateRating` — Google issues manual actions for
+// fabricated review stars. Add it only once wired to real, on-page ratings.
+const SOFTWARE_APP_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "FlowRecall",
+  applicationCategory: "EducationalApplication",
+  operatingSystem: "Web, iOS, Android",
+  url: SITE_URL,
+  description:
+    "FlowRecall turns any PDF into hundreds of AI-generated flashcards and serves them as a gamified active-recall feed. Built for college and medical students.",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
+  },
+  featureList: [
+    "PDF to flashcards",
+    "AI active-recall question generation",
+    "Gamified streaks and progress tracking",
+    "Spaced-repetition study feed",
+  ],
+  screenshot: `${SITE_URL}/og.png`,
+  publisher: {
+    "@type": "Organization",
+    name: "FlowRecall",
+    url: SITE_URL,
+  },
+};
 
 // Inline fractal-noise SVG for the cinematic film-grain overlay. Kept as a
 // data URI applied via inline style rather than a Tailwind arbitrary class so
@@ -157,6 +193,236 @@ function ParallaxCard({ card, mouseX, mouseY }: ParallaxCardProps) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Landing-page marketing sections (SEO + conversion). Kept as module-level
+// components with no client state, so they server-render into the initial HTML
+// where crawlers and rich-result parsers can read them on first fetch.
+// ---------------------------------------------------------------------------
+
+// Single source of truth for the FAQ: drives BOTH the visible accordion and the
+// FAQPage JSON-LD, so the structured data always matches the on-page text
+// (Google requires the answer to be present on the page).
+const FAQ_ITEMS = [
+  {
+    q: "What is an active recall app?",
+    a: "An active recall app makes you retrieve answers from memory instead of passively re-reading notes — the most effective, research-backed way to study. FlowRecall turns your notes into an endless feed of active-recall questions, so you practise retrieval every time you open it.",
+  },
+  {
+    q: "Can I generate flashcards from a PDF?",
+    a: "Yes. Upload any PDF — lecture slides, a textbook chapter, or research papers — and FlowRecall's AI automatically generates hundreds of flashcards in seconds. No manual typing or formatting required.",
+  },
+  {
+    q: "Is FlowRecall better than Anki for med school?",
+    a: "FlowRecall gives you Anki's spaced-repetition power without the setup. There are no add-ons to install or templates to build — just upload your material and start studying. For medical students juggling huge volumes of content, that means hours saved on deck-building and more time spent actually reviewing.",
+  },
+  {
+    q: "Does FlowRecall use spaced repetition?",
+    a: "Yes. Every card is scheduled with a spaced-repetition algorithm that resurfaces material right before you are likely to forget it, moving knowledge into long-term memory with the fewest possible reviews.",
+  },
+  {
+    q: "Is FlowRecall free?",
+    a: "FlowRecall is free to start, with no credit card required. It is powered by Groq for blazing-fast card generation on any device, with optional Pro plans for power users.",
+  },
+];
+
+const FAQPAGE_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ_ITEMS.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
+};
+
+// Gentle scroll-reveal. Softer than the hero's aggressive SNAP — marketing
+// content should ease in, not snap. transform/opacity only (GPU-composited).
+const reveal = (delay = 0) => ({
+  initial: { opacity: 0, y: 24 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: "-80px" },
+  transition: { type: "spring" as const, stiffness: 120, damping: 20, delay },
+});
+
+// Logo-matched icon tile: zinc gradient chip with an inset top highlight.
+function FeatureIcon({ children }: { children: ReactNode }) {
+  return (
+    <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+      {children}
+    </div>
+  );
+}
+
+// Shared card chrome: deep zinc glass, hairline ring, inset highlight.
+const CARD =
+  "group relative flex flex-col overflow-hidden rounded-3xl bg-zinc-950/60 p-8 ring-1 ring-inset ring-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-colors duration-300 hover:ring-white/20";
+
+function FeaturesSection() {
+  return (
+    <section
+      aria-labelledby="features-heading"
+      className="relative z-10 mx-auto w-full max-w-6xl px-6 py-24 sm:py-32"
+    >
+      <motion.div {...reveal()} className="mx-auto max-w-3xl text-center">
+        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-zinc-300 md:backdrop-blur-md">
+          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_rgba(59,130,246,0.7)]" />
+          Why FlowRecall
+        </p>
+        <h2
+          id="features-heading"
+          className="text-3xl font-semibold tracking-tight text-white [text-wrap:balance] sm:text-5xl"
+        >
+          The ultimate active recall study tool for medical students and polymaths.
+        </h2>
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-zinc-400 [text-wrap:balance] sm:text-lg">
+          Turn any PDF into an AI-generated, spaced-repetition study feed — all the
+          retention science of Anki, rebuilt for how students actually study today.
+        </p>
+      </motion.div>
+
+      <div className="mt-14 grid grid-cols-1 gap-4 sm:mt-16 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2">
+        {/* Primary card — PDF → flashcards — spans the tall left block. */}
+        <motion.article
+          {...reveal(0)}
+          className={`${CARD} justify-between sm:col-span-2 lg:row-span-2`}
+        >
+          {/* The single splash of electric blue — a soft ambient accent glow. */}
+          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-accent/10 blur-3xl" />
+          <div className="relative">
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M13 3v6h6" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
+            </FeatureIcon>
+            <h3 className="mt-6 text-xl font-semibold text-white sm:text-2xl">
+              PDF to Flashcards in Seconds
+            </h3>
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-zinc-400 sm:text-base">
+              Drop in a lecture slide deck, a textbook chapter, or a research PDF.
+              FlowRecall&apos;s AI reads it and spins up hundreds of active-recall
+              flashcards in seconds — no manual card-making, no formatting, no busywork.
+            </p>
+          </div>
+          {/* CSS-only monochrome mock: a PDF page transforming into a study card. */}
+          <div className="relative mt-10 flex items-center gap-3" aria-hidden="true">
+            <div className="h-28 w-20 shrink-0 rounded-lg border border-white/10 bg-white/[0.03] p-2">
+              <div className="h-1.5 w-3/4 rounded bg-white/15" />
+              <div className="mt-1.5 h-1.5 w-full rounded bg-white/10" />
+              <div className="mt-1.5 h-1.5 w-5/6 rounded bg-white/10" />
+              <div className="mt-1.5 h-1.5 w-full rounded bg-white/10" />
+              <div className="mt-3 h-1.5 w-1/2 rounded bg-white/10" />
+            </div>
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 shrink-0 text-zinc-600" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <div className="relative flex-1">
+              <div className="absolute -top-2 left-2 h-24 w-full rotate-[-6deg] rounded-xl border border-white/10 bg-white/[0.02]" />
+              <div className="relative h-24 w-full rounded-xl border border-white/10 bg-zinc-900/80 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Recall
+                </div>
+                <div className="mt-2 h-1.5 w-4/5 rounded bg-white/15" />
+                <div className="mt-1.5 h-1.5 w-3/5 rounded bg-white/10" />
+                <div className="mt-3 text-[10px] font-medium text-accent">Tap to reveal</div>
+              </div>
+            </div>
+          </div>
+        </motion.article>
+
+        {/* Spaced repetition & gamification */}
+        <motion.article {...reveal(0.08)} className={`${CARD} justify-between`}>
+          <div>
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent" aria-hidden="true">
+                <path d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z" fill="currentColor" />
+              </svg>
+            </FeatureIcon>
+            <h3 className="mt-6 text-xl font-semibold text-white">
+              Spaced Repetition &amp; Gamification
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
+              Every card is scheduled with spaced repetition, so you review right
+              before you&apos;d forget. Streaks, tiers, and a swipe-to-answer feed
+              turn daily review into a habit you actually keep.
+            </p>
+          </div>
+          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-400">
+            <span className="h-1 w-1 rounded-full bg-accent" />
+            Spaced repetition &middot; Streaks
+          </div>
+        </motion.article>
+
+        {/* Better than Anki */}
+        <motion.article {...reveal(0.16)} className={`${CARD} justify-between`}>
+          <div>
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" stroke="currentColor" strokeWidth="1.8" />
+                <path d="m8.5 12 2.4 2.4 4.6-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </FeatureIcon>
+            <h3 className="mt-6 text-xl font-semibold text-white">Better than Anki</h3>
+            <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
+              All of Anki&apos;s retention power, none of the friction. No add-ons, no
+              template-wrangling, no hours spent building decks — just upload and
+              study. The modern Anki alternative, built for how students really work.
+            </p>
+          </div>
+          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-400">
+            <span className="h-1 w-1 rounded-full bg-accent" />
+            Anki alternative
+          </div>
+        </motion.article>
+      </div>
+    </section>
+  );
+}
+
+function FaqSection() {
+  return (
+    <section
+      aria-labelledby="faq-heading"
+      className="relative z-10 mx-auto w-full max-w-3xl px-6 pb-24 pt-8 sm:pb-32"
+    >
+      {/* Google Rich Results: FAQPage — surfaces Q&As directly in search. */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQPAGE_JSONLD) }}
+      />
+      <motion.h2
+        {...reveal()}
+        id="faq-heading"
+        className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl"
+      >
+        Frequently asked questions
+      </motion.h2>
+      <motion.div
+        {...reveal(0.05)}
+        className="mt-10 divide-y divide-white/10 rounded-3xl bg-zinc-950/60 px-6 ring-1 ring-inset ring-white/10 backdrop-blur-xl sm:mt-12 sm:px-8"
+      >
+        {FAQ_ITEMS.map(({ q, a }) => (
+          <details key={q} className="group py-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-1 [&::-webkit-details-marker]:hidden">
+              <h3 className="text-base font-medium text-zinc-200 transition-colors group-open:text-white sm:text-lg">
+                {q}
+              </h3>
+              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition-transform duration-300 group-open:rotate-45">
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </span>
+            </summary>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400 sm:text-base">
+              {a}
+            </p>
+          </details>
+        ))}
+      </motion.div>
+    </section>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const decks = useSavedDecks();
@@ -252,12 +518,21 @@ export default function Home() {
   }
 
   return (
-    <main
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 py-16 text-center [perspective:1200px] sm:py-24"
-    >
-      <MarqueeBackground />
+    <main className="relative flex flex-1 flex-col">
+      {/* Google Rich Results: SoftwareApplication (Educational Application). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APP_JSONLD) }}
+      />
+
+      {/* ============================ HERO ============================ */}
+      <section
+        aria-labelledby="hero-heading"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="relative flex min-h-[88vh] flex-col items-center justify-center overflow-hidden px-6 py-16 text-center [perspective:1200px] sm:py-24"
+      >
+        <MarqueeBackground />
 
       {/* Faded spotlight grid - a fine ruled pattern masked with a radial
           gradient so it dissolves into darkness at the edges, leaving a subtle
@@ -285,7 +560,7 @@ export default function Home() {
         <ParallaxCard key={i} card={card} mouseX={smoothMouseX} mouseY={smoothMouseY} />
       ))}
 
-      <div className="relative z-10 flex flex-col items-center">
+        <div className="relative z-10 flex flex-col items-center">
         <motion.p
           initial={{ opacity: 0, y: -24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -299,9 +574,10 @@ export default function Home() {
           initial={{ opacity: 0, y: 32 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.05 }}
+          id="hero-heading"
           className="font-retro max-w-2xl text-white pb-4 text-4xl leading-tight [text-wrap:balance] sm:text-6xl"
         >
-          Drop your notes in. Scroll your way to remembering everything.
+          The AI Flashcards App That Turns PDFs Into Active Recall
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 24 }}
@@ -339,8 +615,11 @@ export default function Home() {
         </motion.div>
 
         {decks.length > 0 && (
-          <div className="mt-16 w-full max-w-4xl">
-            <h2 className="text-left text-lg font-semibold tracking-tight text-zinc-300 sm:text-xl">
+          <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">
+            <h2
+              id="library-heading"
+              className="text-left text-lg font-semibold tracking-tight text-zinc-300 sm:text-xl"
+            >
               Your Library
             </h2>
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
@@ -418,9 +697,16 @@ export default function Home() {
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
-      </div>
+        </div>
+      </section>
+
+      {/* ========================== FEATURES ========================== */}
+      <FeaturesSection />
+
+      {/* ============================= FAQ ============================ */}
+      <FaqSection />
     </main>
   );
 }

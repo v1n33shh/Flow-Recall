@@ -27,9 +27,12 @@ const pacifico = Pacifico({
 // fallback keeps builds and local dev working without extra config.
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
 
-const title = "FlowRecall | The Ultimate Active Recall Engine";
+// Social-share copy (OpenGraph + Twitter). Tuned for click-through when the
+// link is dropped in Discord/WhatsApp/iMessage/X: a concrete hook, speed,
+// an objection-killer, and one on-brand flame. Distinct from the SEO <title>.
+const title = "FlowRecall — AI Flashcards, Disguised as Doomscrolling";
 const description =
-  "FlowRecall turns any PDF or block of text into hundreds of bite-sized recall challenges, served in an infinite feed you actually want to open. Powered by Groq - free, no credit card, blazing fast on any device.";
+  "Drop in a lecture PDF and FlowRecall spins up hundreds of AI flashcards in seconds — then serves them as an addictive active-recall feed you actually want to open. Free, no credit card. 🔥";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),

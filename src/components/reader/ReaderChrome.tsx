@@ -36,8 +36,15 @@ export default function ReaderChrome({
         />
       </div>
 
+      {/* relative z-20: backdrop-blur-xl gives this row its own stacking
+          context (per spec, any non-"none" filter/backdrop-filter does),
+          but with no explicit z-index it still only paints at DOM-order
+          level within its own parent - the content pane below it comes
+          LATER in that DOM order, so without this it would paint on top
+          of any dropdown here (e.g. DisplaySettingsMenu's popover) wherever
+          the dropdown extends past the header's own box. */}
       <div
-        className="flex items-center justify-between gap-2 border-b border-white/10 bg-surface/70 px-3 py-2.5 backdrop-blur-xl"
+        className="relative z-20 flex items-center justify-between gap-2 border-b border-white/10 bg-surface/70 px-3 py-2.5 backdrop-blur-xl"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.625rem)" }}
       >
         <button

@@ -19,12 +19,16 @@ import { useNativeSelection } from "./useNativeSelection";
 import DefinitionPopover from "./DefinitionPopover";
 import SelectionHighlight from "./SelectionHighlight";
 import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
+import DisplaySettingsMenu from "./DisplaySettingsMenu";
 
 type LoadState = "loading" | "ready" | "error";
 
+// 50%-300%, matching the previous stepped range - only the granularity
+// changed (a smooth 1% slider instead of a 15%-per-click jump), so existing
+// per-book saved scales still fall well within bounds.
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
-const ZOOM_STEP = 0.15;
+const ZOOM_STEP_PERCENT = 1;
 
 // pdf.js draws its own white page onto the canvas - the classic trick for
 // faking dark mode over that is inverting the whole canvas, with a
@@ -353,8 +357,8 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     setPageNumber(Math.min(numPages, Math.max(1, next)));
   }
 
-  function adjustZoom(delta: number) {
-    setScale((current) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number((current + delta).toFixed(2)))));
+  function setZoomPercent(percent: number) {
+    setScale(Math.min(MAX_SCALE, Math.max(MIN_SCALE, percent / 100)));
   }
 
   function closePopover() {
@@ -401,30 +405,41 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       progress={numPages ? pageNumber / numPages : 0}
       loading={loadState === "loading"}
       controls={
-        <div className="flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5">
-          <button
-            type="button"
-            aria-label="Previous page"
-            onClick={() => goToPage(pageNumber - 1)}
-            disabled={pageNumber <= 1}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
-          >
-            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-              <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            aria-label="Next page"
-            onClick={() => goToPage(pageNumber + 1)}
-            disabled={pageNumber >= numPages}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
-          >
-            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-              <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+        <>
+          <div className="flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5">
+            <button
+              type="button"
+              aria-label="Previous page"
+              onClick={() => goToPage(pageNumber - 1)}
+              disabled={pageNumber <= 1}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              aria-label="Next page"
+              onClick={() => goToPage(pageNumber + 1)}
+              disabled={pageNumber >= numPages}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
+            >
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
+          <DisplaySettingsMenu
+            zoom={{
+              percent: scale * 100,
+              min: MIN_SCALE * 100,
+              max: MAX_SCALE * 100,
+              step: ZOOM_STEP_PERCENT,
+              onChange: setZoomPercent,
+            }}
+          />
+        </>
       }
     >
       <div ref={pageAreaRef} className="h-full w-full overflow-auto bg-background">
@@ -442,35 +457,6 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
               />
             )}
           </div>
-        </div>
-      </div>
-
-      {/* Floating zoom pill - kept separate from the top chrome (which only
-          ever carries pagination) so primary vs. secondary controls stay
-          visually distinct, matching Books/Preview's own control hierarchy. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-full border border-white/10 bg-surface/80 px-2 py-1.5 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_28px_-8px_rgba(0,0,0,0.7)]">
-          <button
-            type="button"
-            aria-label="Zoom out"
-            onClick={() => adjustZoom(-ZOOM_STEP)}
-            disabled={scale <= MIN_SCALE}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
-          >
-            −
-          </button>
-          <span className="w-10 text-center text-xs font-medium tabular-nums text-zinc-400">
-            {Math.round(scale * 100)}%
-          </span>
-          <button
-            type="button"
-            aria-label="Zoom in"
-            onClick={() => adjustZoom(ZOOM_STEP)}
-            disabled={scale >= MAX_SCALE}
-            className="flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
-          >
-            +
-          </button>
         </div>
       </div>
 

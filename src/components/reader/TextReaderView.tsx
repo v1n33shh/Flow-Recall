@@ -16,7 +16,13 @@ import { useNativeSelection } from "./useNativeSelection";
 import DefinitionPopover from "./DefinitionPopover";
 import SelectionHighlight from "./SelectionHighlight";
 import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
-import FontSizeStepper from "./FontSizeStepper";
+import DisplaySettingsMenu from "./DisplaySettingsMenu";
+import {
+  FONT_FAMILY_CSS,
+  getReaderPreferences,
+  setReaderPreferences,
+  type FontFamilyId,
+} from "@/lib/readerPreferences";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -140,7 +146,12 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
   const [paragraphs, setParagraphs] = useState<string[]>([]);
   const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
   const [progress, setProgress] = useState(0);
-  const [fontPercent, setFontPercent] = useState(112);
+  // Global, cross-book preference (see readerPreferences.ts) - initialized
+  // once from localStorage so the very first render already reflects
+  // whatever the reader last chose, rather than flashing the old 112%/serif
+  // default and then snapping to it.
+  const [fontPercent, setFontPercent] = useState(() => getReaderPreferences().fontPercent);
+  const [fontFamily, setFontFamily] = useState<FontFamilyId>(() => getReaderPreferences().fontFamily);
   const [tappedHighlight, setTappedHighlight] = useState<{ record: HighlightRecord; anchor: SelectionAnchor } | null>(
     null,
   );
@@ -259,6 +270,16 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
     setTappedHighlight(null);
   }
 
+  function adjustFont(next: number) {
+    setFontPercent(next);
+    setReaderPreferences({ fontPercent: next });
+  }
+
+  function adjustFontFamily(next: FontFamilyId) {
+    setFontFamily(next);
+    setReaderPreferences({ fontFamily: next });
+  }
+
   function handleHighlightTap(record: HighlightRecord, event: React.MouseEvent) {
     clearSelection();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -301,13 +322,25 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
       title={title}
       progress={progress}
       loading={loadState === "loading"}
-      controls={<FontSizeStepper percent={fontPercent} onChange={setFontPercent} />}
+      controls={
+        <DisplaySettingsMenu
+          typography={{
+            fontPercent,
+            onFontPercentChange: adjustFont,
+            fontMin: 80,
+            fontMax: 160,
+            fontStep: 2,
+            fontFamily,
+            onFontFamilyChange: adjustFontFamily,
+          }}
+        />
+      }
     >
       <div ref={scrollRef} onScroll={handleScroll} className="h-full w-full overflow-y-auto px-6 py-10 sm:px-10">
         <div
           className="mx-auto max-w-2xl text-zinc-200"
           style={{
-            fontFamily: "Georgia, Cambria, 'Times New Roman', serif",
+            fontFamily: FONT_FAMILY_CSS[fontFamily],
             fontSize: `${fontPercent}%`,
             lineHeight: 1.75,
           }}

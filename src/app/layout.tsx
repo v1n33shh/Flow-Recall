@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Pacifico } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
+import { READER_FONTS_HREF } from "@/lib/readerPreferences";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -21,6 +22,7 @@ const pacifico = Pacifico({
   variable: "--font-pacifico",
   subsets: ["latin"],
 });
+
 
 // Absolute origin every social/SEO URL is resolved against. Override per
 // environment with NEXT_PUBLIC_SITE_URL (e.g. your production domain); the
@@ -116,6 +118,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href={READER_FONTS_HREF} />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
         <SessionProvider>
           <Navbar />

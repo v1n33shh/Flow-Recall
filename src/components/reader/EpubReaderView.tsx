@@ -25,8 +25,32 @@ import {
 } from "./selection";
 import DefinitionPopover from "./DefinitionPopover";
 import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
-import FontSizeStepper from "./FontSizeStepper";
+import DisplaySettingsMenu from "./DisplaySettingsMenu";
 import SelectionHighlight from "./SelectionHighlight";
+import {
+  FONT_FAMILY_CSS,
+  READER_FONTS_HREF,
+  getReaderPreferences,
+  setReaderPreferences,
+  type FontFamilyId,
+} from "@/lib/readerPreferences";
+
+const READER_FONTS_LINK_ID = "flowrecall-reader-fonts";
+
+/** epub.js's content iframes are separate documents that don't inherit the
+ * parent page's stylesheets - Display Settings' "Modern Sans"/"Legible"
+ * font-family values only actually render if this same Google Fonts
+ * stylesheet is present in THIS document's own <head> too (see
+ * readerPreferences.ts's READER_FONTS_HREF doc comment). Guarded by id since
+ * each chapter/page re-render fires "rendered" again for the same document. */
+function ensureReaderFontsLoaded(doc: Document) {
+  if (doc.getElementById(READER_FONTS_LINK_ID)) return;
+  const link = doc.createElement("link");
+  link.id = READER_FONTS_LINK_ID;
+  link.rel = "stylesheet";
+  link.href = READER_FONTS_HREF;
+  doc.head.appendChild(link);
+}
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -87,7 +111,12 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
   const [errorMessage, setErrorMessage] = useState("");
   const [progress, setProgress] = useState(0);
   const [chapterTitle, setChapterTitle] = useState("");
-  const [fontPercent, setFontPercent] = useState(112);
+  // Global, cross-book preference (see readerPreferences.ts) - initialized
+  // once from localStorage so the very first render already reflects
+  // whatever the reader last chose, rather than flashing the old 112%/serif
+  // default and then snapping to it.
+  const [fontPercent, setFontPercent] = useState(() => getReaderPreferences().fontPercent);
+  const [fontFamily, setFontFamily] = useState<FontFamilyId>(() => getReaderPreferences().fontFamily);
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
   const clearPopover = useCallback(() => setPopover(null), []);
@@ -152,6 +181,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
 
         registerObsidianTheme(rendition);
         rendition.themes.fontSize(`${fontPercent}%`);
+        rendition.themes.font(FONT_FAMILY_CSS[fontFamily]);
 
         rendition.on("relocated", (location: { start: { cfi: string; percentage: number; href: string } }) => {
           setProgress(location.start.percentage);
@@ -196,6 +226,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
         // itself the start of a new selection) dismisses whatever popover is
         // already open - epub.js has no "unselected" event of its own.
         rendition.on("rendered", (_section: unknown, contents: Contents) => {
+          ensureReaderFontsLoaded(contents.document);
           contents.document.addEventListener("touchstart", clearPopover);
           // Desktop only - browsers replay a SYNTHETIC "mousedown" right
           // after a real touchend (for legacy mouse-oriented code), which
@@ -312,6 +343,13 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
   function adjustFont(next: number) {
     setFontPercent(next);
     renditionRef.current?.themes.fontSize(`${next}%`);
+    setReaderPreferences({ fontPercent: next });
+  }
+
+  function adjustFontFamily(next: FontFamilyId) {
+    setFontFamily(next);
+    renditionRef.current?.themes.font(FONT_FAMILY_CSS[next]);
+    setReaderPreferences({ fontFamily: next });
   }
 
   async function handleHighlight() {
@@ -354,7 +392,19 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
       title={chapterTitle}
       progress={progress}
       loading={loadState === "loading"}
-      controls={<FontSizeStepper percent={fontPercent} onChange={adjustFont} />}
+      controls={
+        <DisplaySettingsMenu
+          typography={{
+            fontPercent,
+            onFontPercentChange: adjustFont,
+            fontMin: 80,
+            fontMax: 160,
+            fontStep: 2,
+            fontFamily,
+            onFontFamilyChange: adjustFontFamily,
+          }}
+        />
+      }
     >
       {/* Tap zones for page turns - narrow edge bands so the wide center
           column is left completely free for native text selection. */}

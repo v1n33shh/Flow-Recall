@@ -27,6 +27,30 @@ export type Deck = {
   pendingChunks?: string[];
 };
 
+export type BookType = "epub" | "pdf" | "text";
+
+/** Lightweight metadata for one uploaded/pasted reader item - deliberately
+ * excludes the raw file bytes (kept in a separate IndexedDB store, see
+ * readerStorage.ts) so the library grid can list items without ever loading
+ * a full binary into memory. Covers all three reader content types. */
+export type BookMeta = {
+  id: string;
+  type: BookType;
+  title: string;
+  author: string | null;
+  /** A small data: URL thumbnail - EPUB's embedded cover, a rendered page-1
+   * thumbnail for PDF, or null (text has none, falls back to an icon). */
+  coverDataUrl: string | null;
+  /** Opaque, type-dependent resume position: an epub.js CFI for "epub", a
+   * JSON-encoded {page, scale} for "pdf", a stringified scroll fraction for
+   * "text". Null for a never-opened item. */
+  lastPosition: string | null;
+  /** 0-1 read fraction as of lastPosition, for the progress bar in the library. */
+  progress: number;
+  addedAt: number;
+  lastOpenedAt: number | null;
+};
+
 export type ChallengeLevel = 1 | 2 | 3;
 export type ChallengeOutcome = "correct" | "incorrect" | "skipped";
 

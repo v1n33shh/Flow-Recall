@@ -36,6 +36,15 @@ function IngestIcon({ className }: { className?: string }) {
   );
 }
 
+function ReaderIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="M12 6.5c-1.6-1.2-3.7-1.8-5.8-1.8-.7 0-1.2.5-1.2 1.2v11.6c0 .7.5 1.2 1.2 1.2 2.1 0 4.2.6 5.8 1.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 6.5c1.6-1.2 3.7-1.8 5.8-1.8.7 0 1.2.5 1.2 1.2v11.6c0 .7-.5 1.2-1.2 1.2-2.1 0-4.2.6-5.8 1.8V6.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function PricingIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -48,14 +57,16 @@ function PricingIcon({ className }: { className?: string }) {
 const TABS: Tab[] = [
   { href: "/", label: "Home", Icon: HomeIcon },
   { href: "/ingest", label: "Ingest", Icon: IngestIcon },
+  { href: "/reader", label: "Reader", Icon: ReaderIcon },
   { href: "/pricing", label: "Pricing", Icon: PricingIcon },
 ];
 
 export default function MobileTabBar() {
   const pathname = usePathname();
 
-  // Match Navbar: the study feed is full-bleed and immersive — no chrome.
-  if (pathname?.startsWith("/study")) return null;
+  // Match Navbar: the study feed and reader are full-bleed and immersive —
+  // no chrome. The reader draws its own back-to-home link and in-book back button.
+  if (pathname?.startsWith("/study") || pathname?.startsWith("/reader")) return null;
 
   const isActive = (href: string) =>
     href === "/"

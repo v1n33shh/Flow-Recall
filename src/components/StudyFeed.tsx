@@ -15,14 +15,9 @@ import StreakCounter from "./StreakCounter";
 // How many slides ahead a failed/skipped concept gets requeued at an easier level.
 const RETRY_OFFSET = 3;
 
-/** Picks a challenge level from a weighted distribution rather than a fixed
- * cycle, so the feed feels like an unpredictable rollercoaster. Skewed toward
- * the quick Swipe to prevent fatigue: 50% Level 1, 30% Level 2, 20% Level 3. */
 function getRandomLevel(): ChallengeLevel {
-  const roll = Math.random();
-  if (roll < 0.5) return 1;
-  if (roll < 0.8) return 2;
-  return 3;
+  // Swipe-only mode for zero-friction study.
+  return 1;
 }
 
 function buildInitialQueue(concepts: Concept[]): QueueItem[] {

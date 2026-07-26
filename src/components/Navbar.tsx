@@ -11,6 +11,7 @@ import StreakModal from "@/components/StreakModal";
 
 const LINKS = [
   { href: "/ingest", label: "Ingest" },
+  { href: "/reader", label: "Reader" },
   { href: "/pricing", label: "Pricing" },
 ];
 
@@ -20,9 +21,10 @@ export default function Navbar() {
   const streak = session?.user?.currentStreak ?? 0;
   const [streakOpen, setStreakOpen] = useState(false);
 
-  // The study feed is meant to be full-bleed and immersive, like the
-  // TikTok-style apps it's modeled on - no persistent chrome on top of it.
-  if (pathname?.startsWith("/study")) return null;
+  // The study feed and the reader are both meant to be full-bleed and
+  // immersive - no persistent chrome on top of them. The reader draws its
+  // own minimal back-to-home link and in-book back button instead.
+  if (pathname?.startsWith("/study") || pathname?.startsWith("/reader")) return null;
 
   return (
     <>

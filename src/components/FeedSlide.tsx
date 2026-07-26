@@ -4,8 +4,7 @@ import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { ChallengeLevel, ChallengeOutcome, Concept } from "@/lib/types";
 import SwipeChallenge, { type SwipeChallengeHandle } from "./SwipeChallenge";
-import FillBlankChallenge from "./FillBlankChallenge";
-import ChatChallenge from "./ChatChallenge";
+
 import type { Ref } from "react";
 
 type FeedSlideProps = {
@@ -108,11 +107,7 @@ export default function FeedSlide({
           )}
         </div>
 
-        {level === 1 && (
-          <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
-        )}
-        {level === 2 && <FillBlankChallenge concept={concept} onAnswered={handleAnswered} />}
-        {level === 3 && <ChatChallenge concept={concept} onAnswered={handleAnswered} />}
+        <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
 
         <p className="mt-8 text-center text-sm text-zinc-500">
           Scroll down for the next concept ↓

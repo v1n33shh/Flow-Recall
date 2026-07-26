@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import type { DefinitionResponse } from "@/lib/definitionSchema";
 import type { SelectionAnchor } from "./selection";
@@ -13,7 +14,8 @@ type Stage =
   | { kind: "actions" }
   | { kind: "loading" }
   | { kind: "result"; data: DefinitionResponse }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "limit-reached" };
 
 const CARD_WIDTH = 300;
 const VIEWPORT_MARGIN = 12;
@@ -56,6 +58,10 @@ function useDefinitionStage(phrase: string, context: string) {
         body: JSON.stringify({ phrase, context }),
       });
       const data = await res.json().catch(() => null);
+      if (res.status === 403 && data?.error === "LIMIT_REACHED") {
+        setStage({ kind: "limit-reached" });
+        return;
+      }
       if (!res.ok || !data) {
         setStage({ kind: "error", message: data?.error ?? "Couldn't fetch a definition. Try again." });
         return;
@@ -214,6 +220,33 @@ function DefinitionContent({
           </div>
         )}
 
+        {stage.kind === "limit-reached" && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18 }}
+            className="flex flex-col items-center gap-3 py-1 text-center"
+          >
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-b from-accent/25 to-accent/10 ring-1 ring-inset ring-accent/40 shadow-[0_0_24px_-4px_rgba(59,130,246,0.5)]">
+              <span className="text-2xl" aria-hidden="true">
+                🔒
+              </span>
+            </div>
+            <div>
+              <p className="text-[14px] font-semibold text-zinc-100">You&rsquo;ve used your 20 free AI lookups</p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+                Upgrade to Pro for infinite definitions - never break your reading flow again.
+              </p>
+            </div>
+            <Link
+              href="/pricing"
+              className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.6)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_36px_-4px_rgba(59,130,246,0.8)] active:scale-[0.97]"
+            >
+              <span aria-hidden="true">✦</span> Upgrade to Pro
+            </Link>
+          </motion.div>
+        )}
+
         {stage.kind === "result" && (
           <motion.div
             initial={{ opacity: 0, y: 4 }}
@@ -293,7 +326,11 @@ function FloatingCard({
         ref={cardRef}
         role="dialog"
         aria-label={`Definition of ${phrase}`}
-        className="fixed z-40 overflow-hidden rounded-2xl border border-white/10 bg-surface/80 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl transition-[top] duration-150 ease-out"
+        className={`fixed z-40 overflow-hidden rounded-2xl bg-surface/80 text-left backdrop-blur-xl transition-[top] duration-150 ease-out ${
+          stageProps.stage.kind === "limit-reached"
+            ? "border border-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_40px_-6px_rgba(59,130,246,0.35),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
+            : "border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
+        }`}
         style={{ width: CARD_WIDTH, left, top, transformOrigin: anchor.placement === "below" ? "top center" : "bottom center" }}
         initial={{ opacity: 0, scale: 0.92, y: anchor.placement === "below" ? -6 : 6 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -376,7 +413,11 @@ function BottomSheet({
         <motion.div
           role="dialog"
           aria-label={`Definition of ${phrase}`}
-          className="relative w-full max-w-lg overflow-hidden rounded-t-3xl border-t border-white/10 bg-surface/95 text-left shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)] backdrop-blur-xl"
+          className={`relative w-full max-w-lg overflow-hidden rounded-t-3xl bg-surface/95 text-left backdrop-blur-xl ${
+            stageProps.stage.kind === "limit-reached"
+              ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_rgba(59,130,246,0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+              : "border-t border-white/10 shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+          }`}
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}

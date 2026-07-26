@@ -49,6 +49,12 @@ model User {
   // (nullable so existing users start with no recorded generation).
   decksGeneratedToday   Int       @default(0)
   lastDeckGeneratedDate DateTime?
+  // Monetization: FREE plans get 20 AI definitions for life (not per-day -
+  // matches decksGeneratedToday's lifetime-cap pivot in /api/ingest, not its
+  // stale per-day name), enforced server-side in /api/define. PRO is
+  // unlimited and never checks this. Incremented on every successful
+  // lookup regardless of plan, so it doubles as a usage metric for Pro users too.
+  definitionsUsed Int @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

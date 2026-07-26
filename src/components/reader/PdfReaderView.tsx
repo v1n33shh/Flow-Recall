@@ -10,6 +10,7 @@ import {
   getBookFile,
   getBookMeta,
   listHighlights,
+  updateHighlightNote,
   updateReadingPosition,
 } from "@/lib/readerStorage";
 import type { HighlightRecord } from "@/lib/types";
@@ -378,6 +379,17 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     setTappedHighlight(null);
   }
 
+  async function handleSaveNote(note: string) {
+    if (!activeTappedHighlight) return;
+    const updated = await updateHighlightNote(activeTappedHighlight.record.id, note);
+    if (!updated) return;
+    // Keep both the open popover's record AND the master highlights array
+    // in sync - the array is what PdfHighlightOverlay renders from, though
+    // notes are pure metadata with no visual mark on the page itself.
+    setTappedHighlight((prev) => (prev ? { ...prev, record: updated } : prev));
+    setHighlights((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+  }
+
   if (loadState === "error") {
     return <ReaderErrorState message={errorMessage} onExit={onExit} />;
   }
@@ -477,9 +489,11 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
           phrase={activeTappedHighlight.record.phrase}
           context={activeTappedHighlight.record.phrase}
           anchor={activeTappedHighlight.anchor}
+          note={activeTappedHighlight.record.note}
           onClose={closePopover}
           onHighlight={handleHighlight}
           onRemoveHighlight={handleRemoveHighlight}
+          onSaveNote={handleSaveNote}
           isHighlighted
         />
       )}

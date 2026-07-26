@@ -7,6 +7,7 @@ import {
   getBookFile,
   getBookMeta,
   listHighlights,
+  updateHighlightNote,
   updateReadingPosition,
 } from "@/lib/readerStorage";
 import type { HighlightRecord } from "@/lib/types";
@@ -282,6 +283,14 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
     setTappedHighlight(null);
   }
 
+  async function handleSaveNote(note: string) {
+    if (!activeTappedHighlight) return;
+    const updated = await updateHighlightNote(activeTappedHighlight.record.id, note);
+    if (!updated) return;
+    setTappedHighlight((prev) => (prev ? { ...prev, record: updated } : prev));
+    setHighlights((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+  }
+
   if (loadState === "error") {
     return <ReaderErrorState message={errorMessage} onExit={onExit} />;
   }
@@ -334,9 +343,11 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
           phrase={activeTappedHighlight.record.phrase}
           context={activeTappedHighlight.record.phrase}
           anchor={activeTappedHighlight.anchor}
+          note={activeTappedHighlight.record.note}
           onClose={closePopover}
           onHighlight={handleHighlight}
           onRemoveHighlight={handleRemoveHighlight}
+          onSaveNote={handleSaveNote}
           isHighlighted
         />
       )}

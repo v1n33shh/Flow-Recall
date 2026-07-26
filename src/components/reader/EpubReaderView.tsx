@@ -11,6 +11,7 @@ import {
   getBookFile,
   getBookMeta,
   listHighlights,
+  updateHighlightNote,
   updateReadingPosition,
 } from "@/lib/readerStorage";
 import type { HighlightRecord } from "@/lib/types";
@@ -326,15 +327,25 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
     appliedHighlightIds.current.delete(popover.record.id);
   }
 
+  async function handleSaveNote(note: string) {
+    if (popover?.kind !== "highlight") return;
+    const updated = await updateHighlightNote(popover.record.id, note);
+    // Keeps the CURRENTLY OPEN popover's record in sync (e.g. if it's
+    // reopened for editing again in this same session) - epub.js's own
+    // underline rendering is unaffected, since notes are pure metadata with
+    // no visual representation on the page itself.
+    if (updated) setPopover({ kind: "highlight", record: updated, anchor: popover.anchor });
+  }
+
   if (loadState === "error") {
     return <ReaderErrorState message={errorMessage} onExit={onExit} />;
   }
 
   const popoverProps =
     popover?.kind === "selection"
-      ? { phrase: popover.data.phrase, context: popover.data.context, anchor: popover.data.anchor }
+      ? { phrase: popover.data.phrase, context: popover.data.context, anchor: popover.data.anchor, note: undefined }
       : popover?.kind === "highlight"
-        ? { phrase: popover.record.phrase, context: popover.record.phrase, anchor: popover.anchor }
+        ? { phrase: popover.record.phrase, context: popover.record.phrase, anchor: popover.anchor, note: popover.record.note }
         : null;
 
   return (
@@ -368,9 +379,11 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
           phrase={popoverProps.phrase}
           context={popoverProps.context}
           anchor={popoverProps.anchor}
+          note={popoverProps.note}
           onClose={clearPopover}
           onHighlight={handleHighlight}
           onRemoveHighlight={handleRemoveHighlight}
+          onSaveNote={handleSaveNote}
           isHighlighted={popover?.kind === "highlight"}
         />
       )}

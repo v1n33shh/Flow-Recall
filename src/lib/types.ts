@@ -64,6 +64,12 @@ export type HighlightRecord = {
   bookId: string;
   phrase: string;
   position: string;
+  /** Free-form text the student attached to this highlight - either typed
+   * directly or saved from a Define result (see DefinitionPopover's "Save as
+   * Note"). Undefined for highlights with no note; IndexedDB is schemaless,
+   * so records saved before this field existed just read as undefined - no
+   * migration needed. */
+  note?: string;
   createdAt: number;
 };
 

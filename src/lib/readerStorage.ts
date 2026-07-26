@@ -313,6 +313,28 @@ export async function deleteHighlight(id: string): Promise<void> {
   });
 }
 
+/** Attaches (or edits) a highlight's note - either typed manually or saved
+ * from a Define result. An emptied-out textarea trims to `undefined` rather
+ * than storing "", so clearing a note cleanly returns the highlight to its
+ * no-note state instead of leaving a blank note-view card behind. Returns
+ * undefined if the highlight no longer exists (e.g. removed in another tab). */
+export async function updateHighlightNote(id: string, note: string): Promise<HighlightRecord | undefined> {
+  const db = await openDb();
+  const tx = db.transaction(HIGHLIGHTS_STORE, "readwrite");
+  const store = tx.objectStore(HIGHLIGHTS_STORE);
+  const existing = await requestToPromise(store.get(id) as IDBRequest<HighlightRecord | undefined>);
+  if (!existing) return undefined;
+
+  const trimmed = note.trim();
+  const updated: HighlightRecord = { ...existing, note: trimmed || undefined };
+  store.put(updated);
+  await new Promise<void>((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  return updated;
+}
+
 /** Reactive book list for the library grid. Unlike storage.ts's
  * useSyncExternalStore hooks (localStorage reads are synchronous),
  * IndexedDB is inherently async, so this is a plain effect-driven

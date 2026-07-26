@@ -61,3 +61,36 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* epub.js's marks-pane library (its highlight/underline SVG renderer) hard-
+   codes the visible <line> of an "underline" annotation to stroke="black"
+   stroke-width="1" in its own render() method - the public `styles` param
+   rendition.annotations.underline() accepts only reaches the OUTER wrapper
+   group, never this child element. SVG presentation attributes (set via
+   setAttribute, as marks-pane does) sit below author stylesheets in the CSS
+   cascade regardless of specificity, so a plain rule here is enough to win -
+   this is the only way to actually recolor it to Electric Azure. Scoped to
+   our own annotation className so it can't affect any unrelated SVG on the page. */
+[ref="flowrecall-highlight"] line {
+  stroke: #3b82f6;
+  stroke-width: 3px;
+  stroke-opacity: 0.9;
+}
+
+/* marks-pane's outer <svg> pane sets pointer-events="none" on itself (a
+   click-through-except-marks design), but never re-enables it on the marks
+   it draws - meaning without this, tapping a highlight to remove it silently
+   does nothing (the click passes straight through to whatever's underneath,
+   e.g. the page-turn tap zones). pointer-events:auto on the group isn't
+   enough on its own: the invisible fill:none hit-box rect needs `all`
+   specifically, since "auto"/the SVG default only counts PAINTED areas as
+   hit-testable, and this rect is deliberately unpainted. */
+[ref="flowrecall-highlight"] {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+[ref="flowrecall-highlight"] rect,
+[ref="flowrecall-highlight"] line {
+  pointer-events: all;
+}

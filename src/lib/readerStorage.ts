@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
-import type { BookMeta } from "./types";
+import type { BookMeta, HighlightRecord } from "./types";
 
 const DB_NAME = "flowrecall-reader";
-const DB_VERSION = 1;
+// v2 adds the highlights store - bumping this is what makes onupgradeneeded
+// actually fire for students who already have a v1 database on disk.
+const DB_VERSION = 2;
 const BOOKS_STORE = "books";
 const FILES_STORE = "bookFiles";
+const HIGHLIGHTS_STORE = "highlights";
+const HIGHLIGHTS_BOOK_INDEX = "bookId";
 
 // Same problem useSyncExternalStore solves for storage.ts's localStorage
 // reads: same-tab writers need to hear about each other's changes. IndexedDB
@@ -30,6 +34,10 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(FILES_STORE)) {
         db.createObjectStore(FILES_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(HIGHLIGHTS_STORE)) {
+        const store = db.createObjectStore(HIGHLIGHTS_STORE, { keyPath: "id" });
+        store.createIndex(HIGHLIGHTS_BOOK_INDEX, "bookId");
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -235,13 +243,74 @@ export async function updateReadingPosition(id: string, position: string, progre
 export async function deleteBook(id: string): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([BOOKS_STORE, FILES_STORE], "readwrite");
+    const tx = db.transaction([BOOKS_STORE, FILES_STORE, HIGHLIGHTS_STORE], "readwrite");
     tx.objectStore(BOOKS_STORE).delete(id);
     tx.objectStore(FILES_STORE).delete(id);
+    // Orphaned highlights for a deleted book are meaningless - clean them up
+    // via the bookId index rather than leaking them in IndexedDB forever.
+    const highlightsStore = tx.objectStore(HIGHLIGHTS_STORE);
+    const index = highlightsStore.index(HIGHLIGHTS_BOOK_INDEX);
+    const cursorRequest = index.openCursor(IDBKeyRange.only(id));
+    cursorRequest.onsuccess = () => {
+      const cursor = cursorRequest.result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
   notifyLibraryUpdate();
+}
+
+/** Persists a highlight so it survives closing and reopening the book -
+ * `position` is opaque and type-dependent, see HighlightRecord. Idempotent:
+ * if a highlight already exists for this book at the exact same position
+ * (e.g. the user double-clicked "Highlight" before the popover closed, or
+ * re-selected text that's already highlighted), returns the EXISTING record
+ * rather than inserting a duplicate that would render stacked on top of it.
+ * Does NOT fire the library-update event (highlighting doesn't change
+ * anything the library grid displays); callers update their own local
+ * highlight list directly with the returned record so it paints immediately. */
+export async function addHighlight(bookId: string, phrase: string, position: string): Promise<HighlightRecord> {
+  const existing = await listHighlights(bookId);
+  const duplicate = existing.find((h) => h.position === position);
+  if (duplicate) return duplicate;
+
+  const record: HighlightRecord = {
+    id: crypto.randomUUID(),
+    bookId,
+    phrase,
+    position,
+    createdAt: Date.now(),
+  };
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(HIGHLIGHTS_STORE, "readwrite");
+    tx.objectStore(HIGHLIGHTS_STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  return record;
+}
+
+export async function listHighlights(bookId: string): Promise<HighlightRecord[]> {
+  const db = await openDb();
+  const tx = db.transaction(HIGHLIGHTS_STORE, "readonly");
+  const index = tx.objectStore(HIGHLIGHTS_STORE).index(HIGHLIGHTS_BOOK_INDEX);
+  const all = await requestToPromise(index.getAll(IDBKeyRange.only(bookId)) as IDBRequest<HighlightRecord[]>);
+  return all.sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export async function deleteHighlight(id: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(HIGHLIGHTS_STORE, "readwrite");
+    tx.objectStore(HIGHLIGHTS_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 /** Reactive book list for the library grid. Unlike storage.ts's

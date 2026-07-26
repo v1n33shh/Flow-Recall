@@ -4,9 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import type { TextLayer } from "pdfjs-dist";
 import "pdfjs-dist/web/pdf_viewer.css";
-import { getBookFile, getBookMeta, updateReadingPosition } from "@/lib/readerStorage";
+import {
+  addHighlight,
+  deleteHighlight,
+  getBookFile,
+  getBookMeta,
+  listHighlights,
+  updateReadingPosition,
+} from "@/lib/readerStorage";
+import type { HighlightRecord } from "@/lib/types";
+import { anchorFromRect, type SelectionAnchor } from "./selection";
 import { useNativeSelection } from "./useNativeSelection";
 import DefinitionPopover from "./DefinitionPopover";
+import SelectionHighlight from "./SelectionHighlight";
 import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
 
 type LoadState = "loading" | "ready" | "error";
@@ -14,6 +24,16 @@ type LoadState = "loading" | "ready" | "error";
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
 const ZOOM_STEP = 0.15;
+
+// pdf.js draws its own white page onto the canvas - the classic trick for
+// faking dark mode over that is inverting the whole canvas, with a
+// hue-rotate to cancel invert()'s hue flip (so a blue diagram stays roughly
+// blue instead of turning orange) and brightness/contrast pulled in from the
+// harsh true-invert extremes toward something closer to an OLED reader's
+// near-black. Scoped to the canvas ONLY (not a wrapper) - the text layer is
+// already transparent, and highlight overlays are separate siblings that
+// must NOT get re-inverted back to the wrong color.
+const PDF_DARK_MODE_FILTER = "invert(1) hue-rotate(180deg) brightness(0.94) contrast(0.88)";
 
 type StoredPosition = { page: number; scale: number };
 
@@ -29,8 +49,76 @@ function parsePosition(raw: string | null | undefined): StoredPosition | null {
   return null;
 }
 
+type UnitRect = { x: number; y: number; width: number; height: number };
+type HighlightPosition = { page: number; unitRects: UnitRect[] };
+
+function parseHighlightPosition(raw: string): HighlightPosition | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.page === "number" && Array.isArray(parsed.unitRects)) return parsed;
+  } catch {
+    // A highlight saved by some future/incompatible format just doesn't render.
+  }
+  return null;
+}
+
+const UNDERLINE_THICKNESS = 3;
+
+/** Persistent highlights, positioned relative to the page box (not fixed to
+ * the viewport like SelectionHighlight's transient overlay) so they scroll
+ * and zoom together with the page. unitRects are 0-1 fractions of the page's
+ * rendered size, reprojected here against whatever that size currently is -
+ * correct at any zoom level without needing to touch pdf.js's own coordinate
+ * system. Each rect renders as a bold Electric Azure underline (a thin bar at
+ * its own bottom edge), not a filled block - a hit-testable but visually
+ * invisible full-height wrapper keeps the tap target line-sized rather than
+ * shrinking it down to the 3px bar itself. */
+function PdfHighlightOverlay({
+  highlights,
+  pageNumber,
+  viewportWidth,
+  viewportHeight,
+  onHighlightClick,
+}: {
+  highlights: HighlightRecord[];
+  pageNumber: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  onHighlightClick: (record: HighlightRecord, event: React.MouseEvent) => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+      {highlights.flatMap((h) => {
+        const position = parseHighlightPosition(h.position);
+        if (!position || position.page !== pageNumber) return [];
+        return position.unitRects.map((r, i) => (
+          <button
+            key={`${h.id}-${i}`}
+            type="button"
+            aria-label={`Highlighted: ${h.phrase}`}
+            onClick={(e) => onHighlightClick(h, e)}
+            className="pointer-events-auto absolute cursor-pointer"
+            style={{
+              left: r.x * viewportWidth,
+              top: r.y * viewportHeight,
+              width: r.width * viewportWidth,
+              height: r.height * viewportHeight,
+            }}
+          >
+            <span
+              className="absolute inset-x-0 bottom-0 block rounded-[1px] bg-accent"
+              style={{ height: UNDERLINE_THICKNESS, opacity: 0.9 }}
+            />
+          </button>
+        ));
+      })}
+    </div>
+  );
+}
+
 export default function PdfReaderView({ bookId, onExit }: { bookId: string; onExit: () => void }) {
   const pageAreaRef = useRef<HTMLDivElement>(null);
+  const pageBoxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<PDFDocumentProxy | null>(null);
@@ -43,8 +131,59 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
   const [pageNumber, setPageNumber] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [scale, setScale] = useState(1);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number } | null>(null);
+  const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
+  const [tappedHighlight, setTappedHighlight] = useState<{ record: HighlightRecord; anchor: SelectionAnchor } | null>(
+    null,
+  );
 
-  const { selection, clear: clearSelection } = useNativeSelection(pageAreaRef);
+  // Page-relative (not viewport-relative) unit-fraction rects, reprojected
+  // against the page box's CURRENT on-screen size - correct at any zoom
+  // level, and consistent with how the persisted highlights above reproject too.
+  function derivePdfPosition(range: Range): string {
+    const boxRect = pageBoxRef.current?.getBoundingClientRect();
+    if (!boxRect || boxRect.width === 0 || boxRect.height === 0) return "";
+    const unitRects: UnitRect[] = Array.from(range.getClientRects()).map((r) => ({
+      x: (r.left - boxRect.left) / boxRect.width,
+      y: (r.top - boxRect.top) / boxRect.height,
+      width: r.width / boxRect.width,
+      height: r.height / boxRect.height,
+    }));
+    return JSON.stringify({ page: pageNumber, unitRects } satisfies HighlightPosition);
+  }
+
+  const { selection, clear: clearSelection } = useNativeSelection(pageAreaRef, derivePdfPosition);
+
+  // A fresh new-selection popover and a tapped-existing-highlight popover are
+  // mutually exclusive - capturing a new one implicitly means whatever
+  // highlight popover was open is now stale. Derived at render time rather
+  // than synced via an effect: there's no cross-state invariant to enforce
+  // here, just a value ("what should the highlight popover show right now")
+  // that depends on two independently-set pieces of state.
+  const activeTappedHighlight = selection ? null : tappedHighlight;
+
+  // Mirrors useNativeSelection's own "clear on any fresh tap/click in the
+  // container" listeners, but for tappedHighlight specifically - mousedown/
+  // touchstart always fire before the highlight rect's own onClick for the
+  // same physical gesture, so tapping a highlight still correctly ends up
+  // clearing-then-setting in that order, not racing it.
+  useEffect(() => {
+    const container = pageAreaRef.current;
+    if (!container) return;
+    const clear = () => setTappedHighlight(null);
+    container.addEventListener("mousedown", clear);
+    container.addEventListener("touchstart", clear);
+    return () => {
+      container.removeEventListener("mousedown", clear);
+      container.removeEventListener("touchstart", clear);
+    };
+  }, []);
+
+  function handleHighlightTap(record: HighlightRecord, event: React.MouseEvent) {
+    clearSelection();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTappedHighlight({ record, anchor: anchorFromRect(rect) });
+  }
 
   // Open the document once per book, restore the saved (page, scale), and
   // compute a fit-to-width default scale for a never-opened PDF so it isn't
@@ -53,13 +192,18 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     let cancelled = false;
 
     async function setup() {
-      const [file, meta] = await Promise.all([getBookFile(bookId), getBookMeta(bookId)]);
+      const [file, meta, savedHighlights] = await Promise.all([
+        getBookFile(bookId),
+        getBookMeta(bookId),
+        listHighlights(bookId),
+      ]);
       if (cancelled) return;
       if (!file) {
         setErrorMessage("This document is missing from your library - it may have been removed.");
         setLoadState("error");
         return;
       }
+      setHighlights(savedHighlights);
 
       try {
         const pdfjs = await import("pdfjs-dist");
@@ -135,6 +279,7 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       canvas.height = Math.floor(viewport.height * outputScale);
       canvas.style.width = `${Math.floor(viewport.width)}px`;
       canvas.style.height = `${Math.floor(viewport.height)}px`;
+      setViewportSize({ width: viewport.width, height: viewport.height });
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -190,14 +335,18 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       if (e.key === "ArrowRight") goToPage(pageNumber + 1);
       if (e.key === "ArrowLeft") goToPage(pageNumber - 1);
       if (e.key === "Escape") {
-        if (selection) clearSelection();
-        else onExit();
+        if (selection || tappedHighlight) {
+          clearSelection();
+          setTappedHighlight(null);
+        } else {
+          onExit();
+        }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageNumber, numPages, selection, clearSelection, onExit]);
+  }, [pageNumber, numPages, selection, tappedHighlight, clearSelection, onExit]);
 
   function goToPage(next: number) {
     setPageNumber(Math.min(numPages, Math.max(1, next)));
@@ -205,6 +354,28 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
 
   function adjustZoom(delta: number) {
     setScale((current) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, Number((current + delta).toFixed(2)))));
+  }
+
+  function closePopover() {
+    clearSelection();
+    setTappedHighlight(null);
+  }
+
+  async function handleHighlight() {
+    if (!selection) return;
+    const record = await addHighlight(bookId, selection.phrase, selection.rawPosition);
+    // addHighlight is idempotent at the DB level (highlighting the same spot
+    // twice returns the EXISTING record rather than inserting a duplicate),
+    // but blindly appending here regardless would still duplicate it in this
+    // local array - and PdfHighlightOverlay renders one bar per array entry.
+    setHighlights((prev) => (prev.some((h) => h.id === record.id) ? prev : [...prev, record]));
+  }
+
+  async function handleRemoveHighlight() {
+    if (!activeTappedHighlight) return;
+    await deleteHighlight(activeTappedHighlight.record.id);
+    setHighlights((prev) => prev.filter((h) => h.id !== activeTappedHighlight.record.id));
+    setTappedHighlight(null);
   }
 
   if (loadState === "error") {
@@ -246,9 +417,18 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     >
       <div ref={pageAreaRef} className="h-full w-full overflow-auto bg-background">
         <div className="flex min-h-full w-full items-start justify-center px-4 py-6">
-          <div className="relative shadow-[0_20px_60px_-16px_rgba(0,0,0,0.8)]">
-            <canvas ref={canvasRef} className="block rounded-sm" />
+          <div ref={pageBoxRef} className="relative shadow-[0_20px_60px_-16px_rgba(0,0,0,0.8)]">
+            <canvas ref={canvasRef} className="block rounded-sm" style={{ filter: PDF_DARK_MODE_FILTER }} />
             <div ref={textLayerRef} className="textLayer absolute left-0 top-0" />
+            {viewportSize && (
+              <PdfHighlightOverlay
+                highlights={highlights}
+                pageNumber={pageNumber}
+                viewportWidth={viewportSize.width}
+                viewportHeight={viewportSize.height}
+                onHighlightClick={handleHighlightTap}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -282,12 +462,25 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
         </div>
       </div>
 
+      {selection?.rects && <SelectionHighlight rects={selection.rects} />}
       {selection && (
         <DefinitionPopover
           phrase={selection.phrase}
           context={selection.context}
           anchor={selection.anchor}
-          onClose={clearSelection}
+          onClose={closePopover}
+          onHighlight={handleHighlight}
+        />
+      )}
+      {activeTappedHighlight && (
+        <DefinitionPopover
+          phrase={activeTappedHighlight.record.phrase}
+          context={activeTappedHighlight.record.phrase}
+          anchor={activeTappedHighlight.anchor}
+          onClose={closePopover}
+          onHighlight={handleHighlight}
+          onRemoveHighlight={handleRemoveHighlight}
+          isHighlighted
         />
       )}
     </ReaderChrome>

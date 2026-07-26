@@ -51,6 +51,22 @@ export type BookMeta = {
   lastOpenedAt: number | null;
 };
 
+/** A saved highlight, persisted per-book so it survives closing and
+ * reopening the reader. `position` is opaque and type-dependent, mirroring
+ * BookMeta.lastPosition: an epub.js CFI *range* string for "epub", a JSON
+ * {page, unitRects} for "pdf" (unitRects are 0-1 fractions of the page's
+ * rendered width/height, so they reproject correctly at any zoom level), or
+ * a JSON {paragraphIndex, start, end} for "text" (offsets within a single
+ * paragraph - a selection spanning a paragraph break saves against its
+ * starting paragraph only). */
+export type HighlightRecord = {
+  id: string;
+  bookId: string;
+  phrase: string;
+  position: string;
+  createdAt: number;
+};
+
 export type ChallengeLevel = 1 | 2 | 3;
 export type ChallengeOutcome = "correct" | "incorrect" | "skipped";
 

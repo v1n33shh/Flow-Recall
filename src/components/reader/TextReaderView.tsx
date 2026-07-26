@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { getBookFile, getBookMeta, updateReadingPosition } from "@/lib/readerStorage";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  addHighlight,
+  deleteHighlight,
+  getBookFile,
+  getBookMeta,
+  listHighlights,
+  updateReadingPosition,
+} from "@/lib/readerStorage";
+import type { HighlightRecord } from "@/lib/types";
+import { anchorFromRect, type SelectionAnchor } from "./selection";
 import { useNativeSelection } from "./useNativeSelection";
 import DefinitionPopover from "./DefinitionPopover";
+import SelectionHighlight from "./SelectionHighlight";
 import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
 import FontSizeStepper from "./FontSizeStepper";
 
@@ -13,9 +23,109 @@ type LoadState = "loading" | "ready" | "error";
 // tick would mean a write per animation frame during a fast flick.
 const SCROLL_PERSIST_DELAY_MS = 400;
 
+const PARAGRAPH_INDEX_ATTR = "data-paragraph-index";
+
 function parseScrollFraction(raw: string | null | undefined): number {
   const value = raw ? Number(raw) : NaN;
   return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+}
+
+type TextHighlightPosition = { paragraphIndex: number; start: number; end: number };
+
+function parseTextHighlightPosition(raw: string): TextHighlightPosition | null {
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed.paragraphIndex === "number" &&
+      typeof parsed.start === "number" &&
+      typeof parsed.end === "number"
+    ) {
+      return parsed;
+    }
+  } catch {
+    // A highlight saved by some future/incompatible format just doesn't render.
+  }
+  return null;
+}
+
+/** Sums text-node lengths within a single paragraph element up to (node,
+ * offset) - the paragraph's DOM content is always exactly paragraphs[i]'s
+ * characters (mark-wrapping a previous highlight only splits it across more
+ * text nodes, never adds/removes characters), so this offset is stable and
+ * comparable against previously-saved highlight offsets for the same paragraph. */
+function getParagraphOffset(paragraphEl: Element, targetNode: Node, targetOffset: number): number {
+  const walker = document.createTreeWalker(paragraphEl, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    if (node === targetNode) return offset + targetOffset;
+    offset += node.textContent?.length ?? 0;
+  }
+  return offset;
+}
+
+function closestParagraph(node: Node): HTMLElement | null {
+  const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  return el?.closest<HTMLElement>(`[${PARAGRAPH_INDEX_ATTR}]`) ?? null;
+}
+
+/** Highlight positions are paragraph-scoped (see readerStorage.ts's
+ * HighlightRecord doc comment) - a selection that spans a paragraph break is
+ * clamped to its starting paragraph's own text rather than attempting a
+ * global cross-paragraph offset scheme. */
+function deriveTextPosition(range: Range): string {
+  const startParagraph = closestParagraph(range.startContainer);
+  if (!startParagraph) return "";
+
+  const paragraphIndex = Number(startParagraph.getAttribute(PARAGRAPH_INDEX_ATTR));
+  const start = getParagraphOffset(startParagraph, range.startContainer, range.startOffset);
+
+  const endParagraph = closestParagraph(range.endContainer);
+  const end =
+    endParagraph === startParagraph
+      ? getParagraphOffset(startParagraph, range.endContainer, range.endOffset)
+      : startParagraph.textContent?.length ?? start;
+
+  return JSON.stringify({ paragraphIndex, start, end } satisfies TextHighlightPosition);
+}
+
+/** Splits one paragraph's text around its saved highlights, wrapping each in
+ * a clickable <mark> (underline styling, not a background fill - tapping it
+ * is how a highlight gets removed, see handleHighlightTap). Ranges are
+ * expected non-overlapping (each came from an independent user selection); a
+ * defensive clamp keeps a malformed/overlapping range from producing a
+ * negative-length slice rather than crashing the reader. */
+function renderParagraphWithHighlights(
+  text: string,
+  entries: { record: HighlightRecord; position: TextHighlightPosition }[],
+  onHighlightClick: (record: HighlightRecord, event: React.MouseEvent) => void,
+): ReactNode[] {
+  if (entries.length === 0) return [text];
+
+  const sorted = [...entries].sort((a, b) => a.position.start - b.position.start);
+  const nodes: ReactNode[] = [];
+  let cursor = 0;
+
+  sorted.forEach(({ record, position }, i) => {
+    const start = Math.max(position.start, cursor);
+    const end = Math.max(position.end, start);
+    if (start > cursor) nodes.push(text.slice(cursor, start));
+    if (end > start) {
+      nodes.push(
+        <mark
+          key={i}
+          onClick={(e) => onHighlightClick(record, e)}
+          className="cursor-pointer border-b-[3px] border-accent bg-transparent text-inherit"
+        >
+          {text.slice(start, end)}
+        </mark>,
+      );
+    }
+    cursor = Math.max(cursor, end);
+  });
+
+  if (cursor < text.length) nodes.push(text.slice(cursor));
+  return nodes;
 }
 
 export default function TextReaderView({ bookId, onExit }: { bookId: string; onExit: () => void }) {
@@ -27,17 +137,31 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
   const [errorMessage, setErrorMessage] = useState("");
   const [title, setTitle] = useState("");
   const [paragraphs, setParagraphs] = useState<string[]>([]);
+  const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
   const [progress, setProgress] = useState(0);
   const [fontPercent, setFontPercent] = useState(112);
+  const [tappedHighlight, setTappedHighlight] = useState<{ record: HighlightRecord; anchor: SelectionAnchor } | null>(
+    null,
+  );
   const savedFractionRef = useRef(0);
 
-  const { selection, clear: clearSelection } = useNativeSelection(scrollRef);
+  const { selection, clear: clearSelection } = useNativeSelection(scrollRef, deriveTextPosition);
+
+  // A fresh new-selection popover and a tapped-existing-highlight popover are
+  // mutually exclusive - derived at render time rather than synced via an
+  // effect, since there's no invariant to enforce, just a value that depends
+  // on two independently-set pieces of state.
+  const activeTappedHighlight = selection ? null : tappedHighlight;
 
   useEffect(() => {
     let cancelled = false;
 
     async function setup() {
-      const [file, meta] = await Promise.all([getBookFile(bookId), getBookMeta(bookId)]);
+      const [file, meta, savedHighlights] = await Promise.all([
+        getBookFile(bookId),
+        getBookMeta(bookId),
+        listHighlights(bookId),
+      ]);
       if (cancelled) return;
       if (!file) {
         setErrorMessage("This note is missing from your library - it may have been removed.");
@@ -51,6 +175,7 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
 
         setTitle(meta?.title ?? "Untitled Notes");
         setParagraphs(text.split(/\n{2,}/).filter((p) => p.trim().length > 0));
+        setHighlights(savedHighlights);
         savedFractionRef.current = parseScrollFraction(meta?.lastPosition);
         setProgress(savedFractionRef.current);
         setLoadState("ready");
@@ -96,16 +221,66 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
     return () => clearTimeout(scrollPersistTimeout.current);
   }, []);
 
+  // Mirrors useNativeSelection's own "clear on any fresh tap/click in the
+  // container" listeners, but for tappedHighlight specifically - mousedown/
+  // touchstart always fire before the <mark>'s own onClick for the same
+  // physical gesture, so tapping a highlight still correctly ends up
+  // clearing-then-setting in that order, not racing it.
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!container) return;
+    const clear = () => setTappedHighlight(null);
+    container.addEventListener("mousedown", clear);
+    container.addEventListener("touchstart", clear);
+    return () => {
+      container.removeEventListener("mousedown", clear);
+      container.removeEventListener("touchstart", clear);
+    };
+  }, []);
+
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        if (selection) clearSelection();
-        else onExit();
+        if (selection || tappedHighlight) {
+          clearSelection();
+          setTappedHighlight(null);
+        } else {
+          onExit();
+        }
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selection, clearSelection, onExit]);
+  }, [selection, tappedHighlight, clearSelection, onExit]);
+
+  function closePopover() {
+    clearSelection();
+    setTappedHighlight(null);
+  }
+
+  function handleHighlightTap(record: HighlightRecord, event: React.MouseEvent) {
+    clearSelection();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setTappedHighlight({ record, anchor: anchorFromRect(rect) });
+  }
+
+  async function handleHighlight() {
+    if (!selection) return;
+    const record = await addHighlight(bookId, selection.phrase, selection.rawPosition);
+    // addHighlight is idempotent at the DB level (highlighting the same spot
+    // twice returns the EXISTING record rather than inserting a duplicate),
+    // but blindly appending here regardless would still duplicate it in this
+    // local array - and renderParagraphWithHighlights renders one <mark> per
+    // array entry.
+    setHighlights((prev) => (prev.some((h) => h.id === record.id) ? prev : [...prev, record]));
+  }
+
+  async function handleRemoveHighlight() {
+    if (!activeTappedHighlight) return;
+    await deleteHighlight(activeTappedHighlight.record.id);
+    setHighlights((prev) => prev.filter((h) => h.id !== activeTappedHighlight.record.id));
+    setTappedHighlight(null);
+  }
 
   if (loadState === "error") {
     return <ReaderErrorState message={errorMessage} onExit={onExit} />;
@@ -128,20 +303,41 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
             lineHeight: 1.75,
           }}
         >
-          {paragraphs.map((paragraph, i) => (
-            <p key={i} className="mb-[1.1em] whitespace-pre-wrap last:mb-0">
-              {paragraph}
-            </p>
-          ))}
+          {paragraphs.map((paragraph, i) => {
+            const entries = highlights
+              .map((record) => {
+                const position = parseTextHighlightPosition(record.position);
+                return position && position.paragraphIndex === i ? { record, position } : null;
+              })
+              .filter((e): e is { record: HighlightRecord; position: TextHighlightPosition } => e !== null);
+            return (
+              <p key={i} data-paragraph-index={i} className="mb-[1.1em] whitespace-pre-wrap last:mb-0">
+                {renderParagraphWithHighlights(paragraph, entries, handleHighlightTap)}
+              </p>
+            );
+          })}
         </div>
       </div>
 
+      {selection?.rects && <SelectionHighlight rects={selection.rects} />}
       {selection && (
         <DefinitionPopover
           phrase={selection.phrase}
           context={selection.context}
           anchor={selection.anchor}
-          onClose={clearSelection}
+          onClose={closePopover}
+          onHighlight={handleHighlight}
+        />
+      )}
+      {activeTappedHighlight && (
+        <DefinitionPopover
+          phrase={activeTappedHighlight.record.phrase}
+          context={activeTappedHighlight.record.phrase}
+          anchor={activeTappedHighlight.anchor}
+          onClose={closePopover}
+          onHighlight={handleHighlight}
+          onRemoveHighlight={handleRemoveHighlight}
+          isHighlighted
         />
       )}
     </ReaderChrome>

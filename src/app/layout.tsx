@@ -3,8 +3,19 @@ import { Geist, Geist_Mono, Pacifico } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
+import MobileAuthBridge from "@/components/MobileAuthBridge";
 import { READER_FONTS_HREF } from "@/lib/readerPreferences";
 import "./globals.css";
+
+// Only set for the Capacitor build (see next.config.ts) - the exported shell
+// has no `headers()` support, so the same CSP is inlined as a <meta> tag
+// instead. connect-src is widened to the live API origin the shell talks to
+// cross-origin (see src/lib/apiUrl.ts); the web deployment keeps its
+// header-based CSP untouched.
+const capacitorApiOrigin = process.env.NEXT_PUBLIC_API_URL ?? "";
+const capacitorCsp = capacitorApiOrigin
+  ? `default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https://lh3.googleusercontent.com https://avatars.githubusercontent.com; font-src 'self' data: blob: https://fonts.gstatic.com; connect-src 'self' ${capacitorApiOrigin}; frame-src 'self' blob:;`
+  : null;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -119,12 +130,14 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} h-full antialiased`}
     >
       <head>
+        {capacitorCsp && <meta httpEquiv="Content-Security-Policy" content={capacitorCsp} />}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href={READER_FONTS_HREF} />
       </head>
       <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
-        <SessionProvider>
+        <SessionProvider basePath={`${capacitorApiOrigin}/api/auth`}>
+          <MobileAuthBridge />
           <Navbar />
           <div className="flex flex-1 flex-col">{children}</div>
           <MobileTabBar />

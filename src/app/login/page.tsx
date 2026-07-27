@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
+import { apiUrl } from "@/lib/apiUrl";
 
 /** Standard 4-color Google "G" mark. */
 function GoogleIcon() {
@@ -41,8 +44,28 @@ export default function LoginPage() {
     router.refresh();
   }
 
-  function handleGoogle() {
+  async function handleGoogle() {
     setLoading(true);
+
+    if (Capacitor.isNativePlatform()) {
+      // Google disallows/blocks its own consent screen inside an embedded
+      // WebView, so this opens the system browser instead of navigating
+      // in-app. NextAuth's callback then redirects that browser to
+      // /api/mobile-callback, which hands the session back to the app via a
+      // flowrecall:// deep link - see src/components/MobileAuthBridge.tsx and
+      // src/lib/mobileAuth.ts.
+      const result = await signIn("google", {
+        callbackUrl: apiUrl("/api/mobile-callback"),
+        redirect: false,
+      });
+      if (result?.url) {
+        await Browser.open({ url: result.url });
+      } else {
+        setLoading(false);
+      }
+      return;
+    }
+
     // Full-page OAuth redirect; NextAuth handles the callback and returns to "/".
     void signIn("google", { callbackUrl: "/" });
   }

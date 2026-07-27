@@ -1,5 +1,9 @@
 import type { MetadataRoute } from "next";
 
+// Required by `output: export` (Capacitor build) - see sitemap.ts. No effect
+// on the web deployment.
+export const dynamic = "force-static";
+
 // Keep in sync with layout.tsx's metadataBase and sitemap.ts.
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
 

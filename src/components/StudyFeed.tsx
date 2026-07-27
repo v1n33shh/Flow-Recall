@@ -11,6 +11,7 @@ import FeedSlide from "./FeedSlide";
 import type { SwipeChallengeHandle } from "./SwipeChallenge";
 import CompletionSlide from "./CompletionSlide";
 import StreakCounter from "./StreakCounter";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // How many slides ahead a failed/skipped concept gets requeued at an easier level.
 const RETRY_OFFSET = 3;
@@ -125,7 +126,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   const { data: session, update: updateSession } = useSession();
   const isPro = session?.user?.plan === "PRO";
   useEffect(() => {
-    fetch("/api/study/track", { method: "POST" })
+    fetch(apiUrl("/api/study/track"), { method: "POST", credentials: API_FETCH_CREDENTIALS })
       .then(async (res) => {
         if (!res.ok) return;
         const { currentStreak } = await res.json();
@@ -180,10 +181,11 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         explanation: c.explanation,
       }));
 
-      const res = await fetch(`/api/decks/${deckId}/shuffle`, {
+      const res = await fetch(apiUrl(`/api/decks/${deckId}/shuffle`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ concepts: seed }),
+        credentials: API_FETCH_CREDENTIALS,
       });
       const data = await res.json();
       if (!res.ok) {

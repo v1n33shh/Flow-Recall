@@ -1,5 +1,10 @@
 import type { MetadataRoute } from "next";
 
+// Required by `output: export` (Capacitor build) once this route's build-time
+// caching is made explicit - see the `lastModified` comment below. No effect
+// on the web deployment, which already only ever computes this once per build.
+export const dynamic = "force-static";
+
 // Keep in sync with layout.tsx's metadataBase. Override per environment with
 // NEXT_PUBLIC_SITE_URL (e.g. your production domain).
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";

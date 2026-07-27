@@ -7,6 +7,7 @@ import { useSession } from "next-auth/react";
 import type { Concept } from "@/lib/types";
 import { saveDeck, setStudyDeck } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -134,12 +135,13 @@ export default function IngestPage() {
       for (let i = 0; i < chunks.length; i++) {
         setCurrentChunk(i + 1);
 
-        const res = await fetch("/api/ingest", {
+        const res = await fetch(apiUrl("/api/ingest"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // Only the first chunk of a deck counts against the FREE daily quota
           // - continuation chunks are part of the same deck.
           body: JSON.stringify({ text: chunks[i], model: selectedModel, isFirstChunk: i === 0 }),
+          credentials: API_FETCH_CREDENTIALS,
         });
 
         const rawText = await res.text();

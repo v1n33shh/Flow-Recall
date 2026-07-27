@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { fireCelebration } from "@/lib/confetti";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // Mirrors the tier thresholds in StreakCounter / StreakModal so all
 // three components stay in visual sync.
@@ -90,7 +91,10 @@ export default function CompletionSlide({
   async function trackStreak() {
     if (status !== "authenticated") return;
     try {
-      const res = await fetch("/api/study/track", { method: "POST" });
+      const res = await fetch(apiUrl("/api/study/track"), {
+        method: "POST",
+        credentials: API_FETCH_CREDENTIALS,
+      });
       if (!res.ok) return;
       const data = (await res.json()) as { currentStreak?: number };
       if (typeof data.currentStreak === "number") {

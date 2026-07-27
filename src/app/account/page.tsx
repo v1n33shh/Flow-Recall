@@ -1,23 +1,27 @@
+"use client";
+
+import { useEffect } from "react";
 import Image from "next/image";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import SignOutButton from "@/components/SignOutButton";
 
-export default async function AccountPage() {
-  const session = await auth();
-  if (!session?.user?.id) {
-    redirect("/");
-  }
+// Was a Server Component reading `auth()` + `prisma.user.findUnique` directly.
+// That doesn't run in the Capacitor static export (no server behind the
+// shell), so it's client-rendered from the session instead - the JWT already
+// carries name/email/image/plan (see src/auth.ts), so no extra API call is
+// needed.
+export default function AccountPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { name: true, email: true, image: true, plan: true },
-  });
+  useEffect(() => {
+    if (status === "unauthenticated") router.replace("/");
+  }, [status, router]);
 
-  if (!user) {
-    redirect("/");
-  }
+  if (status !== "authenticated") return null;
+
+  const user = session.user;
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">

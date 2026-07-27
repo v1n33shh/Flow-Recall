@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 /** Standard 4-color Google "G" mark. */
 function GoogleIcon() {
@@ -30,10 +31,11 @@ export default function RegisterPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch(apiUrl("/api/auth/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
+        credentials: API_FETCH_CREDENTIALS,
       });
       const data = await res.json();
 

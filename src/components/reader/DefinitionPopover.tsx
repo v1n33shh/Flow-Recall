@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { DefinitionResponse } from "@/lib/definitionSchema";
 import type { SelectionAnchor } from "./selection";
 import { useIsTouchDevice } from "./useIsTouchDevice";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // PERFORMANCE CONTRACT (matches StreakModal/StudyFeed): entrance/exit only
 // ever animates transform + opacity. backdrop-blur is static.
@@ -62,10 +63,11 @@ function useDefinitionStage(phrase: string, context: string, initialNote: string
   async function handleDefine() {
     setStage({ kind: "loading" });
     try {
-      const res = await fetch("/api/define", {
+      const res = await fetch(apiUrl("/api/define"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phrase, context }),
+        credentials: API_FETCH_CREDENTIALS,
       });
       const data = await res.json().catch(() => null);
       if (res.status === 403 && data?.error === "LIMIT_REACHED") {

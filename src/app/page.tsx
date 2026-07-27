@@ -14,6 +14,7 @@ import {
   setStudyDeck,
   useSavedDecks,
 } from "@/lib/storage";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
@@ -483,10 +484,11 @@ export default function Home() {
       // Sequential, not Promise.all - same rate-limit reasoning as the
       // original ingest flow applies here too.
       for (let i = 0; i < batch.length; i++) {
-        const res = await fetch("/api/ingest", {
+        const res = await fetch(apiUrl("/api/ingest"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: batch[i] }),
+          credentials: API_FETCH_CREDENTIALS,
         });
 
         const data = await res.json();

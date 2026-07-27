@@ -1,3 +1,22 @@
+// Shared with the client (StreakModal) - lives here rather than in the route
+// file so it's importable from the Capacitor build, where src/app/api is
+// moved aside during `next build` (see scripts/build-capacitor.mjs).
+export type StreakDay = {
+  /** Single-letter weekday label, Monday-first. */
+  label: string;
+  /** ISO date (yyyy-mm-dd) for keying on the client. */
+  date: string;
+  studied: boolean;
+  isToday: boolean;
+  /** A later day this week the user hasn't reached yet - rendered hollow. */
+  future: boolean;
+};
+
+export type StreakResponse = {
+  currentStreak: number;
+  days: StreakDay[];
+};
+
 export type Concept = {
   id: string;
   concept: string;

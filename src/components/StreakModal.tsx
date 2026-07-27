@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
-import type { StreakDay, StreakResponse } from "@/app/api/streak/route";
+import type { StreakDay, StreakResponse } from "@/lib/types";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // PERFORMANCE CONTRACT (low-end Android, 60fps):
 // Every animation in this file touches ONLY `transform` (scale/y) and `opacity`
@@ -165,7 +166,7 @@ export default function StreakModal({
     if (!open) return;
     let cancelled = false;
     setError(null);
-    fetch("/api/streak")
+    fetch(apiUrl("/api/streak"), { credentials: API_FETCH_CREDENTIALS })
       .then(async (res) => ({ ok: res.ok, json: await res.json() }))
       .then(({ ok, json }) => {
         if (cancelled) return;

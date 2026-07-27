@@ -1,5 +1,10 @@
 import { ImageResponse } from "next/og";
 
+// Required by `output: export` (Capacitor build) - this generator is fully
+// deterministic already (no request data, no randomness), so this only makes
+// that explicit. No effect on the web deployment.
+export const dynamic = "force-static";
+
 // iOS Home Screen icon. Apple touch icons must be PNG (iOS ignores SVG), so we
 // rasterize the exact Navbar logo via ImageResponse. Full-bleed on purpose:
 // iOS applies its own squircle mask, so baking in rounded corners would

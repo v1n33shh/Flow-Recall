@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import type { StreakDay, StreakResponse } from "@/lib/types";
 
 /** Local-calendar midnight, matching the study-tracking route so "which day"
  * is compared by calendar date rather than a rolling 24h window. */
@@ -8,22 +9,6 @@ function startOfDay(date: Date): Date {
 }
 
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"] as const;
-
-export type StreakDay = {
-  /** Single-letter weekday label, Monday-first. */
-  label: string;
-  /** ISO date (yyyy-mm-dd) for keying on the client. */
-  date: string;
-  studied: boolean;
-  isToday: boolean;
-  /** A later day this week the user hasn't reached yet - rendered hollow. */
-  future: boolean;
-};
-
-export type StreakResponse = {
-  currentStreak: number;
-  days: StreakDay[];
-};
 
 function isoDate(date: Date): string {
   const y = date.getFullYear();

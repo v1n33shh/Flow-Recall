@@ -8,6 +8,7 @@ import type { Concept } from "@/lib/types";
 import { saveDeck, setStudyDeck } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { vibrateTap } from "@/lib/haptics";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -103,6 +104,7 @@ export default function IngestPage() {
   }
 
   async function handleGenerate(sourceText: string = text) {
+    vibrateTap();
     if (!isAuthenticated) {
       setError("Please sign in to generate concepts.");
       return;

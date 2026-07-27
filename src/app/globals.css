@@ -94,3 +94,29 @@ body {
 [ref="flowrecall-highlight"] line {
   pointer-events: all;
 }
+
+/* Stamped onto <html> only inside the Capacitor shell (see
+   src/components/NativeAppClass.tsx) - kills the "website in a box" tells:
+   the grey/blue tap-highlight flash, the elastic overscroll bounce, and
+   accidental text selection on chrome (buttons, nav, labels).
+   Reader text is deliberately exempt: DefinitionPopover's whole "select a
+   phrase to define it" feature depends on real window.getSelection(), so
+   selection stays enabled there. epub.js content lives in its own sandboxed
+   iframe (a separate document - see EpubReaderView.tsx) and is already
+   unreachable by this rule; pdf.js's text layer renders directly into the
+   main document and needs the explicit opt-back-in below. */
+.native-app {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.native-app .textLayer,
+.native-app .textLayer *,
+.native-app input,
+.native-app textarea,
+.native-app [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}

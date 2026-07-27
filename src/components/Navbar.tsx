@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
+import { Capacitor } from "@capacitor/core";
 import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
 
@@ -20,11 +21,22 @@ export default function Navbar() {
   const { data: session, status } = useSession();
   const streak = session?.user?.currentStreak ?? 0;
   const [streakOpen, setStreakOpen] = useState(false);
+  // Computed post-mount (not during SSR/export) to avoid a hydration
+  // mismatch between the server-rendered shell and the native runtime.
+  const [isNative, setIsNative] = useState(false);
+  useEffect(() => {
+    setIsNative(Capacitor.isNativePlatform());
+  }, []);
 
   // The study feed and the reader are both meant to be full-bleed and
   // immersive - no persistent chrome on top of them. The reader draws its
   // own minimal back-to-home link and in-book back button instead.
   if (pathname?.startsWith("/study") || pathname?.startsWith("/reader")) return null;
+
+  // The native app uses MobileTabBar as its only chrome (its Account tab
+  // covers streak/profile access) - this desktop-styled top bar would just
+  // read as "website in a box" on top of it.
+  if (isNative) return null;
 
   return (
     <>

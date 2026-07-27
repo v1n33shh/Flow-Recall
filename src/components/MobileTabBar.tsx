@@ -1,8 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
+import { useSession } from "next-auth/react";
+import { Capacitor } from "@capacitor/core";
+import { vibrateTap } from "@/lib/haptics";
 
 // The mobile-only primary navigation. On sm: and up this is fully hidden and
 // the links live inline in <Navbar />; below sm: they move here, into the
@@ -54,6 +58,15 @@ function PricingIcon({ className }: { className?: string }) {
   );
 }
 
+function AccountIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <circle cx="12" cy="8.5" r="3.25" stroke="currentColor" strokeWidth="2" />
+      <path d="M4.5 19.5c1.4-3.4 4.3-5.2 7.5-5.2s6.1 1.8 7.5 5.2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const TABS: Tab[] = [
   { href: "/", label: "Home", Icon: HomeIcon },
   { href: "/ingest", label: "Ingest", Icon: IngestIcon },
@@ -61,12 +74,26 @@ const TABS: Tab[] = [
   { href: "/pricing", label: "Pricing", Icon: PricingIcon },
 ];
 
+const ACCOUNT_TAB: Tab = { href: "/account", label: "Account", Icon: AccountIcon };
+
 export default function MobileTabBar() {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
+  const streak = session?.user?.currentStreak ?? 0;
+  // Computed post-mount (not during SSR/export) to avoid a hydration
+  // mismatch between the server-rendered shell and the native runtime.
+  const [isNative, setIsNative] = useState(false);
+  useEffect(() => {
+    setIsNative(Capacitor.isNativePlatform());
+  }, []);
 
   // Match Navbar: the study feed and reader are full-bleed and immersive —
   // no chrome. The reader draws its own back-to-home link and in-book back button.
   if (pathname?.startsWith("/study") || pathname?.startsWith("/reader")) return null;
+
+  // Navbar (the only other place streak/account lived) is hidden entirely on
+  // native, so this is the sole entry point there - add a 5th tab for it.
+  const tabs = isNative ? [...TABS, ACCOUNT_TAB] : TABS;
 
   const isActive = (href: string) =>
     href === "/"
@@ -89,12 +116,15 @@ export default function MobileTabBar() {
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
       >
         <div className="flex items-center gap-1 rounded-full border border-white/10 bg-surface/70 px-2 py-2 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_32px_-8px_rgba(0,0,0,0.7)]">
-          {TABS.map(({ href, label, Icon }) => {
+          {tabs.map(({ href, label, Icon }) => {
             const active = isActive(href);
+            const showStreakBadge =
+              href === "/account" && status === "authenticated" && streak > 0;
             return (
               <Link
                 key={href}
                 href={href}
+                onClick={vibrateTap}
                 aria-current={active ? "page" : undefined}
                 className="relative flex min-w-[76px] flex-col items-center justify-center gap-1 rounded-full px-4 py-2 outline-none transition-transform active:scale-95 focus-visible:ring-2 focus-visible:ring-accent/60"
               >
@@ -105,11 +135,18 @@ export default function MobileTabBar() {
                     transition={{ type: "spring", stiffness: 400, damping: 30 }}
                   />
                 )}
-                <Icon
-                  className={`relative z-10 h-[22px] w-[22px] transition-colors ${
-                    active ? "text-white" : "text-zinc-500"
-                  }`}
-                />
+                <span className="relative z-10">
+                  <Icon
+                    className={`h-[22px] w-[22px] transition-colors ${
+                      active ? "text-white" : "text-zinc-500"
+                    }`}
+                  />
+                  {showStreakBadge && (
+                    <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-white/10 bg-accent px-1 text-[9px] font-bold tabular-nums text-white">
+                      {streak}
+                    </span>
+                  )}
+                </span>
                 <span
                   className={`relative z-10 text-[10px] font-medium leading-none transition-colors ${
                     active ? "text-white" : "text-zinc-500"

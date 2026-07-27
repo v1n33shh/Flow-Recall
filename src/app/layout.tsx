@@ -4,6 +4,8 @@ import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
 import MobileAuthBridge from "@/components/MobileAuthBridge";
+import NativeAppClass from "@/components/NativeAppClass";
+import PageTransition from "@/components/PageTransition";
 import { READER_FONTS_HREF } from "@/lib/readerPreferences";
 import "./globals.css";
 
@@ -137,9 +139,10 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
         <SessionProvider basePath={`${capacitorApiOrigin}/api/auth`}>
+          <NativeAppClass />
           <MobileAuthBridge />
           <Navbar />
-          <div className="flex flex-1 flex-col">{children}</div>
+          <PageTransition>{children}</PageTransition>
           <MobileTabBar />
         </SessionProvider>
       </body>

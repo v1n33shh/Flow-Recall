@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
 import { apiUrl } from "@/lib/apiUrl";
+import { vibrateTap } from "@/lib/haptics";
 
 /** Standard 4-color Google "G" mark. */
 function GoogleIcon() {
@@ -29,6 +30,7 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    vibrateTap();
     setLoading(true);
     setError(null);
 
@@ -44,25 +46,36 @@ export default function LoginPage() {
     router.refresh();
   }
 
-  async function handleGoogle() {
+  // Reached when the Capacitor app opens THIS page in the system browser for
+  // Google sign-in (see handleGoogle below) - auto-continue into the OAuth
+  // redirect instead of making the user tap "Continue with Google" twice.
+  // This runs as a normal same-origin browser request, which is the whole
+  // point: no CapacitorHttp, no cross-origin cookies, so Auth.js's CSRF
+  // double-submit check (@auth/core/lib/actions/callback/oauth/csrf-token.js)
+  // just works the same way it already does on desktop web.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mobile") === "1") {
+      void signIn("google", { callbackUrl: apiUrl("/api/mobile-callback") });
+    }
+  }, []);
+
+  function handleGoogle() {
+    vibrateTap();
     setLoading(true);
 
     if (Capacitor.isNativePlatform()) {
-      // Google disallows/blocks its own consent screen inside an embedded
-      // WebView, so this opens the system browser instead of navigating
-      // in-app. NextAuth's callback then redirects that browser to
-      // /api/mobile-callback, which hands the session back to the app via a
-      // flowrecall:// deep link - see src/components/MobileAuthBridge.tsx and
-      // src/lib/mobileAuth.ts.
-      const result = await signIn("google", {
-        callbackUrl: apiUrl("/api/mobile-callback"),
-        redirect: false,
-      });
-      if (result?.url) {
-        await Browser.open({ url: result.url });
-      } else {
-        setLoading(false);
-      }
+      // signIn() can't be called from inside the app on native: it requires
+      // a CSRF-protected POST (Auth.js throws MissingCSRF without one - see
+      // @auth/core/lib/actions/callback/oauth/csrf-token.js), and that
+      // handshake doesn't survive being proxied through CapacitorHttp
+      // cross-origin from https://localhost. Google also blocks its own
+      // consent screen inside an embedded WebView regardless. So instead:
+      // open this same page in the system browser, where the effect above
+      // runs signIn() as an ordinary full-page browser flow. NextAuth's
+      // callback then redirects that browser to /api/mobile-callback, which
+      // hands the session back to the app via a flowrecall:// deep link -
+      // see src/components/MobileAuthBridge.tsx and src/lib/mobileAuth.ts.
+      void Browser.open({ url: apiUrl("/login?mobile=1") }).finally(() => setLoading(false));
       return;
     }
 

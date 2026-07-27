@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Script from "next/script";
 import { Capacitor } from "@capacitor/core";
+import { vibrateTap } from "@/lib/haptics";
 
 const FREE_FEATURES = [
   "1 deck per day (up to 60,000 chars)",
@@ -63,6 +64,7 @@ export default function PricingPage() {
   }, []);
 
   async function handleUpgrade() {
+    vibrateTap();
     // Can't attribute a payment without a logged-in user - send them to log in.
     if (status !== "authenticated") {
       router.push("/login");

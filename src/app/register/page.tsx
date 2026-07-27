@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { vibrateTap } from "@/lib/haptics";
 
 /** Standard 4-color Google "G" mark. */
 function GoogleIcon() {
@@ -27,6 +30,7 @@ export default function RegisterPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    vibrateTap();
     setLoading(true);
     setError(null);
 
@@ -58,7 +62,21 @@ export default function RegisterPage() {
   }
 
   function handleGoogle() {
+    vibrateTap();
     setLoading(true);
+
+    if (Capacitor.isNativePlatform()) {
+      // Same reasoning as src/app/login/page.tsx's handleGoogle: signIn()
+      // can't run from inside the app on native (CSRF handshake doesn't
+      // survive a cross-origin CapacitorHttp request), so hand off to the
+      // system browser instead. Google OAuth sign-in and sign-up are the
+      // same NextAuth action either way (it upserts the account on first
+      // use), so this reuses /login's mobile bridge rather than duplicating
+      // it - see src/app/login/page.tsx and src/lib/mobileAuth.ts.
+      void Browser.open({ url: apiUrl("/login?mobile=1") }).finally(() => setLoading(false));
+      return;
+    }
+
     // Full-page OAuth redirect; NextAuth handles the callback and returns to "/".
     void signIn("google", { callbackUrl: "/" });
   }

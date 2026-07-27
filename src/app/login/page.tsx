@@ -69,18 +69,19 @@ export default function LoginPage() {
       //
       // async/try/catch/finally (not a .then/.finally chain) so a
       // synchronous throw from Browser.open itself - not just a rejected
-      // promise - still resets `loading` and surfaces an error, instead of
-      // leaving the button stuck disabled with no visible failure. See the
-      // matching handleGoogle in src/app/account/page.tsx's SignedOutPrompt.
+      // promise - still resets `loading` instead of leaving the button
+      // stuck disabled. The catch here was a temporary alert() to surface
+      // Browser.open's actual error on device; that turned out to be
+      // "Unable to display URL" - Android 11+'s package-visibility
+      // filtering hiding every browser from PackageManager without a
+      // <queries> declaration (see android/app/src/main/AndroidManifest.xml).
+      // Now fixed at the manifest level, so this is back to a quiet
+      // last-resort fallback rather than a debug dialog. See the matching
+      // handleGoogle in src/app/account/page.tsx's SignedOutPrompt.
       try {
         await Browser.open({ url: apiUrl("/login?mobile=1") });
-      } catch (err) {
-        try {
-          window.open(apiUrl("/login?mobile=1"), "_system");
-        } catch {
-          // Swallowed - the alert below is what actually surfaces the failure.
-        }
-        alert(`Couldn't open sign-in: ${err instanceof Error ? err.message : String(err)}`);
+      } catch {
+        window.open(apiUrl("/login?mobile=1"), "_system");
       } finally {
         setLoading(false);
       }

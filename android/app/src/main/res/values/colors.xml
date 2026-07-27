@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AppTheme (applied to <application> in AndroidManifest.xml) reads these
+         three names directly. Without an app-level definition they silently
+         fall back to @capacitor/android's bundled colors.xml - the stock
+         Capacitor template's generic indigo/pink Material palette, not this
+         app's actual "Obsidian Monochrome + Electric Azure" brand (see the
+         token comment block in src/app/globals.css, which these mirror).
+         Matters most on minSdk 24-33 devices, where AppCompat still tints the
+         status bar from colorPrimaryDark - Android 15+ (targetSdk 36 here)
+         enforces edge-to-edge and ignores it, but this app's floor is 24. -->
+    <color name="colorPrimary">#050505</color>
+    <color name="colorPrimaryDark">#000000</color>
+    <color name="colorAccent">#3B82F6</color>
+</resources>

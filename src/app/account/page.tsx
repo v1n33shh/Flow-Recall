@@ -247,35 +247,23 @@ function SignedOutPrompt() {
   // only ever renders from NativeAccountScreen, which AccountPage already
   // gates on isNative - a redundant check here would just be a dead branch.
   //
-  // Diffed byte-for-byte against login/page.tsx's handleGoogle: the
-  // Browser.open call itself is identical (same options, same apiUrl()
-  // construction) - so if this hangs on device while that one works, it
-  // isn't a difference in this line. What WAS a real gap: the old
-  // `Browser.open(...).finally(...)` only resets `loading` if Browser.open
-  // returns a promise at all - a plugin call that throws SYNCHRONOUSLY
-  // (bridge not ready, plugin not found, whatever) would skip the .finally
-  // entirely and leave the button permanently stuck showing "Opening...".
-  // async/try/catch/finally below closes that gap regardless of whether
-  // it's the actual cause, and the alert() surfaces whatever the real error
-  // is next time this is tested on device - which is otherwise invisible,
-  // since Capacitor plugin errors don't reach the browser console the way a
-  // normal web exception would.
+  // async/try/catch/finally (not a .then/.finally chain) so a synchronous
+  // throw from Browser.open itself - not just a rejected promise - still
+  // resets `loading` instead of leaving the button stuck disabled. The
+  // catch here was a temporary alert() to surface Browser.open's actual
+  // error on device; that turned out to be "Unable to display URL" -
+  // Android 11+'s package-visibility filtering hiding every browser from
+  // PackageManager without a <queries> declaration (see
+  // android/app/src/main/AndroidManifest.xml). Now fixed at the manifest
+  // level, so this is back to a quiet last-resort fallback rather than a
+  // debug dialog. See the matching handleGoogle in src/app/login/page.tsx.
   async function handleGoogle() {
     vibrateTap();
     setLoading(true);
     try {
       await Browser.open({ url: apiUrl("/login?mobile=1") });
-    } catch (err) {
-      // Last-resort fallback: if the native Browser plugin itself is the
-      // thing failing, window.open('_system') is the one other mechanism
-      // Android WebViews honor for handing a URL to the system browser -
-      // Capacitor's own web fallback for this plugin uses the same call.
-      try {
-        window.open(apiUrl("/login?mobile=1"), "_system");
-      } catch {
-        // Swallowed - the alert below is what actually surfaces the failure.
-      }
-      alert(`Couldn't open sign-in: ${err instanceof Error ? err.message : String(err)}`);
+    } catch {
+      window.open(apiUrl("/login?mobile=1"), "_system");
     } finally {
       setLoading(false);
     }

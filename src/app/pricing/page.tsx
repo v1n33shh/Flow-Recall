@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Script from "next/script";
@@ -67,7 +67,7 @@ export default function PricingPage() {
     vibrateTap();
     // Can't attribute a payment without a logged-in user - send them to log in.
     if (status !== "authenticated") {
-      router.push("/login");
+      startTransition(() => router.push("/login"));
       return;
     }
 

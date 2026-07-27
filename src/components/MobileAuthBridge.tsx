@@ -21,12 +21,34 @@ export default function MobileAuthBridge() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
-    const listenerPromise = App.addListener("appUrlOpen", ({ url }) => {
+    // Forces one authoritative re-check on cold launch. SessionProvider's own
+    // automatic first fetch goes out through CapacitorHttp's GET proxy path
+    // (see android/.../native-bridge.js) rather than the credentialed POST
+    // path this app otherwise relies on - if that first read ever comes back
+    // stale/empty, useSession() has no reason to retry on its own, and every
+    // gated screen (Account included) reads unauthenticated for the rest of
+    // the app's life. This mirrors the same getSession() re-fetch already
+    // used below after the OAuth deep link, just run unconditionally too.
+    void getSession();
+
+    const urlListenerPromise = App.addListener("appUrlOpen", ({ url }) => {
       void handleUrl(url, router);
     });
 
+    // Web's `refetchOnWindowFocus` (SessionProvider in layout.tsx) listens
+    // for the DOM `visibilitychange` event, which Android's WebView doesn't
+    // reliably fire across OEMs when the app is backgrounded/foregrounded -
+    // Capacitor's own 'resume' event is the mechanism actually built for
+    // this. Without it, a session that changed while the app was backgrounded
+    // (signed out elsewhere, token expired) wouldn't be caught until some
+    // unrelated re-render happened to run.
+    const resumeListenerPromise = App.addListener("resume", () => {
+      void getSession();
+    });
+
     return () => {
-      void listenerPromise.then((listener) => listener.remove());
+      void urlListenerPromise.then((listener) => listener.remove());
+      void resumeListenerPromise.then((listener) => listener.remove());
     };
   }, [router]);
 

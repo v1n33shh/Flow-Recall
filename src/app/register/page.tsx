@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { startTransition, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
@@ -53,8 +53,10 @@ export default function RegisterPage() {
         throw new Error("Account created - please sign in.");
       }
 
-      router.push("/");
-      router.refresh();
+      startTransition(() => {
+        router.push("/");
+        router.refresh();
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setLoading(false);

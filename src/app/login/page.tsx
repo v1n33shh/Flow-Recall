@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { startTransition, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
@@ -42,8 +42,10 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
-    router.refresh();
+    startTransition(() => {
+      router.push("/");
+      router.refresh();
+    });
   }
 
   // Reached when the Capacitor app opens THIS page in the system browser for

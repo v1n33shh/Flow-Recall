@@ -27,11 +27,13 @@ export default function ReaderChrome({
 }) {
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-background">
-      {/* Fine top-of-viewport progress bar, Chrome-tab-load style. */}
+      {/* Fine top-of-viewport progress bar, Chrome-tab-load style. Scaled via
+          transform (not width) so it stays compositor-only, per the contract
+          above - animating `width` triggers layout every frame. */}
       <div className="absolute inset-x-0 top-0 z-30 h-[3px] bg-white/5">
         <motion.div
-          className="h-full bg-accent"
-          animate={{ width: `${progress * 100}%` }}
+          className="h-full w-full origin-left bg-accent"
+          animate={{ scaleX: progress }}
           transition={{ type: "tween", duration: 0.25 }}
         />
       </div>

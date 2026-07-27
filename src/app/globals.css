@@ -31,6 +31,25 @@
   --foreground: 0 0% 98%;
   --accent: 217 91% 60%;
   --accent-foreground: 0 0% 100%;
+  /* MobileTabBar.tsx overwrites this with its real measured height on mount
+     (ResizeObserver) - this fallback only covers the first paint before that
+     effect runs, so it should track the bar's actual rest-state height. */
+  --tabbar-h: 5.5rem;
+}
+
+/* Light theme, toggled from the native Account screen's "Appearance" row
+   (see src/lib/theme.ts) and applied as data-theme on <html>. Only the pages
+   built against these semantic tokens (bg-background/bg-surface/border-border/
+   text-foreground/text-muted-foreground - the new native Account screen and
+   MobileTabBar) fully re-theme; most existing pages predate this token system
+   and hardcode Tailwind's zinc/white/black scale directly, so they won't
+   flip. Deliberate, disclosed scope - not a bug. */
+:root[data-theme="light"] {
+  --background: 0 0% 99%;
+  --surface: 0 0% 95%;
+  --border: 0 0% 88%;
+  --muted-foreground: 0 0% 40%;
+  --foreground: 0 0% 6%;
 }
 
 @theme inline {
@@ -51,6 +70,11 @@
 body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
+  /* Kills the ~300ms tap-delay-turned-double-tap-zoom-detection browsers/
+     WebViews still do on plain taps, and the grey "select-like" flash some
+     Android WebViews show on rapid taps - both read as input lag on cheap
+     hardware even though nothing in our JS is actually slow. */
+  touch-action: manipulation;
 }
 
 .no-scrollbar {
@@ -119,4 +143,17 @@ body {
 .native-app [contenteditable="true"] {
   -webkit-user-select: text;
   user-select: text;
+}
+
+/* iOS Safari/WebView auto-zooms the whole page on focus of any form field
+   under 16px - login/register's text-sm (14px) inputs trigger this. It's
+   the single biggest "this is a website in a box" tell, so it's floored
+   here globally rather than per-page: nothing should ever regress below it
+   on a phone-width viewport, regardless of which component adds a field. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { startTransition, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import type { Concept } from "@/lib/types";
@@ -196,7 +196,11 @@ export default function IngestPage() {
   function handleStartStudying() {
     if (!concepts || concepts.length === 0 || !savedDeckId) return;
     setStudyDeck(savedDeckId, concepts);
-    router.push("/study");
+    // Low-priority transition so the tap's own visual feedback isn't blocked
+    // on /study's (heavier) initial render committing - see PageTransition.tsx.
+    startTransition(() => {
+      router.push("/study");
+    });
   }
 
   return (

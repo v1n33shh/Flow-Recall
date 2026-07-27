@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Capacitor } from "@capacitor/core";
+import { applyStoredTheme } from "@/lib/theme";
 
 // Stamps .native-app onto <html> so globals.css can scope the
 // tap-highlight/overscroll/user-select overrides to the Capacitor shell only
@@ -12,6 +13,9 @@ export default function NativeAppClass() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
       document.documentElement.classList.add("native-app");
+      // Restores the Account screen's Appearance preference on cold launch -
+      // otherwise every relaunch would silently reset to dark.
+      applyStoredTheme();
     }
   }, []);
 

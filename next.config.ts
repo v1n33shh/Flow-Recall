@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { version } from "./package.json";
 
 // The Vercel deployment (`next build`) and the Capacitor Android shell
 // (`BUILD_TARGET=capacitor next build`) come from the same source but need
@@ -10,13 +11,19 @@ import type { NextConfig } from "next";
 // NEXT_PUBLIC_API_URL (see src/lib/apiUrl.ts).
 const isCapacitorBuild = process.env.BUILD_TARGET === "capacitor";
 
+// Inlined at build time so the native Account screen's version footer always
+// matches whatever was actually shipped, without hand-editing it per release.
+const env = { NEXT_PUBLIC_APP_VERSION: version };
+
 const nextConfig: NextConfig = isCapacitorBuild
   ? {
       output: "export",
       // No image optimization server exists on-device; ship avatars as-is.
       images: { unoptimized: true },
+      env,
     }
   : {
+      env,
       async headers() {
         return [
           {

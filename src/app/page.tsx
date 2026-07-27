@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, useMotionValue, useSpring, useTransform, type MotionValue } from "motion/react";
@@ -455,7 +455,12 @@ export default function Home() {
       clearProgress(deck.id);
     }
     setStudyDeck(deck.id, deck.concepts);
-    router.push("/study");
+    // Marks the route change (and /study's heavier initial render) as a low
+    // priority transition, so the button's own tap feedback isn't blocked
+    // waiting for that render to commit - see PageTransition.tsx.
+    startTransition(() => {
+      router.push("/study");
+    });
   }
 
   function handleDelete(id: string, event: ReactMouseEvent) {

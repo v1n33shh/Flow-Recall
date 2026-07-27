@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
@@ -348,8 +348,8 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         style={{ marginTop: "env(safe-area-inset-top)" }}
       >
         <motion.div
-          className="h-full bg-accent"
-          animate={{ width: `${progress * 100}%` }}
+          className="h-full w-full origin-left bg-accent"
+          animate={{ scaleX: progress }}
           transition={{ type: "spring", stiffness: 200, damping: 30 }}
         />
       </div>
@@ -359,7 +359,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
           bar; sits top-left, clear of the top-right streak flame. */}
       <button
         type="button"
-        onClick={() => router.push("/ingest")}
+        onClick={() => startTransition(() => router.push("/ingest"))}
         aria-label="Exit study session"
         className="absolute left-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-zinc-300 backdrop-blur-md transition-colors hover:bg-white/10 active:scale-95"
         style={{ marginTop: "env(safe-area-inset-top)" }}

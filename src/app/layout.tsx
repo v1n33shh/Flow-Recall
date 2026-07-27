@@ -138,7 +138,16 @@ export default function RootLayout({
         <link rel="stylesheet" href={READER_FONTS_HREF} />
       </head>
       <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
-        <SessionProvider basePath={`${capacitorApiOrigin}/api/auth`}>
+        {/* refetchOnWindowFocus/refetchInterval=0 are next-auth's own defaults
+            (see node_modules/next-auth/react.js) - spelled out explicitly so
+            intent reads at the call site, but they don't change behavior on
+            their own. The actual fix for cold-launch stale reads on native is
+            MobileAuthBridge's forced getSession() (mount + Capacitor 'resume'). */}
+        <SessionProvider
+          basePath={`${capacitorApiOrigin}/api/auth`}
+          refetchOnWindowFocus={true}
+          refetchInterval={0}
+        >
           <NativeAppClass />
           <MobileAuthBridge />
           <Navbar />

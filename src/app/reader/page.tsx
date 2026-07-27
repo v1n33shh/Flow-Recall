@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, startTransition, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "motion/react";
@@ -193,10 +193,20 @@ function ReaderPageContent() {
   const bookId = searchParams.get("book");
 
   if (bookId) {
-    return <ReaderOpenDispatcher key={bookId} bookId={bookId} onExit={() => router.push("/reader")} />;
+    return (
+      <ReaderOpenDispatcher
+        key={bookId}
+        bookId={bookId}
+        onExit={() => startTransition(() => router.push("/reader"))}
+      />
+    );
   }
 
-  return <ReaderLibrary onOpenBook={(id) => router.push(`/reader?book=${id}`)} />;
+  return (
+    <ReaderLibrary
+      onOpenBook={(id) => startTransition(() => router.push(`/reader?book=${id}`))}
+    />
+  );
 }
 
 export default function ReaderPage() {

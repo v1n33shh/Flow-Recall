@@ -7,7 +7,11 @@ import { useRouter } from "next/navigation";
 import { getSession, signOut, useSession } from "next-auth/react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Capacitor } from "@capacitor/core";
+import { Browser } from "@capacitor/browser";
 import SignOutButton from "@/components/SignOutButton";
+import GoogleIcon from "@/components/GoogleIcon";
+import LogoMark from "@/components/LogoMark";
+import { apiUrl } from "@/lib/apiUrl";
 import { vibrateTap } from "@/lib/haptics";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
 
@@ -224,20 +228,81 @@ function AccountSkeleton() {
 }
 
 function SignedOutPrompt() {
+  const [loading, setLoading] = useState(false);
+
+  // Bypasses the in-app /login page entirely. That page's Google button
+  // (src/app/login/page.tsx handleGoogle) opens the system browser at
+  // /login?mobile=1 specifically so its own useEffect can read that query
+  // param and auto-fire signIn("google") - Auth.js needs a same-origin,
+  // CSRF-protected POST that can't be proxied through CapacitorHttp, and
+  // Google blocks its consent screen inside an embedded WebView regardless.
+  // Routing here through <Link href="/login"> first would land on that same
+  // static page via an in-app client-side transition with no query string at
+  // all, so the auto-trigger would never fire - the user would tap "Continue
+  // with Google" a second time for nothing to visibly happen until they
+  // realized they had to tap it once *there* too. One tap, straight to the
+  // real flow.
+  //
+  // No Capacitor.isNativePlatform() branch here on purpose: this component
+  // only ever renders from NativeAccountScreen, which AccountPage already
+  // gates on isNative - a redundant check here would just be a dead branch.
+  function handleGoogle() {
+    vibrateTap();
+    setLoading(true);
+    void Browser.open({ url: apiUrl("/login?mobile=1") }).finally(() => setLoading(false));
+  }
+
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/5 text-3xl">
-        👋
-      </span>
-      <h1 className="text-xl font-semibold tracking-tight text-zinc-100">You&apos;re not signed in</h1>
-      <p className="text-sm text-zinc-500">Sign in to see your plan, streak, and account settings.</p>
-      <Link
-        href="/login"
-        onClick={vibrateTap}
-        className="mt-2 inline-flex items-center justify-center rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3 text-sm font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 active:scale-[0.98]"
+    <main className="relative flex w-full flex-1 flex-col items-center justify-center gap-5 overflow-hidden px-6 py-16 text-center">
+      <div aria-hidden="true" className="signed-out-glow pointer-events-none absolute inset-0 -z-10" />
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.85 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: "spring", stiffness: 320, damping: 22 }}
+        className="relative flex h-16 w-16 items-center justify-center rounded-[20px] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_32px_-8px_rgba(0,0,0,0.7)]"
       >
-        Sign in
-      </Link>
+        <LogoMark className="h-9 w-9" />
+        <div className="pointer-events-none absolute inset-0 rounded-[20px] ring-1 ring-inset ring-white/5" />
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 380, damping: 32, delay: 0.08 }}
+      >
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Welcome to FlowRecall</h1>
+        <p className="mx-auto mt-2 max-w-[22rem] text-sm text-zinc-500">
+          Sign in to see your plan, streak, and account settings.
+        </p>
+      </motion.div>
+
+      <motion.button
+        type="button"
+        onClick={handleGoogle}
+        disabled={loading}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 380, damping: 32, delay: 0.16 }}
+        className="mt-2 flex w-full max-w-xs items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-6 py-3.5 text-sm font-medium text-zinc-100 transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <GoogleIcon />
+        {loading ? "Opening..." : "Continue with Google"}
+      </motion.button>
+
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.24 }}
+      >
+        <Link
+          href="/login"
+          onClick={vibrateTap}
+          className="text-sm text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-300 hover:underline"
+        >
+          or sign in with email
+        </Link>
+      </motion.div>
     </main>
   );
 }

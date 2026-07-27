@@ -157,3 +157,27 @@ body {
     font-size: 16px;
   }
 }
+
+/* Ambient background for the native SignedOutPrompt (src/app/account/page.tsx)
+   - two soft accent-tinted glows drifting via background-position, which is
+   paint-only (no layout/repaint-every-descendant cost like animating filter/
+   blur would be). Fine here specifically because it's one element on a
+   static, non-scrolling "dead end" screen, not something sitting behind
+   scrolling content the way MobileTabBar's backdrop-blur is. */
+@keyframes signed-out-glow-shift {
+  0%,
+  100% {
+    background-position: 0% 30%, 100% 70%;
+  }
+  50% {
+    background-position: 30% 60%, 70% 40%;
+  }
+}
+
+.signed-out-glow {
+  background-image:
+    radial-gradient(45% 40% at 50% 50%, hsl(var(--accent) / 0.16), transparent 70%),
+    radial-gradient(40% 35% at 50% 50%, hsl(var(--accent) / 0.1), transparent 70%);
+  background-size: 160% 160%, 160% 160%;
+  animation: signed-out-glow-shift 12s ease-in-out infinite;
+}

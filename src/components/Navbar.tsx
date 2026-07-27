@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
+import LogoMark from "@/components/LogoMark";
 import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
 
@@ -56,40 +57,7 @@ export default function Navbar() {
         >
           {/* Custom SVG Logo: Elegant Flowing 'F' */}
           <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_2px_8px_-2px_rgba(0,0,0,0.5)] sm:h-[38px] sm:w-[38px] transition-transform duration-300 group-hover:scale-105 group-active:scale-95">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 sm:h-6 sm:w-6"
-            >
-              <path
-                d="M8 20V9a5 5 0 0 1 5-5h5"
-                stroke="url(#grad-f)"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M8 12h5"
-                stroke="#F1F5F9"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <defs>
-                <linearGradient
-                  id="grad-f"
-                  x1="8"
-                  y1="4"
-                  x2="18"
-                  y2="20"
-                  gradientUnits="userSpaceOnUse"
-                >
-                  <stop stopColor="#3B82F6" />
-                  <stop offset="1" stopColor="#93C5FD" />
-                </linearGradient>
-              </defs>
-            </svg>
+            <LogoMark className="h-5 w-5 sm:h-6 sm:w-6" />
             <div className="absolute inset-0 rounded-[10px] ring-1 ring-inset ring-white/5 pointer-events-none" />
           </div>
           <span className="font-retro text-lg text-white transition-colors group-hover:text-zinc-200 sm:text-2xl mt-0.5 sm:mt-1">

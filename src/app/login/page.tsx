@@ -50,7 +50,7 @@ export default function LoginPage() {
     }
   }, []);
 
-  function handleGoogle() {
+  async function handleGoogle() {
     vibrateTap();
     setLoading(true);
 
@@ -66,7 +66,24 @@ export default function LoginPage() {
       // callback then redirects that browser to /api/mobile-callback, which
       // hands the session back to the app via a flowrecall:// deep link -
       // see src/components/MobileAuthBridge.tsx and src/lib/mobileAuth.ts.
-      void Browser.open({ url: apiUrl("/login?mobile=1") }).finally(() => setLoading(false));
+      //
+      // async/try/catch/finally (not a .then/.finally chain) so a
+      // synchronous throw from Browser.open itself - not just a rejected
+      // promise - still resets `loading` and surfaces an error, instead of
+      // leaving the button stuck disabled with no visible failure. See the
+      // matching handleGoogle in src/app/account/page.tsx's SignedOutPrompt.
+      try {
+        await Browser.open({ url: apiUrl("/login?mobile=1") });
+      } catch (err) {
+        try {
+          window.open(apiUrl("/login?mobile=1"), "_system");
+        } catch {
+          // Swallowed - the alert below is what actually surfaces the failure.
+        }
+        alert(`Couldn't open sign-in: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 

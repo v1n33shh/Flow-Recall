@@ -246,10 +246,39 @@ function SignedOutPrompt() {
   // No Capacitor.isNativePlatform() branch here on purpose: this component
   // only ever renders from NativeAccountScreen, which AccountPage already
   // gates on isNative - a redundant check here would just be a dead branch.
-  function handleGoogle() {
+  //
+  // Diffed byte-for-byte against login/page.tsx's handleGoogle: the
+  // Browser.open call itself is identical (same options, same apiUrl()
+  // construction) - so if this hangs on device while that one works, it
+  // isn't a difference in this line. What WAS a real gap: the old
+  // `Browser.open(...).finally(...)` only resets `loading` if Browser.open
+  // returns a promise at all - a plugin call that throws SYNCHRONOUSLY
+  // (bridge not ready, plugin not found, whatever) would skip the .finally
+  // entirely and leave the button permanently stuck showing "Opening...".
+  // async/try/catch/finally below closes that gap regardless of whether
+  // it's the actual cause, and the alert() surfaces whatever the real error
+  // is next time this is tested on device - which is otherwise invisible,
+  // since Capacitor plugin errors don't reach the browser console the way a
+  // normal web exception would.
+  async function handleGoogle() {
     vibrateTap();
     setLoading(true);
-    void Browser.open({ url: apiUrl("/login?mobile=1") }).finally(() => setLoading(false));
+    try {
+      await Browser.open({ url: apiUrl("/login?mobile=1") });
+    } catch (err) {
+      // Last-resort fallback: if the native Browser plugin itself is the
+      // thing failing, window.open('_system') is the one other mechanism
+      // Android WebViews honor for handing a URL to the system browser -
+      // Capacitor's own web fallback for this plugin uses the same call.
+      try {
+        window.open(apiUrl("/login?mobile=1"), "_system");
+      } catch {
+        // Swallowed - the alert below is what actually surfaces the failure.
+      }
+      alert(`Couldn't open sign-in: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

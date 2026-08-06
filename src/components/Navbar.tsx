@@ -56,9 +56,9 @@ export default function Navbar() {
           className="group flex shrink-0 items-center gap-1.5 sm:gap-3"
         >
           {/* Custom SVG Logo: Elegant Flowing 'F' */}
-          <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[10px] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_2px_8px_-2px_rgba(0,0,0,0.5)] sm:h-[38px] sm:w-[38px] transition-transform duration-300 group-hover:scale-105 group-active:scale-95">
-            <LogoMark className="h-5 w-5 sm:h-6 sm:w-6" />
-            <div className="absolute inset-0 rounded-[10px] ring-1 ring-inset ring-white/5 pointer-events-none" />
+          <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[10px] sm:h-[38px] sm:w-[38px] transition-transform duration-300 group-hover:scale-105 group-active:scale-95">
+            <LogoMark className="h-full w-full" />
+            <div className="absolute inset-0 rounded-[10px] ring-1 ring-inset ring-white/10 pointer-events-none" />
           </div>
           <span className="font-retro text-lg text-white transition-colors group-hover:text-zinc-200 sm:text-2xl mt-0.5 sm:mt-1">
             FlowRecall

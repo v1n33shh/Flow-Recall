@@ -17,8 +17,8 @@ import {
 import type { HighlightRecord } from "@/lib/types";
 import {
   anchorFromRect,
+  attachLongPressToDefine,
   getBlockContext,
-  handleSelectionTouchEnd,
   isCoarsePointer,
   type PendingSelection,
   type SelectionAnchor,
@@ -36,6 +36,7 @@ import {
 } from "@/lib/readerPreferences";
 
 const READER_FONTS_LINK_ID = "flowrecall-reader-fonts";
+const READER_SELECT_GUARD_STYLE_ID = "flowrecall-reader-select-guard";
 
 /** epub.js's content iframes are separate documents that don't inherit the
  * parent page's stylesheets - Display Settings' "Modern Sans"/"Legible"
@@ -50,6 +51,29 @@ function ensureReaderFontsLoaded(doc: Document) {
   link.rel = "stylesheet";
   link.href = READER_FONTS_HREF;
   doc.head.appendChild(link);
+}
+
+/** Disables native text selection and its callout menu inside the chapter
+ * iframe on touch devices - each chapter renders into its own sandboxed
+ * document that doesn't inherit globals.css's .native-app rules, so this has
+ * to be injected directly. Without it, Android's "Copy | Look Up | Share"
+ * action bar would still be free to form the instant a real Selection does -
+ * long-press-to-define resolves the word straight from the pointer's
+ * coordinates instead (see attachLongPressToDefine), so no Selection ever
+ * needs to exist on touch. Guarded by id since "rendered" refires per
+ * chapter/page against what may be the same document (e.g. a font-size change). */
+function ensureNoNativeSelection(doc: Document) {
+  if (doc.getElementById(READER_SELECT_GUARD_STYLE_ID)) return;
+  const style = doc.createElement("style");
+  style.id = READER_SELECT_GUARD_STYLE_ID;
+  style.textContent = `
+    * {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+  `;
+  doc.head.appendChild(style);
 }
 
 type LoadState = "loading" | "ready" | "error";
@@ -192,12 +216,9 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
         });
 
         rendition.on("selected", async (cfiRange: string, contents: Contents) => {
-          // Touch devices use the synchronous touchend path below instead -
-          // epub.js's own "selected" event is itself debounced (see epubjs/
-          // src/contents.js), which on mobile would fire too late to collapse
-          // the selection before the OS's native callout menu paints.
-          if (isCoarsePointer()) return;
-
+          // Trigger the definition popup instantly upon text selection,
+          // rather than waiting for touchend.
+          
           const domSelection = contents.window.getSelection();
           if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) return;
 
@@ -229,40 +250,33 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
           ensureReaderFontsLoaded(contents.document);
           contents.document.addEventListener("touchstart", clearPopover);
           // Desktop only - browsers replay a SYNTHETIC "mousedown" right
-          // after a real touchend (for legacy mouse-oriented code), which
-          // would otherwise immediately wipe out the selection touchend's
-          // handler below just captured, a moment before it ever renders.
-          // touchstart above already covers "clear on new touch interaction".
+          // after a real mouseup/click (for legacy mouse-oriented code),
+          // which would otherwise immediately wipe out a selection the
+          // "selected" listener above just captured, a moment before it ever
+          // renders. touchstart above already covers "clear on new touch
+          // interaction" for the long-press path.
           if (!isCoarsePointer()) {
             contents.document.addEventListener("mousedown", clearPopover);
           }
 
-          // Mobile: react on touchend itself, synchronously, so a drag-
-          // selection's OS callout menu ("Copy | Look Up | Share...") never
-          // gets a chance to paint - see selection.ts's handleSelectionTouchEnd
-          // for the full rationale. Each chapter gets its own iframe/document,
-          // so this has to be wired per-render rather than once.
           if (isCoarsePointer()) {
-            contents.document.addEventListener("touchend", (e: TouchEvent) => {
-              const frameEl = contents.window.frameElement as HTMLElement | null;
-              const frameRect = frameEl?.getBoundingClientRect();
-              const captured = handleSelectionTouchEnd({
-                event: e,
-                win: contents.window,
-                doc: contents.document,
-                container: contents.document.body,
-                // The "rendered"/"selected" callback param is typed as
-                // Contents but is actually an IframeView at runtime - it
-                // duplicates .window/.document directly (why those calls
-                // above work), but cfiFromRange only lives on its nested
-                // real Contents instance, which epub.js's own types don't
-                // model (its .d.ts assumes the param really is Contents).
-                derivePosition: (range) =>
-                  (contents as unknown as { contents: Contents }).contents.cfiFromRange(range),
-                offsetLeft: frameRect?.left ?? 0,
-                offsetTop: frameRect?.top ?? 0,
-              });
-              if (captured) setPopover({ kind: "selection", data: captured });
+            ensureNoNativeSelection(contents.document);
+
+            const frameEl = contents.window.frameElement as HTMLElement | null;
+            const frameRect = frameEl?.getBoundingClientRect();
+
+            attachLongPressToDefine({
+              target: contents.document,
+              doc: contents.document,
+              derivePosition: (range) => (contents as unknown as { contents: Contents }).contents.cfiFromRange(range),
+              onLongPress: (data) => {
+                import("@capacitor/haptics").then(({ Haptics, ImpactStyle }) => {
+                  Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+                });
+                setPopover({ kind: "selection", data });
+              },
+              offsetLeft: frameRect?.left ?? 0,
+              offsetTop: frameRect?.top ?? 0,
             });
           }
         });

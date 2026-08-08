@@ -338,7 +338,7 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
     >
       <div ref={scrollRef} onScroll={handleScroll} className="h-full w-full overflow-y-auto px-6 py-10 sm:px-10">
         <div
-          className="mx-auto max-w-2xl text-zinc-200"
+          className="reader-longpress-text mx-auto max-w-2xl text-zinc-200"
           style={{
             fontFamily: FONT_FAMILY_CSS[fontFamily],
             fontSize: `${fontPercent}%`,

@@ -142,12 +142,13 @@ function caretPointAt(doc: Document, x: number, y: number): CaretPoint | null {
   return null;
 }
 
-/** Resolves the single word under an exact tap point, for tap-to-define -
+/** Resolves the single word under an exact point, for long-press-to-define -
  * the whole reason this exists rather than just reading window.getSelection()
- * is that a plain tap never creates a browser Selection at all, so this path
- * has zero native-selection-menu risk on mobile. Deliberately scoped to a
- * single text node (never expands across markup/sibling boundaries) - a tap
- * that lands exactly on a node seam does nothing rather than guessing. */
+ * is that native selection is disabled entirely on touch (see globals.css's
+ * reader-longpress-text rule), so there's never a browser Selection to read
+ * in the first place. Deliberately scoped to a single text node (never
+ * expands across markup/sibling boundaries) - a press that lands exactly on
+ * a node seam does nothing rather than guessing. */
 export function wordRangeAtPoint(doc: Document, x: number, y: number): Range | null {
   const caret = caretPointAt(doc, x, y);
   if (!caret || caret.node.nodeType !== Node.TEXT_NODE) return null;
@@ -171,47 +172,90 @@ export function wordRangeAtPoint(doc: Document, x: number, y: number): Range | n
   return range;
 }
 
+// How long a touch has to stay down, roughly in place, before it counts as a
+// long-press rather than a tap/scroll/swipe.
+export const LONG_PRESS_MS = 500;
+
+// A long-press timer is cancelled if the touch drifts further than this
+// before the timeout fires - distinguishes a held finger from the start of a
+// scroll or swipe gesture.
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
 /**
- * The core mobile interaction, shared verbatim by useNativeSelection (top-level
- * document) and EpubReaderView (each chapter's sandboxed iframe document) so
- * the subtle collapse-before-paint timing lives in exactly one place.
+ * The core mobile long-press interaction, shared verbatim by useNativeSelection
+ * (top-level document) and EpubReaderView (each chapter's sandboxed iframe
+ * document) so the pointerdown-hold-timeout-vs-move/lift-cancel logic lives
+ * in exactly one place.
  *
- * Fires on touchend rather than a debounced selectionchange: if the touch
- * ended with a live, non-collapsed drag-selection, we capture its text/rects
- * and immediately call `removeAllRanges()` in that same synchronous tick -
- * collapsing before the browser gets a chance to paint its native "Copy |
- * Look Up | Share" callout, which is bound to the (now-gone) live selection.
- * If no selection resulted (a plain tap), falls back to wordRangeAtPoint for
- * single-word lookup - a path that never creates a Selection in the first
- * place, so it carries zero native-menu risk on its own.
+ * Native selection is expected to already be disabled via CSS (-webkit-user-
+ * select/-webkit-touch-callout: none) on whatever `target` this attaches to -
+ * unlike the old touchend-based approach, there's no live browser Selection
+ * to capture-then-collapse here, since none is ever allowed to form: a
+ * long-press resolves the word directly from the pointer's coordinates via
+ * caretRangeFromPoint (wordRangeAtPoint), so the OS callout menu it would
+ * otherwise trigger never gets a selection to attach to in the first place.
+ *
+ * Returns a cleanup function that cancels any pending timer and removes all
+ * listeners - callers own its lifetime the same way they'd own any other
+ * addEventListener cleanup.
  */
-export function handleSelectionTouchEnd(params: {
-  event: TouchEvent;
-  win: Window;
+export function attachLongPressToDefine(params: {
+  target: EventTarget;
   doc: Document;
-  container: Node;
   derivePosition: DerivePosition;
+  onLongPress: (selection: PendingSelection) => void;
   offsetLeft?: number;
   offsetTop?: number;
-}): PendingSelection | null {
-  const { event, win, doc, container, derivePosition, offsetLeft = 0, offsetTop = 0 } = params;
-  const domSelection = win.getSelection();
+}): () => void {
+  const { target, doc, derivePosition, onLongPress, offsetLeft = 0, offsetTop = 0 } = params;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let origin: { x: number; y: number; pointerId: number } | null = null;
 
-  if (domSelection && domSelection.rangeCount > 0 && !domSelection.isCollapsed) {
-    const range = domSelection.getRangeAt(0);
-    if (container.contains(range.commonAncestorContainer)) {
-      const captured = captureSelectionFromRange(range, true, derivePosition, offsetLeft, offsetTop);
-      domSelection.removeAllRanges();
-      if (captured) return captured;
-    }
+  function cancel() {
+    clearTimeout(timer);
+    timer = undefined;
+    origin = null;
   }
 
-  const touch = event.changedTouches[0];
-  if (!touch) return null;
-  const target = doc.elementFromPoint(touch.clientX, touch.clientY);
-  if (!target || !container.contains(target)) return null;
+  function fire() {
+    const point = origin;
+    origin = null;
+    if (!point) return;
+    const range = wordRangeAtPoint(doc, point.x, point.y);
+    if (!range) return;
+    const captured = captureSelectionFromRange(range, true, derivePosition, offsetLeft, offsetTop);
+    if (captured) onLongPress(captured);
+  }
 
-  const range = wordRangeAtPoint(doc, touch.clientX, touch.clientY);
-  if (!range) return null;
-  return captureSelectionFromRange(range, true, derivePosition, offsetLeft, offsetTop);
+  function onPointerDown(e: Event) {
+    const pe = e as PointerEvent;
+    if (pe.pointerType !== "touch") return;
+    origin = { x: pe.clientX, y: pe.clientY, pointerId: pe.pointerId };
+    timer = setTimeout(fire, LONG_PRESS_MS);
+  }
+
+  function onPointerMove(e: Event) {
+    const pe = e as PointerEvent;
+    if (!origin || pe.pointerId !== origin.pointerId) return;
+    if (Math.hypot(pe.clientX - origin.x, pe.clientY - origin.y) > LONG_PRESS_MOVE_TOLERANCE_PX) cancel();
+  }
+
+  function onPointerUp(e: Event) {
+    const pe = e as PointerEvent;
+    if (!origin || pe.pointerId !== origin.pointerId) return;
+    cancel();
+  }
+
+  target.addEventListener("pointerdown", onPointerDown);
+  target.addEventListener("pointermove", onPointerMove);
+  target.addEventListener("pointerup", onPointerUp);
+  target.addEventListener("pointercancel", onPointerUp);
+
+  return () => {
+    cancel();
+    target.removeEventListener("pointerdown", onPointerDown);
+    target.removeEventListener("pointermove", onPointerMove);
+    target.removeEventListener("pointerup", onPointerUp);
+    target.removeEventListener("pointercancel", onPointerUp);
+  };
 }

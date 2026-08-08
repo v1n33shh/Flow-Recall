@@ -145,6 +145,28 @@ body {
   user-select: text;
 }
 
+/* Long-press-to-define needs the OS to never form a native selection in the
+   first place - Android's copy/paste action bar is tied to the selection
+   itself, not to any DOM event we could preventDefault on after the fact.
+   Re-disables selection (and the long-press callout menu, which -webkit-
+   user-select alone doesn't suppress) on exactly the elements the block
+   above just opted back into text-selection - the PDF text layer and the
+   plain-text reader's paragraphs - since both now resolve the word under a
+   long-press via caretRangeFromPoint instead. Coarse-pointer-scoped only: a
+   touchscreen laptop with a mouse attached still gets normal drag-to-select.
+   Desktop selection (EpubReaderView's "selected" listener, TextReaderView/
+   PdfReaderView's selectionchange path) is untouched either way. */
+@media (pointer: coarse) {
+  .native-app .textLayer,
+  .native-app .textLayer *,
+  .native-app .reader-longpress-text,
+  .native-app .reader-longpress-text * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
 /* iOS Safari/WebView auto-zooms the whole page on focus of any form field
    under 16px - login/register's text-sm (14px) inputs trigger this. It's
    the single biggest "this is a website in a box" tell, so it's floored

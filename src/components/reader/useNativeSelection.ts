@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import {
+  attachLongPressToDefine,
   captureSelectionFromRange,
-  handleSelectionTouchEnd,
   isCoarsePointer,
   type DerivePosition,
   type PendingSelection,
@@ -24,10 +24,11 @@ const SELECTION_DEBOUNCE_MS = 250;
  * offsets), so this hook stays agnostic of either.
  *
  * Desktop and touch get genuinely different interaction models here - see
- * selection.ts's handleSelectionTouchEnd doc comment for why touch can't
- * just reuse the debounced selectionchange path: it has to react
- * synchronously on touchend to collapse the selection before the OS's
- * native "Copy | Look Up | Share" menu paints. */
+ * selection.ts's attachLongPressToDefine doc comment for why touch can't
+ * just reuse the debounced selectionchange path: native selection (and the
+ * OS callout menu tied to it) is disabled entirely on touch via CSS, so a
+ * long-press has to resolve the word directly from the pointer's
+ * coordinates instead of ever reading a browser Selection. */
 export function useNativeSelection(containerRef: RefObject<HTMLElement | null>, derivePosition: DerivePosition) {
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -64,13 +65,12 @@ export function useNativeSelection(containerRef: RefObject<HTMLElement | null>, 
     const container = containerRef.current;
     if (!container) return;
 
-    const onTouchEnd = (e: TouchEvent) => {
-      const captured = handleSelectionTouchEnd({ event: e, win: window, doc: document, container, derivePosition });
-      if (captured) setSelection(captured);
-    };
-
-    container.addEventListener("touchend", onTouchEnd);
-    return () => container.removeEventListener("touchend", onTouchEnd);
+    return attachLongPressToDefine({
+      target: container,
+      doc: document,
+      derivePosition,
+      onLongPress: setSelection,
+    });
   }, [containerRef, derivePosition]);
 
   // A fresh tap/click starting inside the reading container dismisses

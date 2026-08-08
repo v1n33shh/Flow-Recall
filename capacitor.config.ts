@@ -19,6 +19,23 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    // The "Seamless Splash Handoff" pattern: this plugin installs the native
+    // Android 12+ SplashScreen (see styles.xml's AppTheme.NoActionBarLaunch)
+    // on launch and keeps it on-screen - launchAutoHide is NOT false, on
+    // purpose, so a JS crash before AppLoader mounts can't brick the launch
+    // behind a permanent splash; launchShowDuration is just a generous safety
+    // ceiling. In the normal case, src/components/AppLoader.tsx calls
+    // SplashScreen.hide() within a couple of frames of mounting, long before
+    // this ceiling is ever reached.
+    SplashScreen: {
+      launchAutoHide: true,
+      launchShowDuration: 6000,
+      launchFadeOutDuration: 300,
+      backgroundColor: "#050505",
+      androidSplashResourceName: "splash",
+      androidScaleType: "CENTER_CROP",
+      showSpinner: false,
+    },
   },
 };
 

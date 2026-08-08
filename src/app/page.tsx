@@ -266,7 +266,7 @@ function FeaturesSection() {
     >
       <motion.div {...reveal()} className="mx-auto max-w-3xl text-center">
         <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-zinc-300 md:backdrop-blur-md">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_rgba(59,130,246,0.7)]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
           Why FlowRecall
         </p>
         <h2
@@ -574,7 +574,7 @@ export default function Home() {
           transition={SNAP}
           className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-zinc-300 md:backdrop-blur-md"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_rgba(59,130,246,0.7)]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
           Active recall, disguised as doomscrolling
         </motion.p>
         <motion.h1
@@ -615,7 +615,7 @@ export default function Home() {
               intensifies on hover so it reads as raised and unmistakably clickable. */}
           <Link
             href="/ingest"
-            className="w-full rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3.5 text-center text-base font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(59,130,246,0.75)] hover:scale-[1.03] active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
+            className="w-full rounded-full bg-accent px-6 py-3.5 text-center text-base font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] hover:scale-[1.03] active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
           >
             Start ingesting notes
           </Link>
@@ -678,7 +678,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => handleStudyNow(deck, isFullyMastered)}
-                      className="mt-4 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(37,99,235,0.55)] px-4 py-2.5 text-sm font-medium text-white transition-all duration-200 hover:from-blue-400 hover:to-blue-500 active:scale-[0.98]"
+                      className="mt-4 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 active:scale-[0.98]"
                     >
                       {buttonLabel}
                     </button>

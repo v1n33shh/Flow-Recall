@@ -65,9 +65,10 @@ export default function FeedSlide({
         {/* The overflow-hidden + relative here contains the full-width sweep. */}
         <div className="relative mb-6 flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl text-xs font-medium text-zinc-400">
 
-          {/* Full-width materialisation sweep — a blue light bar that travels
-              left→right across the entire header the moment the card enters
-              the viewport, signalling "this card was just generated for you". */}
+          {/* Full-width materialisation sweep — an accent-colored light bar
+              that travels left→right across the entire header the moment
+              the card enters the viewport, signalling "this card was just
+              generated for you". */}
           {swoopVisible && (
             <motion.div
               aria-hidden="true"
@@ -77,7 +78,7 @@ export default function FeedSlide({
               transition={{ duration: 0.7, ease: [0.25, 0, 0.2, 1] }}
               style={{
                 background:
-                  "linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.45) 50%, transparent 100%)",
+                  "linear-gradient(90deg, transparent 0%, hsl(var(--accent) / 0.45) 50%, transparent 100%)",
               }}
             />
           )}
@@ -94,13 +95,13 @@ export default function FeedSlide({
           </span>
 
           {/* "Generated" badge — shown persistently on Infinite Recall cards.
-               Spring-pops in and glows azure to mark AI-generated content. */}
+               Spring-pops in and glows to mark AI-generated content. */}
           {isNew && (
             <motion.span
               initial={{ opacity: 0, scale: 0.6 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ type: "spring", stiffness: 380, damping: 18, delay: 0.05 }}
-              className="rounded-full border border-accent/50 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-accent shadow-[0_0_12px_-2px_rgba(59,130,246,0.6)]"
+              className="rounded-full border border-accent/50 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-accent shadow-[0_0_12px_-2px_hsl(var(--accent)/0.6)]"
             >
               Generated
             </motion.span>

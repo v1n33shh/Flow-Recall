@@ -188,7 +188,7 @@ export default function CompletionSlide({
             </p>
             <Link
               href="/pricing"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2 text-xs font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[0_4px_16px_-4px_rgba(37,99,235,0.6)] transition-all hover:from-blue-400 hover:to-blue-500 active:scale-[0.98]"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.4)] transition-all hover:bg-accent/90 active:scale-[0.98]"
             >
               Upgrade to Pro
               <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3" aria-hidden="true">
@@ -213,7 +213,7 @@ export default function CompletionSlide({
           </Link>
           <Link
             href="/ingest"
-            className="flex-1 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[0_6px_20px_-4px_rgba(37,99,235,0.6)] transition-all hover:from-blue-400 hover:to-blue-500 active:scale-[0.98]"
+            className="flex-1 rounded-full bg-accent px-4 py-2.5 text-center text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[0_6px_20px_-4px_rgba(0,0,0,0.4)] transition-all hover:bg-accent/90 active:scale-[0.98]"
           >
             Study more
           </Link>

@@ -100,10 +100,14 @@ function flattenToc(items: NavItem[]): NavItem[] {
 }
 
 function registerObsidianTheme(rendition: Rendition) {
-  // Matches the app's "Obsidian Monochrome + Electric Azure" tokens, but
-  // swaps to a serif reading face - established typography practice for
-  // long-form body text, and distinct enough from the UI chrome's Geist Sans
-  // that "reading mode" reads as its own deliberate surface, not a bug.
+  // Matches the app's "Pure Monochrome" tokens, but swaps to a serif reading
+  // face - established typography practice for long-form body text, and
+  // distinct enough from the UI chrome's Geist Sans that "reading mode"
+  // reads as its own deliberate surface, not a bug. Always forced dark
+  // (unconditional, doesn't follow the light/dark toggle) - epub.js renders
+  // into its own sandboxed iframe document, which can't see our :root
+  // custom properties, so the accent here is the literal dark-mode value
+  // (brilliant white) rather than hsl(var(--accent)).
   rendition.themes.register("obsidian", {
     body: {
       background: "#050505 !important",
@@ -112,8 +116,8 @@ function registerObsidianTheme(rendition: Rendition) {
       "line-height": "1.75 !important",
     },
     p: { "margin-bottom": "1.1em !important" },
-    a: { color: "#3B82F6 !important" },
-    "::selection": { background: "rgba(59,130,246,0.35)" },
+    a: { color: "#FFFFFF !important" },
+    "::selection": { background: "rgba(255,255,255,0.25)" },
   });
   rendition.themes.select("obsidian");
 }

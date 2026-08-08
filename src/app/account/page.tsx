@@ -14,6 +14,7 @@ import LogoMark from "@/components/LogoMark";
 import { apiUrl } from "@/lib/apiUrl";
 import { vibrateTap } from "@/lib/haptics";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
+import { useIsNative } from "@/lib/useIsNative";
 
 // Was a Server Component reading `auth()` + `prisma.user.findUnique` directly.
 // That doesn't run in the Capacitor static export (no server behind the
@@ -35,10 +36,7 @@ export default function AccountPage() {
   // fired the redirect to "/" before this component ever swapped to
   // NativeAccountScreen. That, not AnimatePresence, was the actual mechanism
   // behind the tab bouncing to home.
-  const [isNative, setIsNative] = useState<boolean | null>(null);
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  const isNative = useIsNative<boolean | null>(null);
 
   if (isNative === null) return <AccountSkeleton />;
 
@@ -439,7 +437,11 @@ function NativeAccountScreen() {
   const [graceElapsed, setGraceElapsed] = useState(false);
 
   useEffect(() => {
-    setThemeState(getTheme());
+    let mounted = true;
+    Promise.resolve().then(() => {
+      if (mounted) setThemeState(getTheme());
+    });
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {

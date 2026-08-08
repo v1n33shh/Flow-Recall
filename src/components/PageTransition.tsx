@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { Capacitor } from "@capacitor/core";
+import { useIsNative } from "@/lib/useIsNative";
 
 // Only active inside the Capacitor shell - the web deployment keeps its
 // existing instant navigation untouched. Slides the new route in from the
@@ -17,10 +18,7 @@ export default function PageTransition({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   // Computed post-mount (not during SSR/export) to avoid a hydration
   // mismatch between the server-rendered shell and the native runtime.
-  const [isNative, setIsNative] = useState(false);
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  const isNative = useIsNative();
 
   // will-change is only asserted WHILE the spring is actually running, then
   // released back to "auto" - see onAnimationStart/Complete below. Leaving

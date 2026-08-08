@@ -6,6 +6,7 @@ import MobileTabBar from "@/components/MobileTabBar";
 import MobileAuthBridge from "@/components/MobileAuthBridge";
 import NativeAppClass from "@/components/NativeAppClass";
 import PageTransition from "@/components/PageTransition";
+import AppLoader from "@/components/AppLoader";
 import { READER_FONTS_HREF } from "@/lib/readerPreferences";
 import "./globals.css";
 
@@ -118,7 +119,9 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#0A0A0A",
+  // Matches globals.css's --background (#050505) and the native Android
+  // splash's windowSplashScreenBackground exactly - see AppLoader.tsx.
+  themeColor: "#050505",
 };
 
 export default function RootLayout({
@@ -138,6 +141,7 @@ export default function RootLayout({
         <link rel="stylesheet" href={READER_FONTS_HREF} />
       </head>
       <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
+        <AppLoader />
         {/* refetchOnWindowFocus/refetchInterval=0 are next-auth's own defaults
             (see node_modules/next-auth/react.js) - spelled out explicitly so
             intent reads at the call site, but they don't change behavior on

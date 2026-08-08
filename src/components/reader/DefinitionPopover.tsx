@@ -204,7 +204,7 @@ function DefinitionContent({
           <button
             type="button"
             onClick={onDefine}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-[13px] font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(37,99,235,0.6)] transition-all duration-150 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97]"
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97]"
           >
             <span aria-hidden="true">✦</span> Define
           </button>
@@ -266,7 +266,7 @@ function DefinitionContent({
               <button
                 type="button"
                 onClick={onDefine}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-[13px] font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(37,99,235,0.6)] transition-all duration-150 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97]"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97]"
               >
                 <span aria-hidden="true">✦</span> Define
               </button>
@@ -319,7 +319,7 @@ function DefinitionContent({
             transition={{ duration: 0.18 }}
             className="flex flex-col items-center gap-3 py-1 text-center"
           >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-b from-accent/25 to-accent/10 ring-1 ring-inset ring-accent/40 shadow-[0_0_24px_-4px_rgba(59,130,246,0.5)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-b from-accent/25 to-accent/10 ring-1 ring-inset ring-accent/40 shadow-[0_0_24px_-4px_hsl(var(--accent)/0.5)]">
               <span className="text-2xl" aria-hidden="true">
                 🔒
               </span>
@@ -332,7 +332,7 @@ function DefinitionContent({
             </div>
             <Link
               href="/pricing"
-              className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-4 py-2.5 text-[13px] font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.6)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_36px_-4px_rgba(59,130,246,0.8)] active:scale-[0.97]"
+              className="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.5)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_36px_-4px_rgba(0,0,0,0.6)] active:scale-[0.97]"
             >
               <span aria-hidden="true">✦</span> Upgrade to Pro
             </Link>
@@ -403,7 +403,7 @@ function DefinitionContent({
                 type="button"
                 onClick={saveNoteDraft}
                 disabled={savingNote}
-                className="flex flex-1 items-center justify-center rounded-xl bg-gradient-to-b from-blue-500 to-blue-600 px-3 py-2 text-[13px] font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(37,99,235,0.6)] transition-all duration-150 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97] disabled:opacity-70"
+                className="flex flex-1 items-center justify-center rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97] disabled:opacity-70"
               >
                 {savingNote ? "Saving..." : "Save"}
               </button>
@@ -477,7 +477,7 @@ function FloatingCard({
         aria-label={`Definition of ${phrase}`}
         className={`fixed z-40 overflow-hidden rounded-2xl bg-surface/80 text-left backdrop-blur-xl transition-[top] duration-150 ease-out ${
           stageProps.stage.kind === "limit-reached"
-            ? "border border-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_40px_-6px_rgba(59,130,246,0.35),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
+            ? "border border-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_40px_-6px_hsl(var(--accent)/0.35),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
             : "border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
         }`}
         style={{ width: CARD_WIDTH, left, top, transformOrigin: anchor.placement === "below" ? "top center" : "bottom center" }}
@@ -571,7 +571,7 @@ function BottomSheet({
           aria-label={`Definition of ${phrase}`}
           className={`relative w-full max-w-lg overflow-hidden rounded-t-3xl bg-surface/95 text-left backdrop-blur-xl ${
             stageProps.stage.kind === "limit-reached"
-              ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_rgba(59,130,246,0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+              ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_hsl(var(--accent)/0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
               : "border-t border-white/10 shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
           }`}
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}

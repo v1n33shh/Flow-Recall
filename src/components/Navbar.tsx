@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
+import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
 import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
@@ -24,10 +25,7 @@ export default function Navbar() {
   const [streakOpen, setStreakOpen] = useState(false);
   // Computed post-mount (not during SSR/export) to avoid a hydration
   // mismatch between the server-rendered shell and the native runtime.
-  const [isNative, setIsNative] = useState(false);
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  const isNative = useIsNative();
 
   // The study feed and the reader are both meant to be full-bleed and
   // immersive - no persistent chrome on top of them. The reader draws its
@@ -123,7 +121,7 @@ export default function Navbar() {
             status !== "loading" && (
               <Link
                 href="/login"
-                className="shrink-0 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(37,99,235,0.55)] px-2.5 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium text-white transition-all duration-200 hover:from-blue-400 hover:to-blue-500 active:scale-[0.97]"
+                className="shrink-0 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-2.5 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 active:scale-[0.97]"
               >
                 Sign In
               </Link>

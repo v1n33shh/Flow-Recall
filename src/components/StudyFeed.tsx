@@ -416,7 +416,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
-            className="pointer-events-auto absolute left-4 right-4 top-16 z-30 rounded-2xl border border-accent/30 bg-black/90 px-4 py-3 text-left shadow-[0_8px_32px_-8px_rgba(37,99,235,0.5)] backdrop-blur-md"
+            className="pointer-events-auto absolute left-4 right-4 top-16 z-30 rounded-2xl border border-accent/30 bg-black/90 px-4 py-3 text-left shadow-[0_8px_32px_-8px_hsl(var(--accent)/0.4)] backdrop-blur-md"
           >
             <p className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</p>
             <p className="mt-1 text-sm font-medium text-white">
@@ -432,7 +432,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         )}
       </AnimatePresence>
 
-      {/* Infinite Recall Mode - floating Electric-Azure CTA + inline error. */}
+      {/* Infinite Recall Mode - floating accent CTA + inline error. */}
       <div
         className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
@@ -444,7 +444,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
-              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-accent/40 bg-accent/10 px-5 py-2 text-center text-xs font-semibold text-accent backdrop-blur-md shadow-[0_0_20px_-4px_rgba(59,130,246,0.6)]"
+              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-accent/40 bg-accent/10 px-5 py-2 text-center text-xs font-semibold text-accent backdrop-blur-md shadow-[0_0_20px_-4px_hsl(var(--accent)/0.5)]"
             >
               Swipe down — {shuffleSuccess} new cards await
             </motion.p>
@@ -469,7 +469,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
           onClick={handleInfiniteRecall}
           disabled={shuffling}
           whileTap={{ scale: 0.96 }}
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent shadow-[0_0_24px_-6px_rgba(59,130,246,0.7)] backdrop-blur-md transition-all duration-200 hover:bg-accent/20 hover:shadow-[0_0_32px_-4px_rgba(59,130,246,0.9)] active:scale-[0.98] disabled:cursor-wait"
+          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent shadow-[0_0_24px_-6px_hsl(var(--accent)/0.6)] backdrop-blur-md transition-all duration-200 hover:bg-accent/20 hover:shadow-[0_0_32px_-4px_hsl(var(--accent)/0.8)] active:scale-[0.98] disabled:cursor-wait"
         >
           {shuffling ? (
             <>
@@ -523,7 +523,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
                 </p>
                 <Link
                   href="/pricing"
-                  className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3.5 text-sm font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(59,130,246,0.75)] active:scale-[0.98]"
+                  className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-accent px-6 py-3.5 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] active:scale-[0.98]"
                 >
                   Upgrade to Pro
                 </Link>

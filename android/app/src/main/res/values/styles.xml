@@ -16,7 +16,24 @@
     </style>
 
 
+    <!-- Android 12+ native SplashScreen API (via androidx.core:core-splashscreen,
+         see build.gradle - it back-ports the same attrs to every API level this
+         app supports, min 24). windowSplashScreenAnimatedIcon takes a plain
+         static drawable just fine when no animation is set - the @capacitor/
+         splash-screen plugin installs this screen on launch (SplashScreen.java's
+         showWithAndroid12API) and keeps it on-screen until the JS layer calls
+         SplashScreen.hide() once the React AppLoader has painted an identical
+         frame (see capacitor.config.ts's SplashScreen.launchAutoHide and
+         src/components/AppLoader.tsx). No windowSplashScreenIconBackgroundColor -
+         the F sits directly on the flat background, no chip/square behind it.
+         postSplashScreenTheme swaps back to the real app theme once the splash
+         is torn down. android:background is intentionally NOT set here anymore -
+         it used to point at @drawable/splash (a single image scaled to fill the
+         whole screen), which is exactly the "app icon stretched into a giant
+         sticker" look this replaces. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/splashBackground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

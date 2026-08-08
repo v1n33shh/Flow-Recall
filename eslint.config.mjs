@@ -6,15 +6,16 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   // Override default ignores of eslint-config-next.
-  globalIgnores([
-    // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-    // Vendored pdf.js worker, copied verbatim from node_modules (see scripts/copy-pdf-worker.mjs).
-    "public/pdf.worker.min.mjs",
-  ]),
+  {
+    ignores: [
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+      "**/public/**",
+      "**/pdf.worker.min.mjs",
+    ]
+  }
 ]);
 
 export default eslintConfig;

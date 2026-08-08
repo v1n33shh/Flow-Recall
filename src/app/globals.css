@@ -2,26 +2,26 @@
 @config "../../tailwind.config.ts";
 
 /* ============================================================================
-   "Obsidian Monochrome + Electric Azure" — a strict monochrome foundation with
-   exactly ONE vibrant accent.
-
-   Discipline: ~95% of the UI is pure matte black + crisp white/grey type with
-   NO color tinting. The accent (Electric Azure #3B82F6) is reserved for the 5%
-   that signals intent — primary CTAs, focus states, and critical highlights —
-   so the eye is drawn to action instantly.
+   "Pure Monochrome" — a strict black-and-white discipline with NO color
+   anywhere. There is no separate accent hue: contrast itself (stark white
+   against deep black, or the exact inverse in light mode) is the only tool
+   used to signal primary actions, focus states, and intent - the Vercel/
+   Linear-tier "expensive minimalism" look.
 
    Tokens are stored as raw HSL channels (H S% L%) so hsl(var(--x)) can be used
    below AND with Tailwind opacity modifiers (bg-surface/60, text-accent/70) via
    color-mix.
 
-   Token map:
-     background          matte obsidian black, untinted        (#050505)
-     surface             elevated card/panel, neutral          (#0F0F0F)
-     border              neutral hairline                      (#262626)
-     muted-foreground    secondary / de-emphasized grey text   (#A3A3A3)
-     foreground          crisp near-white body/heading text    (#FAFAFA)
-     accent              Electric Azure — the ONLY accent       (#3B82F6)
-     accent-foreground   text on the accent                    (#FFFFFF)
+   Token map (dark mode / light mode):
+     background          matte obsidian black / near-white     (#050505 / #FCFCFC)
+     surface              elevated card/panel                   (#0F0F0F / #F2F2F2)
+     border               neutral hairline                       (#262626 / #E0E0E0)
+     muted-foreground     secondary / de-emphasized grey text    (#A3A3A3 / #666666)
+     foreground           crisp near-white / near-black body text (#FAFAFA / #0F0F0F)
+     accent               brilliant white / pitch black - the ONLY thing that
+                          "pops", precisely because it's the polar opposite of
+                          the background rather than a hue                     (#FFFFFF / #050505)
+     accent-foreground    text/icon color ON the accent - inverted             (#050505 / #FFFFFF)
    ========================================================================== */
 :root {
   --background: 0 0% 2%;
@@ -29,8 +29,8 @@
   --border: 0 0% 15%;
   --muted-foreground: 0 0% 64%;
   --foreground: 0 0% 98%;
-  --accent: 217 91% 60%;
-  --accent-foreground: 0 0% 100%;
+  --accent: 0 0% 100%;
+  --accent-foreground: 0 0% 2%;
   /* MobileTabBar.tsx overwrites this with its real measured height on mount
      (ResizeObserver) - this fallback only covers the first paint before that
      effect runs, so it should track the bar's actual rest-state height. */
@@ -43,13 +43,17 @@
    text-foreground/text-muted-foreground - the new native Account screen and
    MobileTabBar) fully re-theme; most existing pages predate this token system
    and hardcode Tailwind's zinc/white/black scale directly, so they won't
-   flip. Deliberate, disclosed scope - not a bug. */
+   flip. Deliberate, disclosed scope - not a bug. accent/accent-foreground
+   invert here too - the same pitch-black used as dark mode's --background
+   becomes light mode's accent, and vice versa. */
 :root[data-theme="light"] {
   --background: 0 0% 99%;
   --surface: 0 0% 95%;
   --border: 0 0% 88%;
   --muted-foreground: 0 0% 40%;
   --foreground: 0 0% 6%;
+  --accent: 0 0% 2%;
+  --accent-foreground: 0 0% 100%;
 }
 
 @theme inline {
@@ -93,10 +97,10 @@ body {
    group, never this child element. SVG presentation attributes (set via
    setAttribute, as marks-pane does) sit below author stylesheets in the CSS
    cascade regardless of specificity, so a plain rule here is enough to win -
-   this is the only way to actually recolor it to Electric Azure. Scoped to
+   this is the only way to actually recolor it to the accent token. Scoped to
    our own annotation className so it can't affect any unrelated SVG on the page. */
 [ref="flowrecall-highlight"] line {
-  stroke: #3b82f6;
+  stroke: hsl(var(--accent));
   stroke-width: 3px;
   stroke-opacity: 0.9;
 }
@@ -181,11 +185,12 @@ body {
 }
 
 /* Ambient background for the native SignedOutPrompt (src/app/account/page.tsx)
-   - two soft accent-tinted glows drifting via background-position, which is
-   paint-only (no layout/repaint-every-descendant cost like animating filter/
-   blur would be). Fine here specifically because it's one element on a
-   static, non-scrolling "dead end" screen, not something sitting behind
-   scrolling content the way MobileTabBar's backdrop-blur is. */
+   - two soft glows (in the accent token's own achromatic white/black, never a
+   hue) drifting via background-position, which is paint-only (no layout/
+   repaint-every-descendant cost like animating filter/blur would be). Fine
+   here specifically because it's one element on a static, non-scrolling
+   "dead end" screen, not something sitting behind scrolling content the way
+   MobileTabBar's backdrop-blur is. */
 @keyframes signed-out-glow-shift {
   0%,
   100% {

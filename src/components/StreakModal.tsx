@@ -106,7 +106,7 @@ function BreathingFlame({ streak }: { streak: number }) {
   );
 }
 
-/** One day cell in the weekly row. Studied = filled Azure square with a check
+/** One day cell in the weekly row. Studied = filled accent square with a check
  * and a STATIC glow (static box-shadow is fine; we just never animate it). */
 function DayCell({ day, index }: { day: StreakDay; index: number }) {
   return (
@@ -122,7 +122,7 @@ function DayCell({ day, index }: { day: StreakDay; index: number }) {
       <div
         className={
           day.studied
-            ? "flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-accent text-white shadow-[0_0_16px_-2px_rgba(59,130,246,0.8)]"
+            ? "flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg bg-accent text-accent-foreground shadow-[0_0_16px_-2px_hsl(var(--accent)/0.8)]"
             : `flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-lg border ${
                 day.isToday ? "border-accent/60" : "border-white/12"
               } ${day.future ? "opacity-40" : ""}`
@@ -163,9 +163,14 @@ export default function StreakModal({
   // Lazy fetch: nothing hits the DB until the user actually opens the modal,
   // which is the most efficient option (no query on every page load).
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      const timer = setTimeout(() => setError(null), 0);
+      return () => clearTimeout(timer);
+    }
     let cancelled = false;
-    setError(null);
+    Promise.resolve().then(() => {
+      if (!cancelled) setError(null);
+    });
     fetch(apiUrl("/api/streak"), { credentials: API_FETCH_CREDENTIALS })
       .then(async (res) => ({ ok: res.ok, json: await res.json() }))
       .then(({ ok, json }) => {
@@ -270,7 +275,7 @@ export default function StreakModal({
               <Link
                 href="/ingest"
                 onClick={onClose}
-                className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3 text-sm font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 active:scale-[0.98]"
+                className="mt-5 inline-flex w-full items-center justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 active:scale-[0.98]"
               >
                 Study now
               </Link>

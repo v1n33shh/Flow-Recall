@@ -12,4 +12,10 @@
     <color name="colorPrimary">#050505</color>
     <color name="colorPrimaryDark">#000000</color>
     <color name="colorAccent">#3B82F6</color>
+
+    <!-- The Android 12+ SplashScreen API's windowSplashScreenBackground - must
+         match globals.css's background token (#050505) exactly, and the React
+         AppLoader's own background, or the native-to-web handoff shows a
+         one-frame color seam. -->
+    <color name="splashBackground">#050505</color>
 </resources>

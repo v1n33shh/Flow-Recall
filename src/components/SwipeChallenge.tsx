@@ -195,9 +195,9 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
             <button
               type="button"
               onClick={() => grade(true)}
-              className="flex items-center gap-2 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(37,99,235,0.55)] px-4 py-2 text-sm font-medium text-white transition-transform hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2 text-sm font-medium text-accent-foreground transition-transform hover:scale-105 active:scale-95"
             >
-              <kbd className="rounded bg-background/20 px-1.5 py-0.5 text-xs text-white">2</kbd>
+              <kbd className="rounded bg-background/20 px-1.5 py-0.5 text-xs text-accent-foreground">2</kbd>
               Correct
             </button>
           </div>

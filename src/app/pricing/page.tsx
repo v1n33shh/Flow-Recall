@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Script from "next/script";
 import { Capacitor } from "@capacitor/core";
+import { useIsNative } from "@/lib/useIsNative";
 import { vibrateTap } from "@/lib/haptics";
 
 const FREE_FEATURES = [
@@ -56,12 +57,7 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isYearly, setIsYearly] = useState(true);
-  // Computed post-mount (not during SSR/export) to avoid a hydration
-  // mismatch between the server-rendered shell and the native runtime.
-  const [isNative, setIsNative] = useState(false);
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  const isNative = useIsNative();
 
   async function handleUpgrade() {
     vibrateTap();
@@ -97,6 +93,7 @@ export default function PricingPage() {
         name: "FlowRecall",
         description: "Pro Plan - Unlock the smartest AI models.",
         order_id: data.id,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         handler: async function (response: any) {
           try {
             // Note: no userId is sent. The server re-derives it from the order's
@@ -135,7 +132,10 @@ export default function PricingPage() {
           email: session?.user?.email,
         },
         theme: {
-          color: "#3B82F6",
+          // Razorpay's own checkout modal renders in its own window/context,
+          // so this can't read our CSS custom properties - a static
+          // near-black keeps it monochrome regardless of our current theme.
+          color: "#0A0A0A",
         },
         modal: {
           ondismiss: function () {
@@ -144,7 +144,9 @@ export default function PricingPage() {
         },
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rzp = new (window as any).Razorpay(options);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       rzp.on("payment.failed", function (response: any) {
         setError(response.error.description);
         setLoading(false);
@@ -219,9 +221,9 @@ export default function PricingPage() {
           </div>
         </div>
 
-        {/* Pro tier - frosted glass with an elegant Electric Azure ambient glow */}
-        <div className="relative flex flex-col rounded-2xl border border-accent/30 bg-white/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_40px_rgba(59,130,246,0.15)] backdrop-blur-xl">
-          <span className="absolute -top-3 right-6 rounded-full bg-gradient-to-b from-blue-400 to-blue-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-white shadow-lg shadow-blue-500/30">
+        {/* Pro tier - frosted glass with an elegant monochrome ambient glow */}
+        <div className="relative flex flex-col rounded-2xl border border-accent/30 bg-white/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_0_40px_hsl(var(--accent)/0.15)] backdrop-blur-xl">
+          <span className="absolute -top-3 right-6 rounded-full bg-accent px-3 py-1 text-[11px] font-bold uppercase tracking-wide text-accent-foreground shadow-lg shadow-accent/20">
             Most popular
           </span>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</h2>
@@ -239,7 +241,7 @@ export default function PricingPage() {
             </div>
             {isYearly && (
               <p className="mt-1 text-xs font-medium text-accent">
-                That's just ₹208/month
+                That&apos;s just ₹208/month
               </p>
             )}
           </div>
@@ -270,7 +272,7 @@ export default function PricingPage() {
                 type="button"
                 onClick={handleUpgrade}
                 disabled={loading || isPro}
-                className="mt-6 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 px-6 py-3.5 text-base font-semibold text-white ring-1 ring-inset ring-blue-400/40 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(37,99,235,0.55)] transition-all duration-200 hover:from-blue-400 hover:to-blue-500 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(59,130,246,0.75)] hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:shadow-none"
+                className="mt-6 rounded-full bg-accent px-6 py-3.5 text-base font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100 disabled:hover:shadow-none"
               >
                 {isPro ? "You are on Pro" : loading ? "Starting checkout..." : "Upgrade Now"}
               </button>
@@ -285,7 +287,7 @@ export default function PricingPage() {
 
       <div className="mt-16 text-center text-sm text-zinc-400">
         Questions? Need support?{" "}
-        <a href="mailto:founder@flowrecall.app" className="text-accent transition-colors hover:text-blue-400 hover:underline">
+        <a href="mailto:founder@flowrecall.app" className="text-accent transition-opacity hover:opacity-80 hover:underline">
           Email us
         </a>
       </div>

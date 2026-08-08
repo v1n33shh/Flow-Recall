@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { Capacitor } from "@capacitor/core";
+import { useIsNative } from "@/lib/useIsNative";
 import { vibrateTap } from "@/lib/haptics";
 
 // The mobile-only primary navigation. On sm: and up this is fully hidden and
@@ -170,12 +171,7 @@ export default function MobileTabBar() {
   const pathname = usePathname();
   const { data: session, status } = useSession();
   const streak = session?.user?.currentStreak ?? 0;
-  // Computed post-mount (not during SSR/export) to avoid a hydration
-  // mismatch between the server-rendered shell and the native runtime.
-  const [isNative, setIsNative] = useState(false);
-  useEffect(() => {
-    setIsNative(Capacitor.isNativePlatform());
-  }, []);
+  const isNative = useIsNative();
 
   const navRef = useRef<HTMLElement>(null);
 

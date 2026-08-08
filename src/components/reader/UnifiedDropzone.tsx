@@ -53,8 +53,8 @@ export default function UnifiedDropzone({ onImported }: { onImported: (book: Boo
         <input {...getInputProps()} />
         <motion.div
           animate={{
-            borderColor: isDragActive ? "rgba(59,130,246,0.9)" : "rgba(59,130,246,0.4)",
-            backgroundColor: isDragActive ? "rgba(59,130,246,0.08)" : "rgba(59,130,246,0)",
+            borderColor: isDragActive ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.4)",
+            backgroundColor: isDragActive ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0)",
             scale: isDragActive ? 1.01 : 1,
           }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}

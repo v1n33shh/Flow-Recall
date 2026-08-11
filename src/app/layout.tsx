@@ -41,7 +41,7 @@ const pacifico = Pacifico({
 // Absolute origin every social/SEO URL is resolved against. Override per
 // environment with NEXT_PUBLIC_SITE_URL (e.g. your production domain); the
 // fallback keeps builds and local dev working without extra config.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.flowrecall.app";
 
 // Social-share copy (OpenGraph + Twitter). Tuned for click-through when the
 // link is dropped in Discord/WhatsApp/iMessage/X: a concrete hook, speed,

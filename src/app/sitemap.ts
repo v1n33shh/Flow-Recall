@@ -7,7 +7,7 @@ export const dynamic = "force-static";
 
 // Keep in sync with layout.tsx's metadataBase. Override per environment with
 // NEXT_PUBLIC_SITE_URL (e.g. your production domain).
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.flowrecall.app";
 
 // Evaluated once when this cached route is first built, so every URL reports a
 // single stable lastmod instead of a per-request "just now" that crawlers learn

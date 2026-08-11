@@ -5,7 +5,7 @@ import type { MetadataRoute } from "next";
 export const dynamic = "force-static";
 
 // Keep in sync with layout.tsx's metadataBase and sitemap.ts.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.flowrecall.app";
 
 export default function robots(): MetadataRoute.Robots {
   return {

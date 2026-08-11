@@ -275,10 +275,10 @@ function SignedOutPrompt() {
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 320, damping: 22 }}
-        className="relative flex h-16 w-16 items-center justify-center rounded-[20px] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_32px_-8px_rgba(0,0,0,0.7)]"
+        className="relative flex h-16 w-16 items-center justify-center rounded-[28%] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_32px_-8px_rgba(0,0,0,0.7)]"
       >
-        <LogoMark className="h-9 w-9" />
-        <div className="pointer-events-none absolute inset-0 rounded-[20px] ring-1 ring-inset ring-white/5" />
+        <LogoMark sheen className="h-[64%] w-[64%]" />
+        <div className="pointer-events-none absolute inset-0 rounded-[28%] ring-1 ring-inset ring-white/5" />
       </motion.div>
 
       <motion.div

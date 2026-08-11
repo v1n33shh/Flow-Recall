@@ -3,21 +3,25 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useIsNative } from "@/lib/useIsNative";
+import { vibrateTap } from "@/lib/haptics";
 
 // Must exactly match colors.xml's splashBackground and globals.css's
 // background token - any mismatch would show as a one-frame color seam the
 // instant the native splash's own fade-out reveals this overlay underneath it.
 const SPLASH_BG = "#050505";
 
-// Choreography, in ms. The logo's "punch" entrance and the glare sweep both
-// start at t=0 (pulsing flips true), overlapping slightly for fluidity;
-// PULSE_MS covers whichever finishes last plus a short hold before the exit
-// fade starts. Total (PULSE_MS + EXIT_MS) lands at ~1.5s - deliberately
-// unhurried ("let it breathe"), never tied to real data loading.
-const PUNCH_MS = 550;
-const SWEEP_DELAY_MS = 300;
+// Choreography, in ms. styles.xml's native splash is background-only (no
+// icon - see its doc comment on why), so this component owns the ENTIRE
+// branded reveal rather than just finishing one a native icon started: the
+// mark fades and springs in from nothing, a soft bloom pulses out behind it,
+// then a glare sweep crosses its silhouette. HOLD_MS + EXIT_MS lands at
+// ~1.7s - deliberately unhurried ("let it breathe"), never tied to real data
+// loading.
+const MATERIALIZE_MS = 550;
+const BLOOM_MS = 750;
+const SWEEP_DELAY_MS = 500;
 const SWEEP_MS = 600;
-const PULSE_MS = 1100;
+const HOLD_MS = 1300;
 const EXIT_MS = 400;
 
 // Hard backstop, independent of the choreography above: if any animation
@@ -25,7 +29,7 @@ const EXIT_MS = 400;
 // down anyway. Comfortably shorter than capacitor.config.ts's own
 // launchShowDuration safety net, so THIS is what the user actually sees if
 // something upstream goes wrong, not a permanently stuck loader.
-const FAILSAFE_MS = 4000;
+const FAILSAFE_MS = 4200;
 
 /** The React half of the "Seamless Splash Handoff": Android's native
  * SplashScreen (styles.xml's AppTheme.NoActionBarLaunch, kept on-screen via
@@ -34,17 +38,18 @@ const FAILSAFE_MS = 4000;
  *
  * `useIsNative` resolves a beat after mount (SSR/hydration-safe - see its
  * own doc comment), which is exactly what's wanted here: the render where it
- * flips true paints a completely STATIC frame - same background, same still
- * logo at rest (scale 1, no glare) - deliberately pixel-identical to the
- * native splash it's still hidden behind. Only in the effect below, after an
- * rAF confirms that static frame actually painted, is it safe to call
- * SplashScreen.hide(): the frame it reveals underneath matches exactly, so
- * the handoff is imperceptible. Only then does the logo "punch" and the
- * glare sweep start - both animate FROM their resting values, so there's
- * zero jump at the moment they kick off, just a sudden burst of motion. */
+ * flips true paints a completely STATIC frame - just the flat background,
+ * mark invisible (opacity 0) - pixel-identical to the native splash it's
+ * still hidden behind, since that splash is background-only too. Only in the
+ * effect below, after an rAF confirms that static frame actually painted, is
+ * it safe to call SplashScreen.hide(): the frame it reveals underneath
+ * matches exactly, so the handoff is imperceptible. Only then does the mark
+ * materialize, the bloom pulse, and the glare sweep start - all animate FROM
+ * their resting (invisible/off-screen) values, so there's zero jump at the
+ * moment they kick off, just a sudden burst of motion. */
 export default function AppLoader() {
   const isNative = useIsNative(false);
-  const [pulsing, setPulsing] = useState(false);
+  const [entered, setEntered] = useState(false);
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -57,19 +62,23 @@ export default function AppLoader() {
           // Nothing else here can hide it - capacitor.config.ts's generous
           // launchShowDuration safety ceiling is what saves the launch.
         });
-      setPulsing(true);
+      // Synced to the exact frame the mark starts materializing, so the
+      // buzz reads as the logo physically "arriving" rather than a generic
+      // notification tick.
+      vibrateTap();
+      setEntered(true);
     });
 
     return () => cancelAnimationFrame(raf);
   }, [isNative]);
 
   useEffect(() => {
-    if (!pulsing) return;
-    const timer = setTimeout(() => setVisible(false), PULSE_MS);
+    if (!entered) return;
+    const timer = setTimeout(() => setVisible(false), HOLD_MS);
     return () => clearTimeout(timer);
-  }, [pulsing]);
+  }, [entered]);
 
-  // Independent of `pulsing` on purpose - this fires even if the effect
+  // Independent of `entered` on purpose - this fires even if the effect
   // above never does.
   useEffect(() => {
     if (!isNative) return;
@@ -89,20 +98,42 @@ export default function AppLoader() {
           transition={{ duration: EXIT_MS / 1000, ease: "easeInOut" }}
         >
           <div className="relative h-32 w-32">
+            {/* Soft achromatic bloom, pulsing outward from behind the mark
+                right as it materializes - pure white radial glow, no color,
+                the same white-only treatment as .signed-out-glow elsewhere. */}
+            <motion.div
+              className="absolute inset-[-60%] rounded-full"
+              style={{
+                background: "radial-gradient(circle, rgba(255,255,255,0.28) 0%, transparent 70%)",
+              }}
+              initial={{ opacity: 0, scale: 0.4 }}
+              animate={
+                entered
+                  ? { opacity: [0, 1, 0], scale: [0.4, 1.1, 1.3] }
+                  : { opacity: 0, scale: 0.4 }
+              }
+              transition={{ duration: BLOOM_MS / 1000, ease: "easeOut" }}
+            />
+
             <motion.img
               src="/splash-logo.png"
               alt=""
               className="absolute inset-0 h-full w-full select-none object-contain"
               draggable={false}
-              // Rest state (scale 1) exactly matches the native splash's
-              // static icon - the keyframe sequence below starts AND ends at
-              // 1, so kicking it off produces a sudden overshoot, not a jump.
+              // Rest state (opacity 0) exactly matches the now icon-less
+              // native splash - the mark fades in and springs through an
+              // overshoot in one motion, so kicking it off reads as the logo
+              // arriving with energy, not just wiggling in place.
+              initial={{ opacity: 0, scale: 0.6 }}
               animate={
-                pulsing
-                  ? { scale: [1, 1.22, 0.9, 1.05, 1] }
-                  : { scale: 1 }
+                entered
+                  ? { opacity: 1, scale: [0.6, 1.16, 0.92, 1.04, 1] }
+                  : { opacity: 0, scale: 0.6 }
               }
-              transition={{ duration: PUNCH_MS / 1000, ease: [0.34, 1.56, 0.64, 1] }}
+              transition={{
+                opacity: { duration: 0.18, ease: "easeOut" },
+                scale: { duration: MATERIALIZE_MS / 1000, ease: [0.34, 1.56, 0.64, 1] },
+              }}
             />
 
             {/* Metallic white/silver light-glare sweep, clipped to the logo's
@@ -130,7 +161,7 @@ export default function AppLoader() {
                     "linear-gradient(100deg, transparent 0%, transparent 35%, rgba(255,255,255,0.4) 46%, rgba(255,255,255,0.95) 50%, rgba(255,255,255,0.4) 54%, transparent 65%, transparent 100%)",
                 }}
                 initial={{ x: "-140%" }}
-                animate={pulsing ? { x: "240%" } : { x: "-140%" }}
+                animate={entered ? { x: "240%" } : { x: "-140%" }}
                 transition={{ duration: SWEEP_MS / 1000, delay: SWEEP_DELAY_MS / 1000, ease: "easeInOut" }}
               />
             </div>

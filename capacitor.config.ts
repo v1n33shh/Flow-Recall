@@ -33,7 +33,13 @@ const config: CapacitorConfig = {
       launchFadeOutDuration: 300,
       backgroundColor: "#050505",
       androidSplashResourceName: "splash",
-      androidScaleType: "CENTER_CROP",
+      // CENTER_INSIDE, not CENTER_CROP: some OEM skins (e.g. ColorOS) don't
+      // take the Android 12+ SplashScreen icon path styles.xml relies on and
+      // fall back to this legacy full-bleed drawable/splash.png instead -
+      // CENTER_CROP would then crop into the mark itself on any aspect ratio
+      // that doesn't match the source image exactly. CENTER_INSIDE guarantees
+      // the whole mark is always visible, at worst with extra letterboxing.
+      androidScaleType: "CENTER_INSIDE",
       showSpinner: false,
     },
   },

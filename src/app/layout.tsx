@@ -58,6 +58,9 @@ export const metadata: Metadata = {
     default: "FlowRecall | AI Flashcards & Active Recall App",
     template: "%s | FlowRecall",
   },
+  verification: {
+    google: "qYRwT2xoSO4AaBh5jekf8FycAYkbDaFisupynEu7t0Y",
+  },
   description: "Upload any PDF and instantly convert it into a gamified active recall study feed. The ultimate AI study app for college and medical students.",
   applicationName: "FlowRecall",
   keywords: [

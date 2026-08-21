@@ -32,4 +32,9 @@ export type MobileBridgePayload = {
   picture?: string | null;
   plan?: string | null;
   currentStreak?: number | null;
+  // Unique per minted token (see /api/mobile-callback) - /api/auth/mobile-exchange
+  // records it in the UsedMobileBridgeToken table on first redemption, so a
+  // captured token can't be replayed a second time within its validity
+  // window. See that table's schema comment for the threat this closes.
+  jti: string;
 };

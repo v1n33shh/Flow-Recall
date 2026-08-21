@@ -118,3 +118,18 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+// Tracks consumed mobile OAuth bridge tokens (see src/lib/mobileAuth.ts) so a
+// captured token can only ever be redeemed once. The bridge token's
+// flowrecall://auth-callback deep link isn't a verified Android App Link, so
+// Android shows a disambiguation chooser if another app ever registers the
+// same scheme+host - without this table, an app picked by mistake (or a
+// malicious one racing the chooser) could replay the same captured token
+// against /api/auth/mobile-exchange as many times as it wants within the
+// token's 60-second validity window. jti is minted alongside the token in
+// /api/mobile-callback; expiresAt mirrors the token's own maxAge so rows can
+// be swept without ever touching a still-valid token.
+model UsedMobileBridgeToken {
+  jti       String   @id
+  expiresAt DateTime
+}

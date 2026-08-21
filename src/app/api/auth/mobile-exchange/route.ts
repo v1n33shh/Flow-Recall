@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { decode, encode } from "next-auth/jwt";
 import { z } from "zod";
-import { MOBILE_BRIDGE_SALT, type MobileBridgePayload } from "@/lib/mobileAuth";
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { MOBILE_BRIDGE_MAX_AGE_SECONDS, MOBILE_BRIDGE_SALT, type MobileBridgePayload } from "@/lib/mobileAuth";
 
 const bodySchema = z.object({ token: z.string().min(1) });
 
@@ -29,12 +31,43 @@ export async function POST(request: Request) {
     salt: MOBILE_BRIDGE_SALT,
   }).catch(() => null);
 
-  if (!bridgePayload?.id) {
+  if (!bridgePayload?.id || !bridgePayload.jti) {
     return NextResponse.json(
       { error: "Sign-in link expired. Please try again." },
       { status: 401 },
     );
   }
+
+  // Single-use enforcement: the jti unique constraint means only the first
+  // exchange of a given bridge token can ever succeed here - a captured or
+  // replayed token (the deep link isn't a verified Android App Link, so a
+  // malicious app could in principle receive it via the OS's disambiguation
+  // chooser) gets rejected instead of silently minting a second session for
+  // it. See UsedMobileBridgeToken's schema comment for the full threat model.
+  try {
+    await prisma.usedMobileBridgeToken.create({
+      data: {
+        jti: bridgePayload.jti,
+        expiresAt: new Date(Date.now() + MOBILE_BRIDGE_MAX_AGE_SECONDS * 1000),
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        { error: "This sign-in link has already been used. Please try again." },
+        { status: 401 },
+      );
+    }
+    console.error("[mobile-exchange] failed to record bridge token as used:", error);
+    return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
+  }
+
+  // Best-effort, fire-and-forget: keeps the table from growing forever
+  // without adding latency to this response. Never blocks or fails the
+  // exchange - a missed sweep just means it's cleaned up on a later request.
+  void prisma.usedMobileBridgeToken
+    .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+    .catch((error) => console.error("[mobile-exchange] stale bridge token cleanup failed:", error));
 
   const sessionToken = await encode({
     secret,

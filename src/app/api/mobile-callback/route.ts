@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     picture: session.user.image,
     plan: session.user.plan,
     currentStreak: session.user.currentStreak,
+    jti: crypto.randomUUID(),
   };
 
   const bridgeToken = await encode({

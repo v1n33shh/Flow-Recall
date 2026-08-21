@@ -49,6 +49,11 @@ export default function AccountPage() {
 function WebAccountCard() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  // Google's photo URL can be present in the JWT but still fail to actually
+  // load (network hiccup, CORS, Android WebView restriction) - `onError`
+  // flips this so the initials fallback renders instead of a broken/invisible
+  // image node.
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/");
@@ -63,10 +68,17 @@ function WebAccountCard() {
       <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
 
       <div className="mt-6 flex items-center gap-4 rounded-2xl border-2 border-white/10 bg-white/5 p-5">
-        {user.image ? (
-          <Image src={user.image} alt="" width={56} height={56} className="rounded-full" />
+        {user.image && !imgError ? (
+          <Image
+            src={user.image}
+            alt=""
+            width={56}
+            height={56}
+            className="rounded-full"
+            onError={() => setImgError(true)}
+          />
         ) : (
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-accent text-xl font-bold text-white">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xl font-bold text-white ring-1 ring-white/10">
             {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
           </span>
         )}
@@ -435,6 +447,11 @@ function NativeAccountScreen() {
   const { data: session, status } = useSession();
   const [theme, setThemeState] = useState<Theme>("dark");
   const [graceElapsed, setGraceElapsed] = useState(false);
+  // Google's photo URL can be present in the JWT but still fail to actually
+  // load (network hiccup, CORS, Android WebView restriction) - `onError`
+  // flips this so the initials fallback renders instead of a broken/invisible
+  // image node.
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -476,16 +493,17 @@ function NativeAccountScreen() {
 
         <Reveal index={0}>
           <div className="mt-6 flex flex-col items-center gap-3 text-center">
-            {user.image ? (
+            {user.image && !imgError ? (
               <Image
                 src={user.image}
                 alt=""
                 width={80}
                 height={80}
                 className="rounded-full ring-2 ring-white/10"
+                onError={() => setImgError(true)}
               />
             ) : (
-              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-accent text-2xl font-bold text-white ring-2 ring-white/10">
+              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-zinc-900 text-2xl font-bold text-white ring-1 ring-white/10">
                 {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
               </span>
             )}

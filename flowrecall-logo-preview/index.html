@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FlowRecall — Logo, live from the build</title>
+<style>
+  :root {
+    --bg: #050505;
+    --surface: #0F0F0F;
+    --border: #262626;
+    --muted: #A3A3A3;
+    --fg: #FAFAFA;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+    padding: 3rem 1.5rem 5rem;
+  }
+  .page { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 1.6rem; margin: 0 0 0.4rem; letter-spacing: -0.01em; }
+  .dek { color: var(--muted); margin: 0 0 3rem; font-size: 0.95rem; max-width: 60ch; line-height: 1.6; }
+  h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin: 0 0 1rem; font-weight: 600; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 3rem;
+  }
+  .card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+  .card p { margin: 0; font-size: 0.8rem; color: var(--muted); text-align: center; }
+
+  /* Browser tab mock */
+  .tab-bar { background: #e8e8e8; border-radius: 8px 8px 0 0; padding: 0.5rem 0.5rem 0; display: flex; }
+  .tab { background: #fff; border-radius: 8px 8px 0 0; padding: 0.4rem 0.8rem; display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: #333; }
+  .tab img { width: 16px; height: 16px; }
+
+  /* Phone frame */
+  .phone {
+    width: 180px;
+    height: 360px;
+    border: 3px solid #333;
+    border-radius: 28px;
+    background: #000;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .phone img.splash-full { width: 100%; height: 100%; object-fit: cover; }
+  .phone.homescreen { background: linear-gradient(160deg, #2a2a35, #14141a); }
+  .app-icon-tile {
+    width: 68px;
+    height: 68px;
+    border-radius: 18px;
+    overflow: hidden;
+  }
+  .app-icon-tile img { width: 100%; height: 100%; display: block; }
+  .icon-labels { display: flex; gap: 2rem; }
+  .icon-labels > div { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; }
+  .icon-labels span { font-size: 0.68rem; color: var(--muted); }
+
+  code { background: var(--surface); border: 1px solid var(--border); padding: 0.1rem 0.4rem; font-size: 0.85em; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>FlowRecall — the new mark, as actually generated</h1>
+  <p class="dek">
+    These are the real files produced by the build and by <code>@capacitor/assets</code> —
+    not redraws. Open this file locally any time to check the mark in each place it ships.
+  </p>
+
+  <h2>Browser tab (favicon.ico equivalent, 32×32)</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="tab-bar">
+        <div class="tab"><img src="favicon.png" alt=""> flowrecall.app</div>
+      </div>
+      <p>src/app/icon.tsx — generated at build time</p>
+    </div>
+  </div>
+
+  <h2>iOS home screen (apple-icon.tsx, 180×180)</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="app-icon-tile" style="border-radius:38px;"><img src="apple-icon.png" alt=""></div>
+      <p>Full-bleed; iOS applies its own squircle mask</p>
+    </div>
+  </div>
+
+  <h2>Android launcher icon (real mipmap-xxxhdpi output)</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="icon-labels">
+        <div>
+          <div class="app-icon-tile" style="border-radius:20%;"><img src="android-launcher.png" alt=""></div>
+          <span>Squircle mask</span>
+        </div>
+        <div>
+          <div class="app-icon-tile" style="border-radius:50%;"><img src="android-launcher-round.png" alt=""></div>
+          <span>Circle mask</span>
+        </div>
+      </div>
+      <p>android/.../mipmap-xxxhdpi/ic_launcher*.png</p>
+    </div>
+  </div>
+
+  <h2>Android splash screen (native launch, real drawable output)</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="phone">
+        <img class="splash-full" src="android-splash.png" alt="">
+      </div>
+      <p>drawable-port-xxxhdpi/splash.png</p>
+    </div>
+    <div class="card">
+      <div class="phone" style="background:#050505;">
+        <img src="splash-logo.png" alt="" style="width:35%;">
+      </div>
+      <p>public/splash-logo.png — the in-app loader (AppLoader.tsx) that hands off from the native splash above</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

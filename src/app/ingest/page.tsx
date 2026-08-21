@@ -105,6 +105,11 @@ export default function IngestPage() {
 
   async function handleGenerate(sourceText: string = text) {
     vibrateTap();
+    // Without this, dropping a PDF while a pasted-text generation is still in
+    // flight (handlePdfExtracted calls this unconditionally) starts a second
+    // concurrent run - the two loops interleave currentChunk/totalChunks/
+    // concepts updates and can save the deck twice.
+    if (loading) return;
     if (!isAuthenticated) {
       setError("Please sign in to generate concepts.");
       return;
@@ -205,14 +210,14 @@ export default function IngestPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Auto-Ingest</h1>
-      <p className="mt-2 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Auto-Ingest</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         Paste your lecture notes, textbook chapter, or a PDF below. We&apos;ll
         break it into micro-concepts ready for recall practice.
       </p>
 
       {status === "unauthenticated" && (
-        <div className="mt-6 rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm text-zinc-300">
+        <div className="mt-6 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground">
           You need to be signed in to generate concepts.{" "}
           <Link href="/login" className="font-medium underline">
             Sign in
@@ -224,10 +229,10 @@ export default function IngestPage() {
         <PdfDropzone onExtracted={handlePdfExtracted} />
       </div>
 
-      <div className="mt-4 flex items-center gap-3 text-xs uppercase tracking-widest text-zinc-500">
-        <div className="h-px flex-1 bg-white/10" />
+      <div className="mt-4 flex items-center gap-3 text-xs uppercase tracking-widest text-muted-foreground">
+        <div className="h-px flex-1 bg-foreground/10" />
         or paste text
-        <div className="h-px flex-1 bg-white/10" />
+        <div className="h-px flex-1 bg-foreground/10" />
       </div>
 
       <textarea
@@ -235,10 +240,10 @@ export default function IngestPage() {
         onChange={(e) => setText(e.target.value)}
         placeholder="Paste your notes here..."
         rows={10}
-        className="mt-4 w-full resize-y rounded-2xl border border-white/10 bg-surface p-4 text-base text-zinc-300 placeholder-zinc-600 outline-none focus:"
+        className="mt-4 w-full resize-y rounded-2xl border border-border bg-surface p-4 text-base text-foreground placeholder-muted-foreground outline-none focus:"
       />
 
-      <label className="mt-4 block text-xs font-medium uppercase tracking-wide text-zinc-400">
+      <label className="mt-4 block text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Deck title
       </label>
       <input
@@ -246,12 +251,12 @@ export default function IngestPage() {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Untitled Notes"
-        className="mt-1.5 w-full rounded-xl border border-white/10 bg-surface px-4 py-3 text-base text-zinc-300 placeholder-zinc-600 outline-none focus:"
+        className="mt-1.5 w-full rounded-xl border border-border bg-surface px-4 py-3 text-base text-foreground placeholder-muted-foreground outline-none focus:"
       />
 
       <label
         htmlFor="model-select"
-        className="mt-6 block text-xs font-bold uppercase tracking-widest text-zinc-300"
+        className="mt-6 block text-xs font-bold uppercase tracking-widest text-foreground"
       >
         Model
       </label>
@@ -260,21 +265,21 @@ export default function IngestPage() {
           id="model-select"
           value={selectedModel}
           onChange={(e) => setSelectedModel(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-lg border border-white/10 bg-surface px-4 py-3 pr-11 text-base font-bold text-zinc-300 outline-none transition-all focus:-translate-x-0.5 focus:-translate-y-0.5 focus:"
+          className="w-full cursor-pointer appearance-none rounded-lg border border-border bg-surface px-4 py-3 pr-11 text-base font-bold text-foreground outline-none transition-all focus:-translate-x-0.5 focus:-translate-y-0.5 focus:"
         >
           {MODEL_OPTIONS.map((m) => (
-            <option key={m.id} value={m.id} className="bg-surface font-medium text-zinc-300">
+            <option key={m.id} value={m.id} className="bg-surface font-medium text-foreground">
               {m.label}
             </option>
           ))}
         </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-zinc-300">
+        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-foreground">
           ▾
         </span>
       </div>
 
       {proModelLocked && (
-        <div className="mt-3 rounded-lg border border-white/10 bg-surface px-4 py-3 text-sm font-bold text-zinc-300">
+        <div className="mt-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-bold text-foreground">
           You need a Pro subscription to use this model.
         </div>
       )}
@@ -295,10 +300,10 @@ export default function IngestPage() {
               ✦ Flowrecall Pro
             </span>
           </div>
-          <p className="mt-3 text-lg font-semibold text-zinc-100">
+          <p className="mt-3 text-lg font-semibold text-foreground">
             You&apos;ve reached your lifetime free limit of 1 deck.
           </p>
-          <p className="mt-1.5 text-sm text-zinc-400">
+          <p className="mt-1.5 text-sm text-muted-foreground">
             Upgrade to Pro to unlock unlimited AI studying.
           </p>
           <Link
@@ -311,7 +316,7 @@ export default function IngestPage() {
       )}
 
       {loading && totalChunks > 1 && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
           <div
             className="h-full bg-accent transition-all"
             style={{ width: `${(currentChunk / totalChunks) * 100}%` }}
@@ -320,14 +325,14 @@ export default function IngestPage() {
       )}
 
       {truncated && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm font-medium text-zinc-300">
+        <div className="mt-4 rounded-xl border border-border bg-surface px-4 py-3 text-sm font-medium text-foreground">
           To keep generation blazing fast, we processed the first section. You
           can generate the rest anytime from your Library!
         </div>
       )}
 
       {error && !proModelLocked && (
-        <div className="mt-6 rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm text-zinc-300">
+        <div className="mt-6 rounded-xl border border-border bg-surface px-4 py-3 text-sm text-foreground">
           {error}
         </div>
       )}
@@ -335,7 +340,7 @@ export default function IngestPage() {
       {concepts && (
         <div className="mt-8 flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-medium text-zinc-400">
+            <p className="text-sm font-medium text-muted-foreground">
               {concepts.length} concepts generated &middot; saved to your library
             </p>
             <button
@@ -349,13 +354,13 @@ export default function IngestPage() {
           {concepts.map((c) => (
             <div
               key={c.id}
-              className="rounded-xl border border-white/10 bg-surface p-4"
+              className="rounded-xl border border-border bg-surface p-4"
             >
-              <p className="text-xs font-medium uppercase tracking-wide text-zinc-400/70">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
                 {c.concept}
               </p>
-              <p className="mt-2 text-sm text-zinc-300">{c.question}</p>
-              <p className="mt-1 text-sm text-zinc-400">{c.answer}</p>
+              <p className="mt-2 text-sm text-foreground">{c.question}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{c.answer}</p>
             </div>
           ))}
         </div>

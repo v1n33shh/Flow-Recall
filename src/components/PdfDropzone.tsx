@@ -79,13 +79,16 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
         <input {...getInputProps()} />
 
         <motion.div
-          animate={{
-            borderColor: isDragActive ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.4)",
-            backgroundColor: isDragActive ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0)",
-            scale: isDragActive ? 1.01 : 1,
-          }}
+          // borderColor/backgroundColor are plain Tailwind classes, not part of
+          // this animate object - Framer Motion's color tween needs literal
+          // rgba/hex values it can interpolate, which can't express the
+          // foreground token's light/dark swap the way `hsl(var(--foreground))`
+          // can in CSS. Scale still animates via Motion for the spring feel.
+          animate={{ scale: isDragActive ? 1.01 : 1 }}
           transition={{ type: "spring", stiffness: 300, damping: 25 }}
-          className="flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-8 text-center active:bg-white/5"
+          className={`flex min-h-36 flex-col items-center justify-center rounded-2xl border border-dashed px-6 py-8 text-center transition-colors duration-300 active:bg-foreground/5 ${
+            isDragActive ? "border-foreground/90 bg-foreground/[0.08]" : "border-foreground/40 bg-transparent"
+          }`}
         >
           <AnimatePresence mode="wait">
             {status.state === "extracting" ? (
@@ -99,9 +102,9 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                  className="h-6 w-6 rounded-full border border-white/15 border-t-accent"
+                  className="h-6 w-6 rounded-full border border-border border-t-accent"
                 />
-                <p className="text-base text-zinc-400">Extracting text from {status.fileName}...</p>
+                <p className="text-base text-muted-foreground">Extracting text from {status.fileName}...</p>
               </motion.div>
             ) : (
               <motion.div
@@ -112,10 +115,10 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
                 className="flex flex-col items-center gap-2"
               >
                 <span className="text-3xl">📄</span>
-                <p className="text-base font-medium text-zinc-300">
+                <p className="text-base font-medium text-foreground">
                   {isDragActive ? "Drop your PDF here" : "Tap to upload a PDF"}
                 </p>
-                <p className="text-xs text-zinc-400">
+                <p className="text-xs text-muted-foreground">
                   {isDragActive ? "" : "or drag and drop - we'll pull the text out automatically"}
                 </p>
               </motion.div>
@@ -128,7 +131,7 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
         <motion.p
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-2 text-center text-sm text-zinc-400"
+          className="mt-2 text-center text-sm text-muted-foreground"
         >
           {status.message}
         </motion.p>

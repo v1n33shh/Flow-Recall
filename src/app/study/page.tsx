@@ -10,8 +10,8 @@ export default function StudyPage() {
   if (!handoff || handoff.concepts.length === 0) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-        <h1 className="text-xl font-semibold text-white">No deck to study yet</h1>
-        <p className="mt-2 max-w-sm text-sm text-zinc-400">
+        <h1 className="text-xl font-semibold text-foreground">No deck to study yet</h1>
+        <p className="mt-2 max-w-sm text-sm text-muted-foreground">
           Ingest some notes first and we&apos;ll turn them into a study feed.
         </p>
         <Link

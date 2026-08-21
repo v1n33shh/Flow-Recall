@@ -42,7 +42,7 @@ function GlassIconButton({
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 active:scale-90"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-90"
     >
       {children}
     </button>
@@ -211,12 +211,12 @@ function DefinitionContent({
           <button
             type="button"
             onClick={() => onCopy(phrase)}
-            className="flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-[13px] font-medium text-zinc-300 transition-colors hover:bg-white/10 active:scale-[0.97]"
+            className="flex items-center justify-center rounded-xl border border-border bg-foreground/5 px-2.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:scale-[0.97]"
           >
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        <div className="flex items-center gap-2 border-t border-white/10 pt-2">
+        <div className="flex items-center gap-2 border-t border-border pt-2">
           <button
             type="button"
             onClick={openNoteEditor}
@@ -248,8 +248,8 @@ function DefinitionContent({
 
   return (
     <>
-      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3.5 py-2.5">
-        <p className="truncate text-[13px] font-semibold text-zinc-100">&ldquo;{phrase}&rdquo;</p>
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3.5 py-2.5">
+        <p className="truncate text-[13px] font-semibold text-foreground">&ldquo;{phrase}&rdquo;</p>
         <GlassIconButton label="Close" onClick={onClose}>
           <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
             <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
@@ -281,7 +281,7 @@ function DefinitionContent({
               <button
                 type="button"
                 onClick={() => onCopy(phrase)}
-                className="flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-2.5 py-2 text-[13px] font-medium text-zinc-300 transition-colors hover:bg-white/10 active:scale-[0.97]"
+                className="flex items-center justify-center rounded-xl border border-border bg-foreground/5 px-2.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:scale-[0.97]"
               >
                 {copied ? "Copied" : "Copy"}
               </button>
@@ -293,19 +293,19 @@ function DefinitionContent({
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-              className="h-4 w-4 rounded-full border-2 border-white/15 border-t-accent"
+              className="h-4 w-4 rounded-full border-2 border-border border-t-accent"
             />
-            <p className="text-[13px] text-zinc-400">Thinking...</p>
+            <p className="text-[13px] text-muted-foreground">Thinking...</p>
           </div>
         )}
 
         {stage.kind === "error" && (
           <div className="flex flex-col gap-2">
-            <p className="text-[13px] text-zinc-400">{stage.message}</p>
+            <p className="text-[13px] text-muted-foreground">{stage.message}</p>
             <button
               type="button"
               onClick={onDefine}
-              className="self-start rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-white/10"
+              className="self-start rounded-lg border border-border bg-foreground/5 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-foreground/10"
             >
               Retry
             </button>
@@ -325,8 +325,8 @@ function DefinitionContent({
               </span>
             </div>
             <div>
-              <p className="text-[14px] font-semibold text-zinc-100">You&rsquo;ve used your 20 free AI lookups</p>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+              <p className="text-[14px] font-semibold text-foreground">You&rsquo;ve used your 20 free AI lookups</p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Upgrade to Pro for infinite definitions - never break your reading flow again.
               </p>
             </div>
@@ -346,12 +346,12 @@ function DefinitionContent({
             transition={{ duration: 0.18 }}
             className="flex flex-col gap-3"
           >
-            <p className="text-[13.5px] leading-relaxed text-zinc-200">{stage.data.definition}</p>
-            <div className="flex flex-col gap-1.5 border-t border-white/10 pt-2.5">
+            <p className="text-[13.5px] leading-relaxed text-foreground">{stage.data.definition}</p>
+            <div className="flex flex-col gap-1.5 border-t border-border pt-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-accent/80">Examples</p>
               {stage.data.examples.map((example, i) => (
-                <p key={i} className="text-xs leading-relaxed text-zinc-400">
-                  <span className="text-zinc-600">{i + 1}.</span> {example}
+                <p key={i} className="text-xs leading-relaxed text-muted-foreground">
+                  <span className="text-muted-foreground/70">{i + 1}.</span> {example}
                 </p>
               ))}
             </div>
@@ -359,7 +359,7 @@ function DefinitionContent({
               <button
                 type="button"
                 onClick={() => onCopy(stage.kind === "result" ? stage.data.definition : "")}
-                className="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
                 {copied ? "Copied ✓" : "Copy definition"}
               </button>
@@ -381,7 +381,7 @@ function DefinitionContent({
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex flex-col gap-3">
             <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-3">
               <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-accent/70">Your Note</p>
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-zinc-200">{stage.note}</p>
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{stage.note}</p>
             </div>
             {renderHighlightActionRows()}
           </motion.div>
@@ -396,7 +396,7 @@ function DefinitionContent({
               placeholder="Type your thoughts, or save a definition you want to remember..."
               maxLength={NOTE_MAX_LENGTH}
               rows={4}
-              className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.03] p-3 text-[13px] leading-relaxed text-zinc-200 placeholder-zinc-600 outline-none transition-colors focus:border-accent/40"
+              className="w-full resize-none rounded-xl border border-border bg-foreground/[0.03] p-3 text-[13px] leading-relaxed text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-accent/40"
             />
             <div className="flex items-center gap-2">
               <button
@@ -410,7 +410,7 @@ function DefinitionContent({
               <button
                 type="button"
                 onClick={cancelNoteEdit}
-                className="flex items-center justify-center rounded-xl border border-white/10 bg-white/5 px-3.5 py-2 text-[13px] font-medium text-zinc-300 transition-colors hover:bg-white/10 active:scale-[0.97]"
+                className="flex items-center justify-center rounded-xl border border-border bg-foreground/5 px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:scale-[0.97]"
               >
                 Cancel
               </button>
@@ -478,7 +478,7 @@ function FloatingCard({
         className={`fixed z-40 overflow-hidden rounded-2xl bg-surface/80 text-left backdrop-blur-xl transition-[top] duration-150 ease-out ${
           stageProps.stage.kind === "limit-reached"
             ? "border border-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_40px_-6px_hsl(var(--accent)/0.35),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
-            : "border border-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
+            : "border border-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)]"
         }`}
         style={{ width: CARD_WIDTH, left, top, transformOrigin: anchor.placement === "below" ? "top center" : "bottom center" }}
         initial={{ opacity: 0, scale: 0.92, y: anchor.placement === "below" ? -6 : 6 }}
@@ -572,7 +572,7 @@ function BottomSheet({
           className={`relative w-full max-w-lg overflow-hidden rounded-t-3xl bg-surface/95 text-left backdrop-blur-xl ${
             stageProps.stage.kind === "limit-reached"
               ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_hsl(var(--accent)/0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
-              : "border-t border-white/10 shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+              : "border-t border-border shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
           }`}
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           initial={{ y: "100%" }}
@@ -580,7 +580,7 @@ function BottomSheet({
           exit={{ y: "100%" }}
           transition={{ type: "spring", stiffness: 380, damping: 34 }}
         >
-          <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-white/15" aria-hidden="true" />
+          <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-foreground/15" aria-hidden="true" />
           <DefinitionContent
             phrase={phrase}
             onDefine={stageProps.handleDefine}

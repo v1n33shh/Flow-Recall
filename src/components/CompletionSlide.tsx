@@ -123,10 +123,10 @@ export default function CompletionSlide({
         >
           <CompletionFlame streak={displayStreak} />
           <div className="mt-1">
-            <p className="text-4xl font-bold tracking-tight text-white tabular-nums">
+            <p className="text-4xl font-bold tracking-tight text-foreground tabular-nums">
               {displayStreak === 0 ? "Day 1" : `Day ${displayStreak}`}
             </p>
-            <p className="mt-0.5 text-sm font-medium text-zinc-400">{tier.label}</p>
+            <p className="mt-0.5 text-sm font-medium text-muted-foreground">{tier.label}</p>
           </div>
         </motion.div>
 
@@ -136,9 +136,9 @@ export default function CompletionSlide({
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.3, type: "spring", stiffness: 280, damping: 22 }}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3"
+            className="w-full rounded-2xl border border-border bg-foreground/5 px-4 py-3"
           >
-            <p className="text-sm font-medium text-zinc-200">{milestone}</p>
+            <p className="text-sm font-medium text-foreground">{milestone}</p>
           </motion.div>
         )}
 
@@ -149,13 +149,13 @@ export default function CompletionSlide({
           transition={{ delay: 0.15, type: "spring", stiffness: 280, damping: 24 }}
           className="grid w-full grid-cols-2 gap-3"
         >
-          <div className="flex flex-col items-center rounded-2xl border border-white/10 bg-white/[0.03] py-4">
-            <span className="text-2xl font-bold tabular-nums text-white">{mastered}</span>
-            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
+            <span className="text-2xl font-bold tabular-nums text-foreground">{mastered}</span>
+            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Mastered
             </span>
           </div>
-          <div className="flex flex-col items-center rounded-2xl border border-white/10 bg-white/[0.03] py-4">
+          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
             <span
               className={`text-2xl font-bold tabular-nums ${
                 accuracy >= 80
@@ -167,7 +167,7 @@ export default function CompletionSlide({
             >
               {accuracy}%
             </span>
-            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-zinc-500">
+            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Accuracy
             </span>
           </div>
@@ -183,7 +183,7 @@ export default function CompletionSlide({
           >
             <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-accent/15 blur-2xl" />
             <p className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</p>
-            <p className="mt-1.5 text-sm font-medium text-white leading-snug">
+            <p className="mt-1.5 text-sm font-medium text-foreground leading-snug">
               Unlock unlimited decks, Infinite Recall and Streak Freezes.
             </p>
             <Link
@@ -207,7 +207,7 @@ export default function CompletionSlide({
         >
           <Link
             href="/"
-            className="flex-1 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-center text-sm font-medium text-zinc-300 transition-all hover:bg-white/10 hover:text-white active:scale-[0.98]"
+            className="flex-1 rounded-full border border-border bg-foreground/5 px-4 py-2.5 text-center text-sm font-medium text-foreground transition-all hover:bg-foreground/10 active:scale-[0.98]"
           >
             Library
           </Link>

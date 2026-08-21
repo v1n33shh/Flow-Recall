@@ -143,7 +143,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="stylesheet" href={READER_FONTS_HREF} />
       </head>
-      <body className="min-h-full flex flex-col bg-background text-zinc-300 font-sans">
+      <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <AppLoader />
         {/* refetchOnWindowFocus/refetchInterval=0 are next-auth's own defaults
             (see node_modules/next-auth/react.js) - spelled out explicitly so

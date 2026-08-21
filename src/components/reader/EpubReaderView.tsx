@@ -397,11 +397,29 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
     return <ReaderErrorState message={errorMessage} onExit={onExit} />;
   }
 
+  // Keyed by the selection/highlight's own identity (not just "is a popover
+  // open") so React remounts DefinitionPopover - and its internal stage
+  // machine - on every new lookup instead of reusing the same instance.
+  // Without this, tapping a second word while the first's /api/define
+  // request is still in flight lets that stale response land under the new
+  // word's header once it resolves.
   const popoverProps =
     popover?.kind === "selection"
-      ? { phrase: popover.data.phrase, context: popover.data.context, anchor: popover.data.anchor, note: undefined }
+      ? {
+          key: `sel:${popover.data.rawPosition}`,
+          phrase: popover.data.phrase,
+          context: popover.data.context,
+          anchor: popover.data.anchor,
+          note: undefined,
+        }
       : popover?.kind === "highlight"
-        ? { phrase: popover.record.phrase, context: popover.record.phrase, anchor: popover.anchor, note: popover.record.note }
+        ? {
+            key: `hl:${popover.record.id}`,
+            phrase: popover.record.phrase,
+            context: popover.record.phrase,
+            anchor: popover.anchor,
+            note: popover.record.note,
+          }
         : null;
 
   return (
@@ -444,6 +462,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
       {popover?.kind === "selection" && popover.data.rects && <SelectionHighlight rects={popover.data.rects} />}
       {popoverProps && (
         <DefinitionPopover
+          key={popoverProps.key}
           phrase={popoverProps.phrase}
           context={popoverProps.context}
           anchor={popoverProps.anchor}

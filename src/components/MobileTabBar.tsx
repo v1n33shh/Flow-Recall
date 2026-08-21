@@ -85,7 +85,7 @@ type RippleSpot = { id: number; x: number; y: number };
 function Ripple({ x, y }: { x: number; y: number }) {
   return (
     <motion.span
-      className="pointer-events-none absolute h-3 w-3 rounded-full bg-white/40"
+      className="pointer-events-none absolute h-3 w-3 rounded-full bg-foreground/40"
       style={{ left: x, top: y, translateX: "-50%", translateY: "-50%" }}
       initial={{ scale: 0, opacity: 0.6 }}
       animate={{ scale: 8, opacity: 0 }}
@@ -135,7 +135,7 @@ function TabLink({
       {active && (
         <motion.span
           layoutId="mobile-tab-pill"
-          className="absolute inset-0 rounded-full bg-white/10"
+          className="absolute inset-0 rounded-full bg-foreground/10"
           transition={{ type: "spring", stiffness: 400, damping: 30 }}
         />
       )}
@@ -147,18 +147,22 @@ function TabLink({
       <span className="relative z-10">
         <Icon
           className={`h-[21px] w-[21px] transition-colors ${
-            active ? "text-white" : "text-zinc-500"
+            active ? "text-foreground" : "text-muted-foreground"
           }`}
         />
         {showStreakBadge && (
-          <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-white/10 bg-accent px-1 text-[9px] font-bold tabular-nums text-white">
+          // text-accent-foreground, not text-white - the badge's own bg-accent
+          // already inverts per theme (white in dark, black in light), so a
+          // hardcoded white digit went invisible against a white badge in dark
+          // mode too, not just a light-mode regression.
+          <span className="absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-border bg-accent px-1 text-[9px] font-bold tabular-nums text-accent-foreground">
             {streak}
           </span>
         )}
       </span>
       <span
         className={`relative z-10 truncate text-[10px] font-medium leading-none transition-colors ${
-          active ? "text-white" : "text-zinc-500"
+          active ? "text-foreground" : "text-muted-foreground"
         }`}
       >
         {label}
@@ -225,7 +229,7 @@ export default function MobileTabBar() {
             every real phone viewport, shoving the outer tabs off-screen -
             that's what made "Account" look dead. Equal flex-1 shares always
             fit, and max-w keeps them from stretching absurdly wide on tablets. */}
-        <div className="flex w-full max-w-[420px] items-center gap-0.5 rounded-full border border-white/10 bg-surface/70 px-1.5 py-2 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_32px_-8px_rgba(0,0,0,0.7)]">
+        <div className="flex w-full max-w-[420px] items-center gap-0.5 rounded-full border border-border bg-surface/70 px-1.5 py-2 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_8px_32px_-8px_rgba(0,0,0,0.7)]">
           {tabs.map(({ href, label, Icon }) => (
             <TabLink
               key={href}

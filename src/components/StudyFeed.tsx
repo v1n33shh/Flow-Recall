@@ -344,7 +344,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   return (
     <div className="fixed inset-0 z-0 bg-background">
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1 bg-white/10"
+        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-1 bg-foreground/10"
         style={{ marginTop: "env(safe-area-inset-top)" }}
       >
         <motion.div
@@ -361,7 +361,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         type="button"
         onClick={() => startTransition(() => router.push("/ingest"))}
         aria-label="Exit study session"
-        className="absolute left-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-white/5 text-zinc-300 backdrop-blur-md transition-colors hover:bg-white/10 active:scale-95"
+        className="absolute left-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-foreground/5 text-foreground backdrop-blur-md transition-colors hover:bg-foreground/10 active:scale-95"
         style={{ marginTop: "env(safe-area-inset-top)" }}
       >
         <svg
@@ -504,7 +504,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
-              className="relative w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-surface p-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.8)]"
+              className="relative w-full max-w-md overflow-hidden rounded-3xl border border-border bg-surface p-7 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.8)]"
             >
               {/* Azure ambient glow */}
               <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-accent/20 blur-3xl" />
@@ -512,10 +512,10 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
                 <span className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-accent">
                   Pro · Infinite Recall
                 </span>
-                <h2 className="mt-5 text-2xl font-bold tracking-tight text-white">
+                <h2 className="mt-5 text-2xl font-bold tracking-tight text-foreground">
                   Don&apos;t memorize the card. Master the concept.
                 </h2>
-                <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   Static flashcards trick your brain into recognizing words instead
                   of understanding concepts. Infinite Recall dynamically generates
                   high-yield questions from new angles—exposing your blind spots
@@ -530,7 +530,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
                 <button
                   type="button"
                   onClick={() => setShowUpsell(false)}
-                  className="mt-3 block w-full text-xs font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+                  className="mt-3 block w-full text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
                 >
                   Maybe later
                 </button>

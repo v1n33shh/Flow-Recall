@@ -75,7 +75,7 @@ const MARQUEE_ROWS = [
     rotate: -8,
     duration: 42,
     reverse: false,
-    className: "text-zinc-400/10",
+    className: "text-foreground/10",
   },
   {
     text: "GROQ POWERED • ZERO FRICTION • STUDY HARDER • ",
@@ -83,7 +83,7 @@ const MARQUEE_ROWS = [
     rotate: 7,
     duration: 55,
     reverse: true,
-    className: "text-zinc-400/[0.07]",
+    className: "text-foreground/[0.07]",
   },
   {
     text: "NO CREDIT CARD • BLAZING FAST • FLOWRECALL • ",
@@ -91,7 +91,7 @@ const MARQUEE_ROWS = [
     rotate: -5,
     duration: 65,
     reverse: false,
-    className: "text-zinc-400/10",
+    className: "text-foreground/10",
   },
 ];
 
@@ -111,7 +111,7 @@ const MOCK_CARDS: MockCard[] = [
     depth: 1,
     delay: 0,
     label: "MITOCHONDRIA",
-    labelColor: "text-zinc-400/70",
+    labelColor: "text-muted-foreground/70",
     body: "What is the powerhouse of the cell?",
     footer: "✕  ✓  Swipe",
   },
@@ -120,7 +120,7 @@ const MOCK_CARDS: MockCard[] = [
     depth: 1.6,
     delay: 0.1,
     label: "PHOTOSYNTHESIS",
-    labelColor: "text-zinc-400/70",
+    labelColor: "text-muted-foreground/70",
     body: "Plants use ▢▢▢▢▢ to absorb light.",
     footer: "Nailed it.",
   },
@@ -129,7 +129,7 @@ const MOCK_CARDS: MockCard[] = [
     depth: 1.2,
     delay: 0.2,
     label: "STREAK",
-    labelColor: "text-zinc-400/70",
+    labelColor: "text-muted-foreground/70",
     body: "🔥  7",
     footer: "You're on fire",
   },
@@ -183,13 +183,13 @@ function ParallaxCard({ card, mouseX, mouseY }: ParallaxCardProps) {
       initial={{ opacity: 0, scale: 0.5, rotate: 0 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ ...SNAP, delay: card.delay }}
-      className={`absolute w-44 rounded-2xl border border-white/10 bg-surface p-3 text-left ${card.className}`}
+      className={`absolute w-44 rounded-2xl border border-border bg-surface p-3 text-left ${card.className}`}
     >
       <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.labelColor}`}>
         {card.label}
       </p>
-      <p className="mt-2 text-xs leading-snug text-zinc-300">{card.body}</p>
-      <p className="mt-2 text-[10px] text-zinc-500">{card.footer}</p>
+      <p className="mt-2 text-xs leading-snug text-foreground">{card.body}</p>
+      <p className="mt-2 text-[10px] text-muted-foreground">{card.footer}</p>
     </motion.div>
   );
 }
@@ -246,17 +246,20 @@ const reveal = (delay = 0) => ({
 });
 
 // Logo-matched icon tile: zinc gradient chip with an inset top highlight.
+// Deliberately a fixed dark chip in both themes (like the Account avatar) -
+// text-zinc-300 stays fixed too, since it's sized for that permanently-dark
+// tile rather than the page background around it.
 function FeatureIcon({ children }: { children: ReactNode }) {
   return (
-    <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+    <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-border bg-gradient-to-br from-zinc-800 to-zinc-950 text-zinc-300 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
       {children}
     </div>
   );
 }
 
-// Shared card chrome: deep zinc glass, hairline ring, inset highlight.
+// Shared card chrome: theme-adaptive glass, hairline ring, inset highlight.
 const CARD =
-  "group relative flex flex-col overflow-hidden rounded-3xl bg-zinc-950/60 p-8 ring-1 ring-inset ring-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-colors duration-300 hover:ring-white/20";
+  "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
 
 function FeaturesSection() {
   return (
@@ -265,17 +268,17 @@ function FeaturesSection() {
       className="relative z-10 mx-auto w-full max-w-6xl px-6 py-24 sm:py-32"
     >
       <motion.div {...reveal()} className="mx-auto max-w-3xl text-center">
-        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-zinc-300 md:backdrop-blur-md">
+        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md">
           <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
           Why FlowRecall
         </p>
         <h2
           id="features-heading"
-          className="font-sans text-3xl font-bold leading-tight tracking-tight text-zinc-100 [text-wrap:balance] sm:text-5xl"
+          className="font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
         >
           The ultimate active recall study tool for medical students and polymaths.
         </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-zinc-400 [text-wrap:balance] sm:text-lg">
+        <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg">
           Turn any PDF into an AI-generated, spaced-repetition study feed — all the
           retention science of Anki, rebuilt for how students actually study today.
         </p>
@@ -296,10 +299,10 @@ function FeaturesSection() {
                 <path d="M13 3v6h6" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100 sm:text-2xl">
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
               PDF to Flashcards in Seconds
             </h3>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-zinc-400 sm:text-base">
+            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
               Drop in a lecture slide deck, a textbook chapter, or a research PDF.
               FlowRecall&apos;s AI reads it and spins up hundreds of active-recall
               flashcards in seconds — no manual card-making, no formatting, no busywork.
@@ -307,24 +310,24 @@ function FeaturesSection() {
           </div>
           {/* CSS-only monochrome mock: a PDF page transforming into a study card. */}
           <div className="relative mt-10 flex items-center gap-3" aria-hidden="true">
-            <div className="h-28 w-20 shrink-0 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-              <div className="h-1.5 w-3/4 rounded bg-white/15" />
-              <div className="mt-1.5 h-1.5 w-full rounded bg-white/10" />
-              <div className="mt-1.5 h-1.5 w-5/6 rounded bg-white/10" />
-              <div className="mt-1.5 h-1.5 w-full rounded bg-white/10" />
-              <div className="mt-3 h-1.5 w-1/2 rounded bg-white/10" />
+            <div className="h-28 w-20 shrink-0 rounded-lg border border-border bg-foreground/[0.03] p-2">
+              <div className="h-1.5 w-3/4 rounded bg-foreground/15" />
+              <div className="mt-1.5 h-1.5 w-full rounded bg-foreground/10" />
+              <div className="mt-1.5 h-1.5 w-5/6 rounded bg-foreground/10" />
+              <div className="mt-1.5 h-1.5 w-full rounded bg-foreground/10" />
+              <div className="mt-3 h-1.5 w-1/2 rounded bg-foreground/10" />
             </div>
-            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 shrink-0 text-zinc-600" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <div className="relative flex-1">
-              <div className="absolute -top-2 left-2 h-24 w-full rotate-[-6deg] rounded-xl border border-white/10 bg-white/[0.02]" />
-              <div className="relative h-24 w-full rounded-xl border border-white/10 bg-zinc-900/80 p-3">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              <div className="absolute -top-2 left-2 h-24 w-full rotate-[-6deg] rounded-xl border border-border bg-foreground/[0.02]" />
+              <div className="relative h-24 w-full rounded-xl border border-border bg-surface/80 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Recall
                 </div>
-                <div className="mt-2 h-1.5 w-4/5 rounded bg-white/15" />
-                <div className="mt-1.5 h-1.5 w-3/5 rounded bg-white/10" />
+                <div className="mt-2 h-1.5 w-4/5 rounded bg-foreground/15" />
+                <div className="mt-1.5 h-1.5 w-3/5 rounded bg-foreground/10" />
                 <div className="mt-3 text-[10px] font-medium text-accent">Tap to reveal</div>
               </div>
             </div>
@@ -339,16 +342,16 @@ function FeaturesSection() {
                 <path d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z" fill="currentColor" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100">
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
               Spaced Repetition &amp; Gamification
             </h3>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
               Every card is scheduled with spaced repetition, so you review right
               before you&apos;d forget. Streaks, tiers, and a swipe-to-answer feed
               turn daily review into a habit you actually keep.
             </p>
           </div>
-          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-400">
+          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-foreground/[0.03] px-3 py-1 text-xs text-muted-foreground">
             <span className="h-1 w-1 rounded-full bg-accent" />
             Spaced repetition &middot; Streaks
           </div>
@@ -363,14 +366,14 @@ function FeaturesSection() {
                 <path d="m8.5 12 2.4 2.4 4.6-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-zinc-100">Better than Anki</h3>
-            <p className="mt-3 text-sm leading-relaxed text-zinc-400 sm:text-base">
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">Better than Anki</h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
               All of Anki&apos;s retention power, none of the friction. No add-ons, no
               template-wrangling, no hours spent building decks — just upload and
               study. The modern Anki alternative, built for how students really work.
             </p>
           </div>
-          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-400">
+          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-foreground/[0.03] px-3 py-1 text-xs text-muted-foreground">
             <span className="h-1 w-1 rounded-full bg-accent" />
             Anki alternative
           </div>
@@ -394,27 +397,27 @@ function FaqSection() {
       <motion.h2
         {...reveal()}
         id="faq-heading"
-        className="text-center font-sans text-3xl font-bold leading-tight tracking-tight text-zinc-100 sm:text-4xl"
+        className="text-center font-sans text-3xl font-bold leading-tight tracking-tight text-foreground sm:text-4xl"
       >
         Frequently asked questions
       </motion.h2>
       <motion.div
         {...reveal(0.05)}
-        className="mt-10 divide-y divide-white/10 rounded-3xl bg-zinc-950/60 px-6 ring-1 ring-inset ring-white/10 backdrop-blur-xl sm:mt-12 sm:px-8"
+        className="mt-10 divide-y divide-border rounded-3xl bg-surface/60 px-6 ring-1 ring-inset ring-border backdrop-blur-xl sm:mt-12 sm:px-8"
       >
         {FAQ_ITEMS.map(({ q, a }) => (
           <details key={q} className="group py-5">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-1 [&::-webkit-details-marker]:hidden">
-              <h3 className="text-base font-medium text-zinc-200 transition-colors group-open:text-white sm:text-lg">
+              <h3 className="text-base font-medium text-foreground/80 transition-colors group-open:text-foreground sm:text-lg">
                 {q}
               </h3>
-              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 text-zinc-400 transition-transform duration-300 group-open:rotate-45">
+              <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-transform duration-300 group-open:rotate-45">
                 <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                   <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </span>
             </summary>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-400 sm:text-base">
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               {a}
             </p>
           </details>
@@ -544,15 +547,15 @@ export default function Home() {
       {/* Faded spotlight grid - a fine ruled pattern masked with a radial
           gradient so it dissolves into darkness at the edges, leaving a subtle
           lit "stage" behind the hero copy. */}
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
 
       {/* Ambient glow orbs - purely decorative, blurred color washes that sit
-          behind the hero to give the dark page depth. pointer-events-none and
+          behind the hero to give the page depth. pointer-events-none and
           -z-10 keep them clear of the marquee, cards, and interactive content. */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden hidden md:block">
-        <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-white/[0.03] blur-3xl" />
-        <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-white/5 blur-3xl" />
+        <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl" />
+        <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl" />
+        <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-foreground/5 blur-3xl" />
       </div>
 
       {/* Cinematic film grain - a fixed, whisper-faint noise texture over the
@@ -572,7 +575,7 @@ export default function Home() {
           initial={{ opacity: 0, y: -24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={SNAP}
-          className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-zinc-300 md:backdrop-blur-md"
+          className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
           Active recall, disguised as doomscrolling
@@ -582,7 +585,7 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.05 }}
           id="hero-heading"
-          className="max-w-2xl bg-gradient-to-br from-white via-zinc-200 to-zinc-500 bg-clip-text pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] md:text-7xl"
+          className="max-w-2xl bg-gradient-to-br from-foreground via-foreground/70 to-foreground/40 bg-clip-text pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] md:text-7xl"
         >
           The AI Flashcards App That Turns PDFs Into Active Recall
         </motion.h1>
@@ -590,7 +593,7 @@ export default function Home() {
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.1 }}
-          className="mt-6 max-w-xl text-lg leading-relaxed text-zinc-300/90 [text-wrap:balance] sm:text-xl"
+          className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
         >
           Upload any lecture PDF, and FlowRecall instantly generates an
           addictive, gamified active-recall feed. Stop passively re-reading
@@ -606,7 +609,7 @@ export default function Home() {
           {/* Secondary CTA - minimalist glassmorphic outline. */}
           <Link
             href="/pricing"
-            className="w-full rounded-full border border-white/10 bg-transparent px-6 py-3.5 text-center text-base font-medium text-zinc-300 md:backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-white/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
+            className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground md:backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
           >
             View Pro Plans
           </Link>
@@ -625,7 +628,7 @@ export default function Home() {
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">
             <h2
               id="library-heading"
-              className="text-left text-lg font-semibold tracking-tight text-zinc-300 sm:text-xl"
+              className="text-left text-lg font-semibold tracking-tight text-foreground sm:text-xl"
             >
               Your Library
             </h2>
@@ -641,35 +644,35 @@ export default function Home() {
                 return (
                   <div
                     key={deck.id}
-                    className="group relative flex flex-col rounded-2xl border border-white/10 bg-white/[0.02] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] md:backdrop-blur-xl transition-transform hover:-translate-y-0.5"
+                    className="group relative flex flex-col rounded-2xl border border-border bg-foreground/[0.02] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] md:backdrop-blur-xl transition-transform hover:-translate-y-0.5"
                   >
                     <button
                       type="button"
                       onClick={(event) => handleDelete(deck.id, event)}
                       aria-label="Delete deck"
-                      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+                      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
                     >
                       &times;
                     </button>
-                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {formatDate(deck.createdAt)}
                     </p>
-                    <h3 className="mt-1 truncate pr-6 text-lg font-semibold text-zinc-300">
+                    <h3 className="mt-1 truncate pr-6 text-lg font-semibold text-foreground">
                       {deck.title}
                     </h3>
-                    <p className="mt-1 text-sm text-zinc-400">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {deck.concepts.length} concept{deck.concepts.length === 1 ? "" : "s"}
                     </p>
 
                     {progress && (
                       <div className="mt-3">
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
                           <div
                             className="h-full bg-accent transition-all"
                             style={{ width: `${pct * 100}%` }}
                           />
                         </div>
-                        <p className="mt-1.5 text-xs text-zinc-500">
+                        <p className="mt-1.5 text-xs text-muted-foreground">
                           {masteredCount}/{deck.concepts.length} mastered
                         </p>
                       </div>
@@ -689,14 +692,14 @@ export default function Home() {
                           type="button"
                           onClick={() => handleGenerateNextSection(deck)}
                           disabled={generatingDeckIds.has(deck.id)}
-                          className="mt-2 rounded-full border border-white/10 bg-transparent px-4 py-2.5 text-sm font-medium text-zinc-300 transition-all duration-200 hover:bg-white/10 hover:text-white active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {generatingDeckIds.has(deck.id)
                             ? "Generating..."
                             : `Generate Next Section (${deck.pendingChunks.length} chunks left)`}
                         </button>
                         {jitErrors[deck.id] && (
-                          <p className="mt-2 text-xs text-zinc-400">{jitErrors[deck.id]}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">{jitErrors[deck.id]}</p>
                         )}
                       </>
                     )}

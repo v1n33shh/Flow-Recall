@@ -338,7 +338,7 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
     >
       <div ref={scrollRef} onScroll={handleScroll} className="h-full w-full overflow-y-auto px-6 py-10 sm:px-10">
         <div
-          className="reader-longpress-text mx-auto max-w-2xl text-zinc-200"
+          className="reader-longpress-text mx-auto max-w-2xl text-foreground"
           style={{
             fontFamily: FONT_FAMILY_CSS[fontFamily],
             fontSize: `${fontPercent}%`,
@@ -363,7 +363,11 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
 
       {selection?.rects && <SelectionHighlight rects={selection.rects} />}
       {selection && (
+        // Keyed by rawPosition so a new selection remounts the popover's
+        // stage machine - otherwise a slow /api/define response for a
+        // previous word can land under the newly-selected word's header.
         <DefinitionPopover
+          key={`sel:${selection.rawPosition}`}
           phrase={selection.phrase}
           context={selection.context}
           anchor={selection.anchor}
@@ -373,6 +377,7 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
       )}
       {activeTappedHighlight && (
         <DefinitionPopover
+          key={`hl:${activeTappedHighlight.record.id}`}
           phrase={activeTappedHighlight.record.phrase}
           context={activeTappedHighlight.record.phrase}
           anchor={activeTappedHighlight.anchor}

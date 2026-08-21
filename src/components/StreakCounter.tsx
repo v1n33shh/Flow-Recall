@@ -89,7 +89,7 @@ export default function StreakCounter({
           : undefined
       }
       className={`flex items-center gap-1.5 rounded-full border bg-surface px-2 sm:px-3 py-1 text-sm font-semibold outline-none ${
-        onFire ? "border-white/20 text-white" : "border-white/10 text-accent"
+        onFire ? "border-border text-foreground" : "border-border text-accent"
       } ${onClick ? "cursor-pointer select-none transition-transform hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent/60" : ""}`}
     >
       <TierFlame streak={streak} />

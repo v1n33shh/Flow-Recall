@@ -27,14 +27,14 @@ export default function PasteTextForm({ onImported }: { onImported: (book: BookM
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Untitled Notes"
-        className="w-full rounded-xl border border-white/10 bg-surface px-4 py-3 text-base text-zinc-300 placeholder-zinc-600 outline-none"
+        className="w-full rounded-xl border border-border bg-surface px-4 py-3 text-base text-foreground placeholder-muted-foreground outline-none"
       />
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder="Paste lecture notes, an article, anything you want to read distraction-free..."
         rows={8}
-        className="w-full resize-y rounded-2xl border border-white/10 bg-surface p-4 text-base text-zinc-300 placeholder-zinc-600 outline-none"
+        className="w-full resize-y rounded-2xl border border-border bg-surface p-4 text-base text-foreground placeholder-muted-foreground outline-none"
       />
       <button
         type="button"

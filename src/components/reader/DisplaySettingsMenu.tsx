@@ -46,9 +46,9 @@ function SliderRow({
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between text-xs font-medium text-zinc-400">
+      <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
         <span>{label}</span>
-        <span className="tabular-nums text-zinc-300">{valueLabel}</span>
+        <span className="tabular-nums text-foreground">{valueLabel}</span>
       </div>
       <input
         type="range"
@@ -106,8 +106,8 @@ export default function DisplaySettingsMenu({
         type="button"
         aria-label="Display settings"
         onClick={() => setOpen((v) => !v)}
-        className={`flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-zinc-300 transition-colors active:scale-90 ${
-          open ? "bg-white/15 text-zinc-100" : "hover:bg-white/10"
+        className={`flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-foreground transition-colors active:scale-90 ${
+          open ? "bg-foreground/15" : "hover:bg-foreground/10"
         }`}
       >
         <span className="flex items-baseline gap-px font-medium">
@@ -124,7 +124,7 @@ export default function DisplaySettingsMenu({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-white/10 bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+            className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-border bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
           >
             <div className="flex flex-col gap-4">
               {zoom && (
@@ -151,8 +151,8 @@ export default function DisplaySettingsMenu({
                     onChange={typography.onFontPercentChange}
                   />
 
-                  <div className={zoom ? "border-t border-white/10 pt-4" : ""}>
-                    <p className="text-xs font-medium text-zinc-400">Font</p>
+                  <div className={zoom ? "border-t border-border pt-4" : ""}>
+                    <p className="text-xs font-medium text-muted-foreground">Font</p>
                     <div className="mt-2 grid grid-cols-3 gap-1.5">
                       {FONT_FAMILY_IDS.map((id) => {
                         const selected = typography.fontFamily === id;
@@ -165,7 +165,7 @@ export default function DisplaySettingsMenu({
                             className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 transition-colors ${
                               selected
                                 ? "border-accent/50 bg-accent/10 text-accent"
-                                : "border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10"
+                                : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
                             }`}
                           >
                             <span style={{ fontFamily: FONT_FAMILY_CSS[id] }} className="text-base leading-none">

@@ -30,7 +30,7 @@ export default function ReaderChrome({
       {/* Fine top-of-viewport progress bar, Chrome-tab-load style. Scaled via
           transform (not width) so it stays compositor-only, per the contract
           above - animating `width` triggers layout every frame. */}
-      <div className="absolute inset-x-0 top-0 z-30 h-[3px] bg-white/5">
+      <div className="absolute inset-x-0 top-0 z-30 h-[3px] bg-foreground/5">
         <motion.div
           className="h-full w-full origin-left bg-accent"
           animate={{ scaleX: progress }}
@@ -46,21 +46,21 @@ export default function ReaderChrome({
           of any dropdown here (e.g. DisplaySettingsMenu's popover) wherever
           the dropdown extends past the header's own box. */}
       <div
-        className="relative z-20 flex items-center justify-between gap-2 border-b border-white/10 bg-surface/70 px-3 py-2.5 backdrop-blur-xl"
+        className="relative z-20 flex items-center justify-between gap-2 border-b border-border bg-surface/70 px-3 py-2.5 backdrop-blur-xl"
         style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.625rem)" }}
       >
         <button
           type="button"
           onClick={onExit}
           aria-label="Back to library"
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200 active:scale-90"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-90"
         >
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
             <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
 
-        <p className="min-w-0 flex-1 truncate text-center text-xs font-medium text-zinc-400">{title}</p>
+        <p className="min-w-0 flex-1 truncate text-center text-xs font-medium text-muted-foreground">{title}</p>
 
         <div className="flex shrink-0 items-center gap-1.5">{controls}</div>
       </div>
@@ -77,7 +77,7 @@ export default function ReaderChrome({
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-              className="h-7 w-7 rounded-full border-2 border-white/15 border-t-accent"
+              className="h-7 w-7 rounded-full border-2 border-border border-t-accent"
             />
           </div>
         )}
@@ -90,11 +90,11 @@ export default function ReaderChrome({
 export function ReaderErrorState({ message, onExit }: { message: string; onExit: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-background px-6 text-center">
-      <p className="text-sm text-zinc-400">{message}</p>
+      <p className="text-sm text-muted-foreground">{message}</p>
       <button
         type="button"
         onClick={onExit}
-        className="rounded-full border border-white/10 bg-white/5 px-5 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/10"
+        className="rounded-full border border-border bg-foreground/5 px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-foreground/10"
       >
         Back to library
       </button>

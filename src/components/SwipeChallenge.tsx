@@ -96,7 +96,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
 
   return (
     <div className="w-full">
-      <p className="mb-4 text-center text-sm text-zinc-400">{concept.question}</p>
+      <p className="mb-4 text-center text-sm text-muted-foreground">{concept.question}</p>
 
       {/* cardControls handles the scale-bounce / shake feedback. */}
       <motion.div animate={cardControls}>
@@ -123,13 +123,17 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
               revealed ? "" : "cursor-grab active:cursor-grabbing"
             }`}
           >
-            {/* Front face: the claim to judge. */}
-            <div className="absolute inset-0 flex items-center justify-center rounded-3xl border border-white/10 bg-surface p-8 text-center [backface-visibility:hidden]">
-              <p className="text-xl font-medium text-zinc-300">{claim}</p>
+            {/* Front face: the claim to judge. bg-surface flips with the theme,
+                so its text must too - text-zinc-300 (near-white) used to go
+                invisible on the near-white light-mode surface. */}
+            <div className="absolute inset-0 flex items-center justify-center rounded-3xl border border-border bg-surface p-8 text-center [backface-visibility:hidden]">
+              <p className="text-xl font-medium text-foreground">{claim}</p>
             </div>
 
             {/* Back face: the real answer. Pre-rotated 180° so it reads
-                upright once the card has flipped. */}
+                upright once the card has flipped. Deliberately a fixed-dark
+                card in both themes (like the Account avatar) - its light text
+                stays hardcoded on purpose, not a theming bug. */}
             <div className="absolute inset-0 flex flex-col rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-[#0A0A0A] p-6 text-center [transform:rotateY(180deg)] [backface-visibility:hidden] overflow-y-auto no-scrollbar">
               <div className="flex flex-col items-center justify-center shrink-0 mb-3">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
@@ -168,7 +172,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
           <p className={`font-medium ${outcome ? "text-emerald-400" : "text-rose-400"}`}>
             {outcome ? "Correct!" : "Not quite"}
           </p>
-          <p className="mt-1 text-zinc-200">
+          <p className="mt-1 text-foreground">
             {concept.question} &rarr; {concept.answer}
           </p>
         </motion.div>
@@ -178,18 +182,18 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mt-6 rounded-2xl border border-white/10 bg-surface px-4 py-4 text-center"
+          className="mt-6 rounded-2xl border border-border bg-surface px-4 py-4 text-center"
         >
-          <p className="text-xs font-medium uppercase tracking-widest text-zinc-500">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             How did you do?
           </p>
           <div className="mt-4 flex justify-center gap-3">
             <button
               type="button"
               onClick={() => grade(false)}
-              className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2 text-sm font-medium text-zinc-300 transition-transform hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-foreground transition-transform hover:scale-105 active:scale-95"
             >
-              <kbd className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-zinc-400">1</kbd>
+              <kbd className="rounded bg-foreground/10 px-1.5 py-0.5 text-xs text-muted-foreground">1</kbd>
               Incorrect
             </button>
             <button
@@ -208,7 +212,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
             type="button"
             onClick={() => decide(false)}
             aria-label="Mark as false"
-            className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 text-2xl text-zinc-300 transition-transform hover:scale-105 active:scale-95"
+            className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
           >
             ✕
           </button>
@@ -216,7 +220,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
             type="button"
             onClick={() => decide(true)}
             aria-label="Mark as true"
-            className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 text-2xl text-zinc-300 transition-transform hover:scale-105 active:scale-95"
+            className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
           >
             ✓
           </button>

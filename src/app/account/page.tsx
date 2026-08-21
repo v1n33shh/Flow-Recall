@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getSession, signOut, useSession } from "next-auth/react";
@@ -49,11 +48,6 @@ export default function AccountPage() {
 function WebAccountCard() {
   const router = useRouter();
   const { data: session, status } = useSession();
-  // Google's photo URL can be present in the JWT but still fail to actually
-  // load (network hiccup, CORS, Android WebView restriction) - `onError`
-  // flips this so the initials fallback renders instead of a broken/invisible
-  // image node.
-  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/");
@@ -68,20 +62,15 @@ function WebAccountCard() {
       <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
 
       <div className="mt-6 flex items-center gap-4 rounded-2xl border-2 border-white/10 bg-white/5 p-5">
-        {user.image && !imgError ? (
-          <Image
-            src={user.image}
-            alt=""
-            width={56}
-            height={56}
-            className="rounded-full"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-xl font-bold text-white ring-1 ring-white/10">
-            {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
-          </span>
-        )}
+        {/* #18181b is intentionally an inline style — Tailwind purges utility
+            classes that only appear in a branch the static analyser never
+            sees rendered. */}
+        <span
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-bold text-white ring-1 ring-white/10"
+          style={{ background: "#18181b" }}
+        >
+          {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
+        </span>
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold text-white">{user.name ?? "Student"}</p>
           <p className="truncate text-sm text-zinc-400">{user.email}</p>
@@ -108,7 +97,7 @@ function WebAccountCard() {
 
 function ChevronIcon() {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0 text-zinc-600" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true">
       <path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -157,9 +146,16 @@ function ThemeSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       aria-checked={on}
       aria-label="Dark mode"
       onClick={onToggle}
+      // `on` state is a fixed blue via inline style, not `bg-accent` -
+      // `--accent` resolves to white in dark mode, which made the track
+      // invisible against the black surface behind it.
+      // `off` state uses `bg-foreground/15`, not `bg-white/15` - `foreground`
+      // flips to near-black in light mode, so the track stays visible against
+      // the near-white background instead of vanishing into it.
       className={`relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors duration-200 ${
-        on ? "bg-accent" : "bg-white/15"
+        on ? "" : "bg-foreground/15"
       }`}
+      style={{ background: on ? "#3b82f6" : undefined }}
     >
       <motion.span
         className="absolute top-[3px] left-[3px] h-6 w-6 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.4)]"
@@ -172,7 +168,7 @@ function ThemeSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 function SettingsGroup({ children }: { children: React.ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-surface/70 [&>*:not(:last-child)]:border-b [&>*:not(:last-child)]:border-white/[0.06]">
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface/70 [&>*:not(:last-child)]:border-b [&>*:not(:last-child)]:border-border/60">
       {children}
     </div>
   );
@@ -195,10 +191,10 @@ function SettingsRow({
 }) {
   const content = (
     <>
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-white/[0.06]">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-foreground/[0.06]">
         {icon}
       </span>
-      <span className={`flex-1 text-[15px] font-medium ${destructive ? "text-red-400" : "text-zinc-100"}`}>
+      <span className={`flex-1 text-[15px] font-medium ${destructive ? "text-red-400" : "text-foreground"}`}>
         {label}
       </span>
       {trailing ?? (href && <ChevronIcon />)}
@@ -206,7 +202,7 @@ function SettingsRow({
   );
 
   const className =
-    "flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none transition-colors active:bg-white/[0.06] focus-visible:bg-white/[0.06]";
+    "flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none transition-colors active:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06]";
 
   if (href) {
     return (
@@ -227,12 +223,12 @@ function AccountSkeleton() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-8">
       <div className="flex flex-col items-center gap-3 py-6">
-        <div className="h-20 w-20 animate-pulse rounded-full bg-white/10" />
-        <div className="h-4 w-32 animate-pulse rounded-full bg-white/10" />
-        <div className="h-3 w-44 animate-pulse rounded-full bg-white/[0.06]" />
+        <div className="h-20 w-20 animate-pulse rounded-full bg-foreground/10" />
+        <div className="h-4 w-32 animate-pulse rounded-full bg-foreground/10" />
+        <div className="h-3 w-44 animate-pulse rounded-full bg-foreground/[0.06]" />
       </div>
-      <div className="mt-6 h-16 animate-pulse rounded-2xl bg-white/[0.06]" />
-      <div className="mt-6 h-40 animate-pulse rounded-2xl bg-white/[0.06]" />
+      <div className="mt-6 h-16 animate-pulse rounded-2xl bg-foreground/[0.06]" />
+      <div className="mt-6 h-40 animate-pulse rounded-2xl bg-foreground/[0.06]" />
     </main>
   );
 }
@@ -447,11 +443,6 @@ function NativeAccountScreen() {
   const { data: session, status } = useSession();
   const [theme, setThemeState] = useState<Theme>("dark");
   const [graceElapsed, setGraceElapsed] = useState(false);
-  // Google's photo URL can be present in the JWT but still fail to actually
-  // load (network hiccup, CORS, Android WebView restriction) - `onError`
-  // flips this so the initials fallback renders instead of a broken/invisible
-  // image node.
-  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -489,27 +480,22 @@ function NativeAccountScreen() {
   return (
     <PullToRefresh>
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Account</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Account</h1>
 
         <Reveal index={0}>
           <div className="mt-6 flex flex-col items-center gap-3 text-center">
-            {user.image && !imgError ? (
-              <Image
-                src={user.image}
-                alt=""
-                width={80}
-                height={80}
-                className="rounded-full ring-2 ring-white/10"
-                onError={() => setImgError(true)}
-              />
-            ) : (
-              <span className="flex h-20 w-20 items-center justify-center rounded-full bg-zinc-900 text-2xl font-bold text-white ring-1 ring-white/10">
-                {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
-              </span>
-            )}
+            {/* #18181b is intentionally an inline style — Tailwind purges utility
+                classes that only appear in a branch the static analyser never
+                sees rendered. */}
+            <span
+              className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white ring-1 ring-border"
+              style={{ background: "#18181b" }}
+            >
+              {(user.name ?? user.email ?? "?").charAt(0).toUpperCase()}
+            </span>
             <div>
-              <p className="text-lg font-semibold text-zinc-100">{user.name ?? "Student"}</p>
-              <p className="text-sm text-zinc-500">{user.email}</p>
+              <p className="text-lg font-semibold text-foreground">{user.name ?? "Student"}</p>
+              <p className="text-sm text-muted-foreground">{user.email}</p>
             </div>
           </div>
         </Reveal>
@@ -518,15 +504,15 @@ function NativeAccountScreen() {
             glancing at every time this screen opens. */}
         <Reveal index={1}>
           <div className="mt-6 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-white/10 bg-surface/70 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Plan</p>
-              <p className={`mt-0.5 text-lg font-bold ${isPro ? "text-accent" : "text-zinc-100"}`}>
+            <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Plan</p>
+              <p className={`mt-0.5 text-lg font-bold ${isPro ? "text-accent" : "text-foreground"}`}>
                 {isPro ? "Pro" : "Free"}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-surface/70 px-4 py-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Streak</p>
-              <p className="mt-0.5 text-lg font-bold tabular-nums text-zinc-100">
+            <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Streak</p>
+              <p className="mt-0.5 text-lg font-bold tabular-nums text-foreground">
                 {streak} {streak === 1 ? "day" : "days"}
               </p>
             </div>
@@ -534,7 +520,7 @@ function NativeAccountScreen() {
         </Reveal>
 
         <Reveal index={2}>
-          <p className="mt-8 mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="mt-8 mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Account
           </p>
           <SettingsGroup>
@@ -543,7 +529,7 @@ function NativeAccountScreen() {
         </Reveal>
 
         <Reveal index={3}>
-          <p className="mt-6 mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <p className="mt-6 mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Preferences
           </p>
           <SettingsGroup>
@@ -572,7 +558,7 @@ function NativeAccountScreen() {
         </Reveal>
 
         {APP_VERSION && (
-          <p className="mt-8 text-center text-xs text-zinc-600">FlowRecall v{APP_VERSION}</p>
+          <p className="mt-8 text-center text-xs text-muted-foreground">FlowRecall v{APP_VERSION}</p>
         )}
       </main>
     </PullToRefresh>

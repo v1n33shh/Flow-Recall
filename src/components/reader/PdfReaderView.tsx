@@ -406,13 +406,13 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       loading={loadState === "loading"}
       controls={
         <>
-          <div className="flex items-center gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5">
+          <div className="flex items-center gap-0.5 rounded-full border border-border bg-foreground/5 p-0.5">
             <button
               type="button"
               aria-label="Previous page"
               onClick={() => goToPage(pageNumber - 1)}
               disabled={pageNumber <= 1}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90 disabled:opacity-30"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                 <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -423,7 +423,7 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
               aria-label="Next page"
               onClick={() => goToPage(pageNumber + 1)}
               disabled={pageNumber >= numPages}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-zinc-300 transition-colors hover:bg-white/10 active:scale-90 disabled:opacity-30"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90 disabled:opacity-30"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
                 <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -462,7 +462,11 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
 
       {selection?.rects && <SelectionHighlight rects={selection.rects} />}
       {selection && (
+        // Keyed by rawPosition so a new selection remounts the popover's
+        // stage machine - otherwise a slow /api/define response for a
+        // previous word can land under the newly-selected word's header.
         <DefinitionPopover
+          key={`sel:${selection.rawPosition}`}
           phrase={selection.phrase}
           context={selection.context}
           anchor={selection.anchor}
@@ -472,6 +476,7 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       )}
       {activeTappedHighlight && (
         <DefinitionPopover
+          key={`hl:${activeTappedHighlight.record.id}`}
           phrase={activeTappedHighlight.record.phrase}
           context={activeTappedHighlight.record.phrase}
           anchor={activeTappedHighlight.anchor}

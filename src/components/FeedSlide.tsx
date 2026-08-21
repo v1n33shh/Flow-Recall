@@ -63,7 +63,7 @@ export default function FeedSlide({
       <div className="w-full max-w-md">
         {/* Card header — concept label + badges */}
         {/* The overflow-hidden + relative here contains the full-width sweep. */}
-        <div className="relative mb-6 flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl text-xs font-medium text-zinc-400">
+        <div className="relative mb-6 flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl text-xs font-medium text-muted-foreground">
 
           {/* Full-width materialisation sweep — an accent-colored light bar
               that travels left→right across the entire header the moment
@@ -83,12 +83,12 @@ export default function FeedSlide({
             />
           )}
 
-          <span className="flex items-center gap-2 uppercase tracking-widest text-zinc-400">
+          <span className="flex items-center gap-2 uppercase tracking-widest text-muted-foreground">
             {concept.concept}
 
             {/* Retry badge — only on re-queued items */}
             {attempt > 1 && (
-              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] normal-case tracking-normal text-zinc-400">
+              <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[10px] normal-case tracking-normal text-muted-foreground">
                 Retry
               </span>
             )}
@@ -110,7 +110,7 @@ export default function FeedSlide({
 
         <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
 
-        <p className="mt-8 text-center text-sm text-zinc-500">
+        <p className="mt-8 text-center text-sm text-muted-foreground">
           Scroll down for the next concept ↓
         </p>
       </div>

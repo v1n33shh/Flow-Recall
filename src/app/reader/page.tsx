@@ -52,7 +52,7 @@ function BookCard({ book, onOpen, onDelete }: { book: BookMeta; onOpen: () => vo
       <button
         type="button"
         onClick={onOpen}
-        className="relative aspect-[2/3] w-full overflow-hidden rounded-xl border border-white/10 bg-surface shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_12px_28px_-10px_rgba(0,0,0,0.7)] transition-transform active:scale-[0.97]"
+        className="relative aspect-[2/3] w-full overflow-hidden rounded-xl border border-border bg-surface shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_12px_28px_-10px_rgba(0,0,0,0.7)] transition-transform active:scale-[0.97]"
       >
         <BookCover book={book} />
         <span className="absolute left-1.5 top-1.5 rounded-full border border-white/10 bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-zinc-300 backdrop-blur-md">
@@ -77,8 +77,8 @@ function BookCard({ book, onOpen, onDelete }: { book: BookMeta; onOpen: () => vo
       </button>
 
       <div className="px-0.5">
-        <p className="truncate text-sm font-medium text-zinc-200">{book.title}</p>
-        {book.author && <p className="truncate text-xs text-zinc-500">{book.author}</p>}
+        <p className="truncate text-sm font-medium text-foreground">{book.title}</p>
+        {book.author && <p className="truncate text-xs text-muted-foreground">{book.author}</p>}
       </div>
     </motion.div>
   );
@@ -88,14 +88,14 @@ type AddMode = "upload" | "paste";
 
 function AddModeToggle({ mode, onChange }: { mode: AddMode; onChange: (mode: AddMode) => void }) {
   return (
-    <div className="inline-flex gap-0.5 rounded-full border border-white/10 bg-white/5 p-0.5">
+    <div className="inline-flex gap-0.5 rounded-full border border-border bg-foreground/5 p-0.5">
       {(["upload", "paste"] as const).map((m) => (
         <button
           key={m}
           type="button"
           onClick={() => onChange(m)}
           className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-            mode === m ? "bg-white/10 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+            mode === m ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground"
           }`}
         >
           {m === "upload" ? "Upload File" : "Paste Text"}
@@ -119,15 +119,15 @@ function ReaderLibrary({ onOpenBook }: { onOpenBook: (id: string) => void }) {
       {/* Navbar/MobileTabBar are fully hidden on /reader (same treatment as
           /study) so the reading view stays truly full-bleed - this is the
           library's only way back to the rest of the app. */}
-      <Link href="/" className="mb-6 flex items-center gap-1.5 self-start text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-300">
+      <Link href="/" className="mb-6 flex items-center gap-1.5 self-start text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
         <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
           <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
         FlowRecall
       </Link>
 
-      <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">Reader</h1>
-      <p className="mt-2 text-sm text-zinc-400">
+      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Reader</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
         Drop in an EPUB, a PDF, or paste raw notes, and read distraction-free.
         Highlight any word or phrase for an instant AI definition - no
         tab-switching, no broken flow.

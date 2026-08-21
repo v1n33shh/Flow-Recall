@@ -99,13 +99,13 @@ export default function LoginPage() {
   return (
     <main className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-6 py-16">
       {/* Faded spotlight grid (cheap, always on) */}
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
 
       {/* Ambient glow orbs — desktop only (blur-3xl janks Android scroll) */}
       <div className="pointer-events-none absolute inset-0 -z-10 hidden overflow-hidden md:block">
-        <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-white/[0.03] blur-3xl" />
-        <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-white/5 blur-3xl" />
+        <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl" />
+        <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl" />
+        <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-foreground/5 blur-3xl" />
       </div>
 
       {/* Cinematic film grain — desktop only */}
@@ -117,19 +117,19 @@ export default function LoginPage() {
 
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="font-sans text-3xl font-bold tracking-tight text-white">
+          <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm text-zinc-400">Sign in to pick up where you left off.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Sign in to pick up where you left off.</p>
         </div>
 
-        <div className="flex flex-col gap-5 rounded-3xl border border-white/10 bg-white/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl sm:p-8">
+        <div className="flex flex-col gap-5 rounded-3xl border border-border bg-foreground/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl sm:p-8">
           {/* Google OAuth */}
           <button
             type="button"
             onClick={handleGoogle}
             disabled={loading}
-            className="flex w-full items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-6 py-3.5 text-sm font-medium text-zinc-100 transition-all duration-200 hover:bg-white/[0.06] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-3 rounded-full border border-border bg-foreground/[0.03] px-6 py-3.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/[0.06] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <GoogleIcon />
             Continue with Google
@@ -137,14 +137,14 @@ export default function LoginPage() {
 
           {/* Divider */}
           <div className="flex items-center gap-4">
-            <span className="h-px flex-1 bg-white/10" />
-            <span className="text-xs uppercase tracking-widest text-zinc-500">or</span>
-            <span className="h-px flex-1 bg-white/10" />
+            <span className="h-px flex-1 bg-foreground/10" />
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">or</span>
+            <span className="h-px flex-1 bg-foreground/10" />
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Email
               </label>
               <input
@@ -154,11 +154,11 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-5 py-3.5 text-sm text-zinc-100 placeholder-zinc-600 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] outline-none transition-all focus:border-white/30 focus:ring-1 focus:ring-white/20"
+                className="w-full rounded-2xl border border-border bg-surface px-5 py-3.5 text-sm text-foreground placeholder-muted-foreground shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] outline-none transition-all focus:border-accent/40 focus:ring-1 focus:ring-accent/20"
               />
             </div>
             <div>
-              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Password
               </label>
               <input
@@ -168,7 +168,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-2xl border border-white/10 bg-black/40 px-5 py-3.5 text-sm text-zinc-100 placeholder-zinc-600 shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] outline-none transition-all focus:border-white/30 focus:ring-1 focus:ring-white/20"
+                className="w-full rounded-2xl border border-border bg-surface px-5 py-3.5 text-sm text-foreground placeholder-muted-foreground shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)] outline-none transition-all focus:border-accent/40 focus:ring-1 focus:ring-accent/20"
               />
             </div>
 
@@ -188,9 +188,9 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="mt-8 text-center text-sm text-zinc-500">
+        <p className="mt-8 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="font-semibold text-white transition-colors hover:text-zinc-300">
+          <Link href="/register" className="font-semibold text-foreground transition-colors hover:text-muted-foreground">
             Create one
           </Link>
         </p>

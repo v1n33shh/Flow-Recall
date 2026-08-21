@@ -3,6 +3,7 @@ import { createGroq } from "@ai-sdk/groq";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveEffectivePlan } from "@/lib/billing";
 import { FREE_MODEL, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
 
@@ -120,9 +121,12 @@ export async function POST(
   // gate; the UI's disabled/upsell state is merely cosmetic.
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { plan: true },
+    select: { plan: true, currentPeriodEnd: true },
   });
-  if ((user?.plan ?? "FREE") !== "PRO") {
+  const plan = await resolveEffectivePlan(
+    user ? { id: session.user.id, plan: user.plan, currentPeriodEnd: user.currentPeriodEnd } : null,
+  );
+  if (plan !== "PRO") {
     return Response.json(
       { error: "Infinite Recall Mode is a Pro feature." },
       { status: 403 },

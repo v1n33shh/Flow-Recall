@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveEffectivePlan } from "@/lib/billing";
 import { getRazorpay } from "@/lib/razorpay";
 
 // Reads cookies (via auth()) and creates a live order, so it must never be
@@ -25,15 +26,19 @@ export async function POST(req: Request) {
 
     // Re-read the plan from the DB rather than trusting session.user.plan: the
     // JWT token is seeded at sign-in and can be stale (see src/auth.ts). This
-    // is the authoritative "already PRO?" gate.
+    // is the authoritative "already PRO?" gate - resolved through
+    // resolveEffectivePlan (not the raw column) so a user whose one-time
+    // Razorpay payment has passed its currentPeriodEnd can actually re-buy,
+    // instead of being permanently blocked from ever paying again.
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, plan: true },
+      select: { id: true, plan: true, currentPeriodEnd: true },
     });
     if (!user) {
       return NextResponse.json({ error: "Account not found." }, { status: 404 });
     }
-    if (user.plan === "PRO") {
+    const plan = await resolveEffectivePlan(user);
+    if (plan === "PRO") {
       return NextResponse.json({ error: "You're already on the Pro plan." }, { status: 409 });
     }
 

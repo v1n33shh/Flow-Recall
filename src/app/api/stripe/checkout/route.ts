@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveEffectivePlan } from "@/lib/billing";
 import { getStripe } from "@/lib/stripe";
 
 export const runtime = "nodejs";
@@ -24,14 +25,17 @@ export async function POST(request: Request) {
     }
 
     // Guard against double-subscribing (mirrors the Razorpay order route).
+    // Resolved through resolveEffectivePlan, not the raw column, so an
+    // expired entitlement doesn't permanently block re-subscribing.
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { id: true, email: true, plan: true, stripeCustomerId: true },
+      select: { id: true, email: true, plan: true, currentPeriodEnd: true, stripeCustomerId: true },
     });
     if (!user) {
       return Response.json({ error: "Account not found." }, { status: 404 });
     }
-    if (user.plan === "PRO") {
+    const plan = await resolveEffectivePlan(user);
+    if (plan === "PRO") {
       return Response.json({ error: "You're already on the Pro plan." }, { status: 409 });
     }
 

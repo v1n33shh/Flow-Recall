@@ -20,14 +20,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   pages: { signIn: "/login" },
   providers: [
     // Reads AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET from the environment automatically.
-    // NOTE: `allowDangerousEmailAccountLinking` is intentionally left OFF. If a user
+    // `allowDangerousEmailAccountLinking` is intentionally left OFF. If a user
     // registered with email+password and later signs in with Google using the same
     // address, NextAuth throws `OAuthAccountNotLinked` rather than silently linking.
-    // Enabling it is only safe because Google verifies email ownership — turn it on
-    // (add `allowDangerousEmailAccountLinking: true` below) if you want auto-linking.
-    Google({
-      allowDangerousEmailAccountLinking: true,
-    }),
+    // Enabling it would only be safe if email ownership were verified at
+    // registration - src/app/api/auth/register/route.ts creates a credentials
+    // account from an unconfirmed email with no verification step, so a prior
+    // version of this flag being flipped on let an attacker pre-register a
+    // victim's address and silently inherit their account once the victim
+    // signed in with Google.
+    Google({}),
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },

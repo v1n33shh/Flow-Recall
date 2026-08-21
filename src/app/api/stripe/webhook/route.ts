@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { grantPro, revokePro } from "@/lib/billing";
+import { grantPro, renewPro, revokePro } from "@/lib/billing";
 
 // Signature verification needs the exact raw request body, so keep this route
 // on the Node runtime and never let it be statically optimized / cached.
@@ -74,6 +74,26 @@ export async function POST(request: Request) {
         const result = await revokePro({ stripeSubscriptionId: sub.id });
         if (result.count === 0) {
           console.error("[stripe/webhook] subscription.deleted matched no user", sub.id);
+        }
+        break;
+      }
+
+      // Fires on every renewal (and other subscription-level changes, e.g. a
+      // plan swap). Refreshes currentPeriodEnd so resolveEffectivePlan's
+      // expiry check keeps treating an actively-renewing subscriber as PRO -
+      // without this, the one-time currentPeriodEnd set at checkout would go
+      // stale after the first period and incorrectly expire them.
+      case "customer.subscription.updated": {
+        const sub = event.data.object as Stripe.Subscription;
+        const anySub = sub as unknown as { current_period_end?: number };
+        if ((sub.status === "active" || sub.status === "trialing") && typeof anySub.current_period_end === "number") {
+          const result = await renewPro(
+            { stripeSubscriptionId: sub.id },
+            new Date(anySub.current_period_end * 1000),
+          );
+          if (result.count === 0) {
+            console.error("[stripe/webhook] subscription.updated matched no user", sub.id);
+          }
         }
         break;
       }

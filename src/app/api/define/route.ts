@@ -4,6 +4,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveEffectivePlan } from "@/lib/billing";
 import { FREE_MODEL, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
 import { DefinitionResponseSchema } from "@/lib/definitionSchema";
 
@@ -68,9 +69,11 @@ export async function POST(request: Request) {
   // and never hits this branch.
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { plan: true, definitionsUsed: true },
+    select: { plan: true, currentPeriodEnd: true, definitionsUsed: true },
   });
-  const plan = user?.plan ?? "FREE";
+  const plan = await resolveEffectivePlan(
+    user ? { id: session.user.id, plan: user.plan, currentPeriodEnd: user.currentPeriodEnd } : null,
+  );
   const definitionsUsed = user?.definitionsUsed ?? 0;
 
   if (plan !== "PRO" && definitionsUsed >= FREE_DEFINITION_LIMIT) {

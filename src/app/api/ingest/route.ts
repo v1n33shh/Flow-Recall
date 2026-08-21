@@ -4,6 +4,7 @@ import { generateText } from "ai";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveEffectivePlan } from "@/lib/billing";
 import {
   FREE_MODEL,
   getFriendlyErrorMessage,
@@ -84,11 +85,14 @@ export async function POST(request: Request) {
     where: { id: session.user.id },
     select: {
       plan: true,
+      currentPeriodEnd: true,
       decksGeneratedToday: true,
       lastDeckGeneratedDate: true,
     },
   });
-  const plan = user?.plan ?? "FREE";
+  const plan = await resolveEffectivePlan(
+    user ? { id: session.user.id, plan: user.plan, currentPeriodEnd: user.currentPeriodEnd } : null,
+  );
 
   // Server-side mirror of the UI's Pro gate. The UI disables the button, but
   // that's cosmetic - this is the check that actually enforces it.

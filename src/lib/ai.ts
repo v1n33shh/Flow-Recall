@@ -3,10 +3,13 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { APICallError, type LanguageModel } from "ai";
 
-// The Groq model FREE plans are pinned to: Groq's current smartest free model,
-// the versatile 70B. NOTE: llama-3.1-70b-versatile is DECOMMISSIONED on Groq
-// (the API hard-rejects it); llama-3.3-70b-versatile is its live replacement.
-export const FREE_MODEL = "llama-3.3-70b-versatile";
+// The Groq model FREE plans are pinned to: Groq's current smartest free model.
+// NOTE: llama-3.1-70b-versatile was DECOMMISSIONED on Groq, replaced by
+// llama-3.3-70b-versatile - which Groq itself then deprecated on 2026-08-16
+// (see console.groq.com/docs/deprecations), hard-rejecting every request with
+// "does not exist or you do not have access to it". openai/gpt-oss-120b is
+// Groq's own recommended migration target.
+export const FREE_MODEL = "openai/gpt-oss-120b";
 
 // The models a Pro plan can request, keyed by the exact id the client sends
 // in the dropdown. Anything not in here is treated as "not a Pro model".
@@ -63,7 +66,7 @@ export function getProviderModel(plan: string, requestedModel: string): Language
 }
 
 export function resolveGradeModel(): LanguageModel {
-  return createGroq({ apiKey: process.env.GROQ_API_KEY })("llama-3.3-70b-versatile");
+  return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
 }
 
 type FriendlyErrorOptions = {

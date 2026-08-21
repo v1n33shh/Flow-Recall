@@ -12,10 +12,11 @@ import { vibrateTap } from "@/lib/haptics";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
-// client bundle. These ids must stay in sync with the route's requestSchema.
-const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+// client bundle. These ids must stay in sync with @/lib/ai's FREE_MODEL and
+// the route's requestSchema (which derives its enum from that same constant).
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 const MODEL_OPTIONS = [
-  { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B (Free)", pro: false },
+  { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (Free)", pro: false },
   { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
 ] as const;
 

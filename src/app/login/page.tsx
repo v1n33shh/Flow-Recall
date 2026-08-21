@@ -194,6 +194,11 @@ export default function LoginPage() {
             Create one
           </Link>
         </p>
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+            Privacy Policy
+          </Link>
+        </p>
       </div>
     </main>
   );

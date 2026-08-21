@@ -87,6 +87,12 @@ function WebAccountCard() {
       <div className="mt-8">
         <SignOutButton />
       </div>
+
+      <p className="mt-6 text-center text-xs text-zinc-500">
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-zinc-300">
+          Privacy Policy
+        </Link>
+      </p>
     </main>
   );
 }
@@ -557,8 +563,13 @@ function NativeAccountScreen() {
           </div>
         </Reveal>
 
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
+            Privacy Policy
+          </Link>
+        </p>
         {APP_VERSION && (
-          <p className="mt-8 text-center text-xs text-muted-foreground">FlowRecall v{APP_VERSION}</p>
+          <p className="mt-1 text-center text-xs text-muted-foreground">FlowRecall v{APP_VERSION}</p>
         )}
       </main>
     </PullToRefresh>

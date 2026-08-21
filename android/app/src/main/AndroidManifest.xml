@@ -25,7 +25,29 @@
                  bridging described in src/app/api/auth/mobile-exchange/route.ts
                  working. After sign-in, /api/mobile-callback 302s the system
                  browser here; Android hands the intent back to this activity
-                 (singleTask above) instead of opening a browser tab. -->
+                 (singleTask above) instead of opening a browser tab.
+
+                 autoVerify="true" makes this a verified Android App Link, not
+                 a bare custom scheme - Android checks
+                 https://www.flowrecall.app/.well-known/assetlinks.json
+                 (public/.well-known/assetlinks.json in this repo) proves this
+                 exact app owns that domain before ever routing the link here,
+                 so (unlike the flowrecall:// scheme below) no other app can
+                 register the same host and receive it via a disambiguation
+                 chooser. See src/lib/mobileAuth.ts for the full flow. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.flowrecall.app" android:pathPrefix="/auth-callback" />
+            </intent-filter>
+
+            <!-- Legacy fallback ONLY, for the rare case App Link verification
+                 above hasn't taken effect yet (e.g. moments after a fresh
+                 install) - src/app/auth-callback/page.tsx forwards here if the
+                 https link above ever lands in a real browser instead of
+                 being intercepted by the OS. Never the primary redirect
+                 target - see src/lib/mobileAuth.ts. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.flowrecall.android",
+      "sha256_cert_fingerprints": [
+        "E1:F4:35:2F:AB:B5:8E:BA:B0:E4:CE:39:C0:9A:0E:B6:07:B3:07:AE:9A:BC:26:C0:F0:88:D2:21:6F:44:BC:09"
+      ]
+    }
+  }
+]

@@ -5,18 +5,37 @@
 // Flow: signIn("google") opens in Browser.open() -> Google -> NextAuth
 // callback on the live API -> redirects the *system browser* to
 // /api/mobile-callback, which mints a short-lived bridge JWT and 302s to
-// MOBILE_AUTH_SCHEME://MOBILE_AUTH_HOST?token=... -> Android hands that back
-// to the app (intent-filter) -> the app POSTs the token to
-// /api/auth/mobile-exchange, which verifies it and sets the real NextAuth
-// session cookie in its response so CapacitorHttp's native cookie jar picks
-// it up.
+// MOBILE_AUTH_CALLBACK_URL?token=... -> Android hands that back to the app
+// (intent-filter) -> the app POSTs the token to /api/auth/mobile-exchange,
+// which verifies it and sets the real NextAuth session cookie in its
+// response so CapacitorHttp's native cookie jar picks it up.
+//
+// MOBILE_AUTH_CALLBACK_URL is a verified Android App Link
+// (https://www.flowrecall.app/auth-callback, autoVerify="true" in
+// AndroidManifest.xml, ownership proven via public/.well-known/assetlinks.json)
+// rather than a bare custom URL scheme - a custom scheme has no ownership
+// verification at all, so any other app declaring the same scheme+host could
+// receive this redirect via Android's disambiguation chooser. src/app/
+// auth-callback/page.tsx is a plain web fallback for the (should-be-rare)
+// case where App Link verification hasn't taken effect - it forwards to the
+// legacy MOBILE_AUTH_LEGACY_SCHEME custom-scheme intent-filter, which stays
+// registered in the manifest as a last resort. Either path still runs
+// through the same single-use jti check in /api/auth/mobile-exchange (see
+// UsedMobileBridgeToken), so a token can only ever be redeemed once
+// regardless of which path delivered it.
 //
 // Relies on next-auth/jwt's encode/decode, which Auth.js's own docs mark as
 // not yet stable ("This module *will* be refactored/changed") - re-verify
 // this file against next-auth's changelog before upgrading that package.
-export const MOBILE_AUTH_SCHEME = "flowrecall";
-export const MOBILE_AUTH_HOST = "auth-callback";
-export const MOBILE_AUTH_CALLBACK_URL = `${MOBILE_AUTH_SCHEME}://${MOBILE_AUTH_HOST}`;
+export const MOBILE_AUTH_HOST = "www.flowrecall.app";
+export const MOBILE_AUTH_PATH = "/auth-callback";
+export const MOBILE_AUTH_CALLBACK_URL = `https://${MOBILE_AUTH_HOST}${MOBILE_AUTH_PATH}`;
+
+// Legacy fallback only - see the comment above. Never used as the primary
+// redirect target anymore.
+export const MOBILE_AUTH_LEGACY_SCHEME = "flowrecall";
+export const MOBILE_AUTH_LEGACY_HOST = "auth-callback";
+export const MOBILE_AUTH_LEGACY_CALLBACK_URL = `${MOBILE_AUTH_LEGACY_SCHEME}://${MOBILE_AUTH_LEGACY_HOST}`;
 
 // Distinct from the real session cookie's salt (see @auth/core/lib/actions/session.js,
 // which uses the cookie name as salt) so this short-lived bridge token derives

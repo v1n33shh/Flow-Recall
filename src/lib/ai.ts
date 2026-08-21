@@ -7,9 +7,15 @@ import { APICallError, type LanguageModel } from "ai";
 // NOTE: llama-3.1-70b-versatile was DECOMMISSIONED on Groq, replaced by
 // llama-3.3-70b-versatile - which Groq itself then deprecated on 2026-08-16
 // (see console.groq.com/docs/deprecations), hard-rejecting every request with
-// "does not exist or you do not have access to it". openai/gpt-oss-120b is
-// Groq's own recommended migration target.
-export const FREE_MODEL = "openai/gpt-oss-120b";
+// "does not exist or you do not have access to it". Groq's migration guide
+// offers two targets: openai/gpt-oss-120b (tried first, reverted - it's a
+// reasoning model that, under this route's 1500-token maxOutputTokens cap,
+// can burn the whole budget on hidden chain-of-thought and leave nothing for
+// the actual JSON answer, which parseModelJson then can't parse) and
+// qwen/qwen3.6-27b, which defaults to non-thinking mode unless a
+// `reasoning_effort` param is explicitly set - a straightforward drop-in
+// instruct model with no such risk, so that's the one pinned here.
+export const FREE_MODEL = "qwen/qwen3.6-27b";
 
 // The models a Pro plan can request, keyed by the exact id the client sends
 // in the dropdown. Anything not in here is treated as "not a Pro model".

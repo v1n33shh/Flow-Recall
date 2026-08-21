@@ -14,9 +14,9 @@ import { vibrateTap } from "@/lib/haptics";
 // server-side provider SDKs, and importing it here would drag them into the
 // client bundle. These ids must stay in sync with @/lib/ai's FREE_MODEL and
 // the route's requestSchema (which derives its enum from that same constant).
-const DEFAULT_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_MODEL = "qwen/qwen3.6-27b";
 const MODEL_OPTIONS = [
-  { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B (Free)", pro: false },
+  { id: "qwen/qwen3.6-27b", label: "Qwen 3.6 27B (Free)", pro: false },
   { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
 ] as const;
 

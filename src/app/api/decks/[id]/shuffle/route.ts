@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
-import { FREE_MODEL, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
+import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
 
 // "Infinite Recall Mode": a PRO-only endpoint that generates brand-new,
@@ -142,6 +142,7 @@ export async function POST(
       model,
       prompt: buildShufflePrompt(seed, NEW_CARDS),
       maxOutputTokens: 4096,
+      providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
     let rawJson: unknown;

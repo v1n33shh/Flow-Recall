@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
-import { FREE_MODEL, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
+import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
 import { DefinitionResponseSchema } from "@/lib/definitionSchema";
 
 // Lifetime cap for FREE plans, matching /api/ingest's "1 deck for life"
@@ -86,6 +86,7 @@ export async function POST(request: Request) {
       model,
       prompt: buildDefinePrompt(phrase, context),
       maxOutputTokens: 300,
+      providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
     let rawJson: unknown;

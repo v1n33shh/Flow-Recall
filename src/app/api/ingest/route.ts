@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import {
   FREE_MODEL,
+  GROQ_PROVIDER_OPTIONS,
   getFriendlyErrorMessage,
   getProviderModel,
   isProModel,
@@ -122,6 +123,7 @@ export async function POST(request: Request) {
       model,
       prompt: buildConceptsPrompt(text),
       maxOutputTokens: 1500,
+      providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
     let rawJson: unknown;

@@ -1,6 +1,6 @@
 import { generateText } from "ai";
 import { z } from "zod";
-import { getFriendlyErrorMessage, parseModelJson, resolveGradeModel } from "@/lib/ai";
+import { GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson, resolveGradeModel } from "@/lib/ai";
 
 const GradeSchema = z.object({
   correct: z
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       model,
       system: GRADE_SYSTEM_PROMPT,
       prompt: buildGradePrompt(question, correctAnswer, userAnswer),
+      providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
     let rawJson: unknown;

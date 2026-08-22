@@ -18,7 +18,6 @@ import {
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
-import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
@@ -78,24 +77,18 @@ const MARQUEE_ROWS = [
     text: "ACTIVE RECALL • DOOMSCROLLING • MAX PERFORMANCE • ",
     top: "6%",
     rotate: -8,
-    duration: 42,
-    reverse: false,
     className: "text-foreground/10",
   },
   {
     text: "GROQ POWERED • ZERO FRICTION • STUDY HARDER • ",
     top: "42%",
     rotate: 7,
-    duration: 55,
-    reverse: true,
     className: "text-foreground/[0.07]",
   },
   {
     text: "NO CREDIT CARD • BLAZING FAST • FLOWRECALL • ",
     top: "78%",
     rotate: -5,
-    duration: 65,
-    reverse: false,
     className: "text-foreground/10",
   },
 ];
@@ -144,6 +137,10 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+// Static brand texture, not an animated marquee - perpetual background
+// motion is the one thing on this page that read as attention-seeking
+// rather than restrained (everything else is one-shot entrance/scroll-
+// reveal or interaction-driven). Same giant dim rotated type, just still.
 function MarqueeBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
@@ -153,14 +150,11 @@ function MarqueeBackground() {
           className="absolute w-[250vw]"
           style={{ top: row.top, left: "50%", transform: `translateX(-50%) rotate(${row.rotate}deg)` }}
         >
-          <motion.div
+          <div
             className={`flex whitespace-nowrap text-[5rem] font-black uppercase leading-none tracking-tighter sm:text-[7rem] md:text-[9rem] ${row.className}`}
-            animate={{ x: row.reverse ? ["-50%", "0%"] : ["0%", "-50%"] }}
-            transition={{ duration: row.duration, repeat: Infinity, ease: "linear" }}
           >
-            <span>{row.text.repeat(6)}</span>
-            <span aria-hidden="true">{row.text.repeat(6)}</span>
-          </motion.div>
+            <span>{row.text.repeat(3)}</span>
+          </div>
         </div>
       ))}
     </div>
@@ -264,7 +258,7 @@ function FeatureIcon({ children }: { children: ReactNode }) {
 
 // Shared card chrome: theme-adaptive glass, hairline ring, inset highlight.
 const CARD =
-  "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
+  "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
 
 function FeaturesSection() {
   return (
@@ -491,7 +485,7 @@ function FaqSection() {
       {/* FAQ previously had zero decoration anywhere - a single soft glow,
           matching the hero/features' existing one-glow idiom, so the page's
           decorative thread doesn't drop to nothing right before the end. */}
-      <div className="pointer-events-none absolute left-1/2 top-0 -z-10 h-72 w-72 -translate-x-1/2 -translate-y-1/4 rounded-full bg-foreground/[0.04] blur-3xl" />
+      <div className="pointer-events-none absolute left-1/2 top-0 -z-10 h-72 w-72 -translate-x-1/2 -translate-y-1/4 rounded-full bg-foreground/5 blur-3xl" />
       {/* Fading connector rule, visually bridging from How It Works above. */}
       <div
         aria-hidden="true"
@@ -874,7 +868,16 @@ export default function Home() {
               Navbar (the only other place StreakCounter appears) is hidden
               entirely on native, so this is the sole surface where a
               logged-in mobile user sees their real streak at all. Signed-out
-              visitors keep the static marketing mock. */}
+              visitors keep the static marketing mock.
+
+              Deliberately NOT the shared <StreakCounter> component here -
+              its flame recolors by tier (blue under 3 days, then purple,
+              amber, silver - see StreakCounter.tsx's getFlameTier). That's
+              the right reward on the tap-through StreakModal below, but this
+              is the one always-visible marketing surface that must never
+              drift off the site's single blue exception as a user's real
+              streak grows. This flame is hardcoded to that one blue,
+              permanently, regardless of streak length. */}
           <motion.div
             initial={{ opacity: 0, y: 16, scale: 0.94 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -885,12 +888,23 @@ export default function Home() {
               STREAK
             </p>
             {status === "authenticated" ? (
-              <div className="mt-2">
-                <StreakCounter
-                  streak={session?.user?.currentStreak ?? 0}
-                  onClick={() => setStreakOpen(true)}
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setStreakOpen(true)}
+                className="mt-2 flex items-center gap-1.5 rounded-full border border-border bg-surface/60 px-2.5 py-1 text-sm font-semibold text-pulse-accent transition-transform active:scale-95"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden="true">
+                  <path
+                    d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z"
+                    fill="currentColor"
+                  />
+                  <path
+                    d="M12 21a2.9 2.9 0 0 0 2.9-2.9c0-1.5-1.1-2.5-1.8-3.6-.8 1.1-1.6 1.7-2.2 2.6-.4.6-.7 1-.7 1.6A2.8 2.8 0 0 0 12 21z"
+                    fill="#DBEAFE"
+                  />
+                </svg>
+                <span className="tabular-nums text-foreground">{session?.user?.currentStreak ?? 0}</span>
+              </button>
             ) : (
               <p className="mt-2 text-xs leading-snug text-foreground">🔥  7</p>
             )}
@@ -920,7 +934,7 @@ export default function Home() {
                 return (
                   <div
                     key={deck.id}
-                    className="group relative flex flex-col rounded-2xl border border-border bg-foreground/[0.02] p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] md:backdrop-blur-xl transition-transform hover:-translate-y-0.5"
+                    className="group relative flex flex-col rounded-2xl border border-border bg-surface/60 p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:backdrop-blur-xl transition-transform hover:-translate-y-0.5"
                   >
                     <button
                       type="button"
@@ -957,7 +971,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => handleStudyNow(deck, isFullyMastered)}
-                      className="mt-4 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 active:scale-[0.98]"
+                      className="mt-4 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_32px_-6px_rgba(0,0,0,0.5)] active:scale-[0.98]"
                     >
                       {buttonLabel}
                     </button>

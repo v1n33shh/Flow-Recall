@@ -68,7 +68,7 @@ export const metadata: Metadata = {
     "AI flashcards generator",
     "study faster",
     "PDF to flashcards",
-    "spaced repetition",
+    "retrieval practice",
     "Anki alternative",
     "exam prep",
   ],

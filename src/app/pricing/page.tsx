@@ -9,9 +9,9 @@ import { useIsNative } from "@/lib/useIsNative";
 import { vibrateTap } from "@/lib/haptics";
 
 const FREE_FEATURES = [
-  "1 deck per day (up to 60,000 chars)",
+  "1 free deck to try it out (up to 60,000 chars)",
   "Qwen3 27B — fast, capable free model",
-  "Active-recall study feed with spaced repetition",
+  "AI-generated active-recall study feed",
   "Daily streak tracking",
   "Save decks to your library",
 ];

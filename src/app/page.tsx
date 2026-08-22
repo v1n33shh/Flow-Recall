@@ -54,7 +54,7 @@ const SOFTWARE_APP_JSONLD = {
     "PDF to flashcards",
     "AI active-recall question generation",
     "Gamified streaks and progress tracking",
-    "Spaced-repetition study feed",
+    "Active-recall study feed",
   ],
   screenshot: `${SITE_URL}/og.png`,
   publisher: {
@@ -94,11 +94,11 @@ const FAQ_ITEMS = [
   },
   {
     q: "Is FlowRecall better than Anki for med school?",
-    a: "FlowRecall gives you Anki's spaced-repetition power without the setup. There are no add-ons to install or templates to build — just upload your material and start studying. For medical students juggling huge volumes of content, that means hours saved on deck-building and more time spent actually reviewing.",
+    a: "FlowRecall skips Anki's biggest cost: building the deck by hand. Upload your material and FlowRecall's AI writes the flashcards for you in seconds, then serves them as a gamified active-recall feed instead of a static list. For medical students juggling huge volumes of content, that means hours saved on deck-building and more time spent actually reviewing.",
   },
   {
-    q: "Does FlowRecall use spaced repetition?",
-    a: "Yes. Every card is scheduled with a spaced-repetition algorithm that resurfaces material right before you are likely to forget it, moving knowledge into long-term memory with the fewest possible reviews.",
+    q: "What learning science does FlowRecall use?",
+    a: "Active recall - deliberately retrieving an answer from memory instead of passively re-reading it, one of the most well-supported study techniques in cognitive science. Every card in FlowRecall's feed makes you attempt a real answer before it reveals the truth, instead of letting you passively scan a static list.",
   },
   {
     q: "Is FlowRecall free?",
@@ -159,8 +159,8 @@ function FeaturesSection() {
           The ultimate active recall study tool for medical students and polymaths.
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg">
-          Turn any PDF into an AI-generated, spaced-repetition study feed — all the
-          retention science of Anki, rebuilt for how students actually study today.
+          Turn any PDF into an AI-generated active-recall study feed. No manual
+          flashcards, no deck-building - just upload and start retrieving.
         </p>
       </motion.div>
 
@@ -217,7 +217,7 @@ function FeaturesSection() {
           </div>
         </motion.article>
 
-        {/* Spaced repetition & gamification */}
+        {/* Active recall & gamification */}
         <motion.article {...reveal(0.08)} className={`${CARD} justify-between`}>
           <div>
             <FeatureIcon>
@@ -226,12 +226,13 @@ function FeaturesSection() {
               </svg>
             </FeatureIcon>
             <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
-              Spaced Repetition &amp; Gamification
+              Active Recall &amp; Gamification
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Every card is scheduled with spaced repetition, so you review right
-              before you&apos;d forget. Streaks, tiers, and a swipe-to-answer feed
-              turn daily review into a habit you actually keep.
+              Every card demands a real answer before it reveals the truth,
+              forcing your brain to retrieve instead of recognize. Streaks,
+              tiers, and a swipe-to-answer feed turn daily review into a habit
+              you actually keep.
             </p>
           </div>
           {/* Mini streak-calendar mock - echoes StreakModal.tsx's DayCell
@@ -295,7 +296,7 @@ const HOW_IT_WORKS_STEPS = [
   {
     n: "02",
     title: "AI generates the feed",
-    body: "FlowRecall reads your material and writes hundreds of active-recall questions in seconds, scheduled with spaced repetition from day one.",
+    body: "FlowRecall reads your material and writes hundreds of active-recall questions in seconds, ready to swipe through the moment they're generated.",
   },
   {
     n: "03",
@@ -439,7 +440,7 @@ function FinalCtaSection() {
         className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg"
       >
         That&apos;s the forgetting curve talking, not a guess. FlowRecall&apos;s
-        spaced repetition is built to beat it.
+        active-recall feed is built to beat it.
       </motion.p>
       <motion.div
         {...reveal(0.1)}

@@ -4,6 +4,7 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { startTransition, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { motion, useMotionValue, useSpring, useTransform, type MotionValue } from "motion/react";
 import type { Concept, Deck } from "@/lib/types";
 import {
@@ -16,6 +17,9 @@ import {
 } from "@/lib/storage";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
+import LogoMark from "@/components/LogoMark";
+import StreakCounter from "@/components/StreakCounter";
+import StreakModal from "@/components/StreakModal";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
@@ -294,6 +298,9 @@ function FeaturesSection() {
           {/* The single splash of electric blue — a soft ambient accent glow. */}
           <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-accent/10 blur-3xl" />
           <div className="relative">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+              Flagship
+            </p>
             <FeatureIcon>
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
                 <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -352,9 +359,16 @@ function FeaturesSection() {
               turn daily review into a habit you actually keep.
             </p>
           </div>
-          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-foreground/[0.03] px-3 py-1 text-xs text-muted-foreground">
-            <span className="h-1 w-1 rounded-full bg-accent" />
-            Spaced repetition &middot; Streaks
+          {/* Mini streak-calendar mock - echoes StreakModal.tsx's DayCell
+              visual language and previews the real streak feature this same
+              home page now surfaces (mobile hero carousel, card 3). */}
+          <div className="mt-6 flex items-center gap-1.5" aria-hidden="true">
+            {[true, true, true, true, true, false, false].map((filled, i) => (
+              <span
+                key={i}
+                className={`h-5 w-5 rounded ${filled ? "bg-accent" : "border border-border"}`}
+              />
+            ))}
           </div>
         </motion.article>
 
@@ -374,11 +388,90 @@ function FeaturesSection() {
               study. The modern Anki alternative, built for how students really work.
             </p>
           </div>
-          <div className="mt-6 inline-flex w-fit items-center gap-1.5 rounded-full border border-border bg-foreground/[0.03] px-3 py-1 text-xs text-muted-foreground">
-            <span className="h-1 w-1 rounded-full bg-accent" />
-            Anki alternative
+          {/* Compact before/after mock, reinforcing the card's own claim
+              instead of repeating another bare text pill. */}
+          <div className="mt-6 flex flex-col gap-1.5 text-xs text-muted-foreground" aria-hidden="true">
+            <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
+                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              <span className="line-through decoration-muted-foreground/50">Hours building decks</span>
+            </div>
+            <div className="flex items-center gap-2 text-foreground">
+              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true">
+                <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>Seconds, just upload</span>
+            </div>
           </div>
         </motion.article>
+      </div>
+    </section>
+  );
+}
+
+const HOW_IT_WORKS_STEPS = [
+  {
+    n: "01",
+    title: "Upload anything",
+    body: "Drop in a PDF, paste raw notes, or import an EPUB - lecture slides, textbook chapters, and research papers all work.",
+  },
+  {
+    n: "02",
+    title: "AI generates the feed",
+    body: "FlowRecall reads your material and writes hundreds of active-recall questions in seconds, scheduled with spaced repetition from day one.",
+  },
+  {
+    n: "03",
+    title: "Swipe through recall",
+    body: "Review in a fast, gamified swipe feed - right before you'd forget, not on some arbitrary daily quota.",
+  },
+];
+
+// The one deliberately asymmetric, non-centered section on the page - no
+// pill badge, left-aligned header, oversized ghost numerals as the sole
+// decorative device (echoing the hero marquee's own dim giant-type motif in
+// a new context) instead of the pill+centered-heading shape used everywhere
+// else. Sits between Features and FAQ specifically to break up what would
+// otherwise be three near-identical section openers in a row.
+function HowItWorksSection() {
+  return (
+    <section
+      aria-labelledby="how-it-works-heading"
+      className="relative z-10 mx-auto w-full max-w-6xl px-6 py-16 sm:py-24"
+    >
+      <div className="lg:grid lg:grid-cols-[minmax(0,320px)_1fr] lg:gap-16">
+        <motion.div {...reveal()} className="lg:sticky lg:top-24 lg:self-start">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            How it works
+          </p>
+          <h2
+            id="how-it-works-heading"
+            className="mt-3 font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
+          >
+            From PDF to memorized in three steps.
+          </h2>
+        </motion.div>
+
+        <div className="mt-10 flex flex-col gap-10 lg:mt-0">
+          {HOW_IT_WORKS_STEPS.map((step, i) => (
+            <motion.div key={step.n} {...reveal(0.08 * i)} className="relative">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -left-2 -top-8 select-none font-sans text-7xl font-black leading-none text-foreground/[0.06] sm:text-8xl"
+              >
+                {step.n}
+              </span>
+              <div className="relative border-l border-border pl-6">
+                <h3 className="text-lg font-semibold text-foreground sm:text-xl">{step.title}</h3>
+                <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">
+                  {step.body}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -394,6 +487,15 @@ function FaqSection() {
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQPAGE_JSONLD) }}
+      />
+      {/* FAQ previously had zero decoration anywhere - a single soft glow,
+          matching the hero/features' existing one-glow idiom, so the page's
+          decorative thread doesn't drop to nothing right before the end. */}
+      <div className="pointer-events-none absolute left-1/2 top-0 -z-10 h-72 w-72 -translate-x-1/2 -translate-y-1/4 rounded-full bg-foreground/[0.04] blur-3xl" />
+      {/* Fading connector rule, visually bridging from How It Works above. */}
+      <div
+        aria-hidden="true"
+        className="mx-auto mb-8 h-16 w-px bg-gradient-to-b from-transparent via-border to-transparent"
       />
       <motion.h2
         {...reveal()}
@@ -428,6 +530,92 @@ function FaqSection() {
   );
 }
 
+// Closing conversion moment - the page previously ended cold on the FAQ
+// accordion with nothing after it. Deliberately spacious again (mirrors the
+// hero's rhythm) as a closing "breath" after the denser How-It-Works/FAQ
+// sections, and reuses the hero's gradient-text heading treatment so the
+// page visually bookends itself.
+function FinalCtaSection() {
+  return (
+    <section
+      aria-labelledby="final-cta-heading"
+      className="relative z-10 mx-auto w-full max-w-3xl px-6 py-24 text-center sm:py-32"
+    >
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 h-[28rem] w-[28rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/5 blur-3xl" />
+      </div>
+      <motion.h2
+        {...reveal()}
+        id="final-cta-heading"
+        className="bg-gradient-to-br from-foreground via-foreground/70 to-foreground/40 bg-clip-text pb-2 font-sans text-3xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] sm:text-5xl"
+      >
+        Stop re-reading. Start recalling.
+      </motion.h2>
+      <motion.p
+        {...reveal(0.05)}
+        className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg"
+      >
+        Upload your first PDF and see your first flashcard feed in under a
+        minute - no credit card required.
+      </motion.p>
+      <motion.div
+        {...reveal(0.1)}
+        className="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
+      >
+        <Link
+          href="/pricing"
+          className="w-full max-w-xs rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:max-w-none sm:py-3 sm:text-sm"
+        >
+          View Pro Plans
+        </Link>
+        <Link
+          href="/ingest"
+          className="w-full max-w-xs rounded-full bg-accent px-6 py-3.5 text-center text-base font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] hover:scale-[1.03] active:scale-[0.97] sm:w-auto sm:max-w-none sm:py-3 sm:text-sm"
+        >
+          Start ingesting notes
+        </Link>
+      </motion.div>
+    </section>
+  );
+}
+
+// The page had no footer at all - kept local to page.tsx (not a shared
+// component) since this is a home-page-only fix, not a site-wide footer.
+function SiteFooter() {
+  return (
+    <footer className="relative z-10 mx-auto w-full max-w-6xl border-t border-border px-6 py-10 sm:py-12">
+      <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col items-center gap-2 sm:items-start">
+          <div className="flex items-center gap-2">
+            <div className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-[28%] bg-gradient-to-br from-zinc-800 to-zinc-950 text-white">
+              <LogoMark sheen className="h-[64%] w-[64%]" />
+            </div>
+            <span className="font-retro text-lg text-foreground">FlowRecall</span>
+          </div>
+          <p className="text-xs text-muted-foreground">AI flashcards for active recall.</p>
+        </div>
+        <nav className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
+          <Link href="/ingest" className="transition-colors hover:text-foreground">
+            Ingest
+          </Link>
+          <Link href="/reader" className="transition-colors hover:text-foreground">
+            Reader
+          </Link>
+          <Link href="/pricing" className="transition-colors hover:text-foreground">
+            Pricing
+          </Link>
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
+            Privacy
+          </Link>
+        </nav>
+      </div>
+      <p className="mt-8 text-center text-xs text-muted-foreground sm:text-left">
+        © {new Date().getFullYear()} FlowRecall
+      </p>
+    </footer>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
   const decks = useSavedDecks();
@@ -437,6 +625,8 @@ export default function Home() {
   // space. With nothing above it on native, the same centering leaves a
   // large dead zone under the status bar instead of anchoring near the top.
   const isNative = useIsNative();
+  const { data: session, status } = useSession();
+  const [streakOpen, setStreakOpen] = useState(false);
 
   const [generatingDeckIds, setGeneratingDeckIds] = useState<Set<string>>(new Set());
   const [jitErrors, setJitErrors] = useState<Record<string, string>>({});
@@ -542,6 +732,12 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APP_JSONLD) }}
       />
 
+      <StreakModal
+        open={streakOpen}
+        onClose={() => setStreakOpen(false)}
+        fallbackStreak={session?.user?.currentStreak ?? 0}
+      />
+
       {/* ============================ HERO ============================ */}
       <section
         aria-labelledby="hero-heading"
@@ -560,18 +756,25 @@ export default function Home() {
 
       {/* Ambient glow orbs - purely decorative, blurred color washes that sit
           behind the hero to give the page depth. pointer-events-none and
-          -z-10 keep them clear of the marquee, cards, and interactive content. */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden hidden md:block">
-        <div className="absolute -top-40 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl" />
-        <div className="absolute top-1/3 -left-32 h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl" />
-        <div className="absolute -bottom-24 right-[-8rem] h-[32rem] w-[32rem] rounded-full bg-foreground/5 blur-3xl" />
+          -z-10 keep them clear of the marquee, cards, and interactive content.
+          Two of three stay visible (smaller) on mobile - only the static
+          background-image/blur cost is paid, no animation, so it's cheap
+          even on low-end Android; the third stays desktop-only since three
+          full-size blurred layers is a real one-time paint cost worth
+          reserving for larger screens. */}
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-40 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl md:h-[38rem] md:w-[38rem]" />
+        <div className="absolute top-1/3 -left-32 hidden h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl md:block" />
+        <div className="absolute -bottom-24 right-[-8rem] h-64 w-64 rounded-full bg-foreground/5 blur-3xl md:h-[32rem] md:w-[32rem]" />
       </div>
 
       {/* Cinematic film grain - a fixed, whisper-faint noise texture over the
-          whole viewport for a physical, filmic surface. */}
+          whole viewport for a physical, filmic surface. A static background-
+          image at 3% opacity, no filter/blur animation - negligible cost on
+          any device, so it's no longer gated to desktop only. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03] hidden md:block"
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03]"
         style={{ backgroundImage: NOISE_BACKGROUND }}
       />
 
@@ -584,7 +787,7 @@ export default function Home() {
           initial={{ opacity: 0, y: -24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={SNAP}
-          className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md"
+          className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground backdrop-blur-md"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
           Active recall, disguised as doomscrolling
@@ -618,7 +821,7 @@ export default function Home() {
           {/* Secondary CTA - minimalist glassmorphic outline. */}
           <Link
             href="/pricing"
-            className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground md:backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
+            className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
           >
             View Pro Plans
           </Link>
@@ -632,6 +835,70 @@ export default function Home() {
             Start ingesting notes
           </Link>
         </motion.div>
+
+        {/* Mobile-only touch equivalent of the desktop ParallaxCard cluster -
+            those are mouse-tilt driven (onMouseMove never fires on touch), so
+            un-hiding them isn't the fix; this is a real, swipeable substitute
+            instead of "zero premium cards on mobile." Bleeds to the viewport
+            edge (-mx-6 px-6) the same way a mobile carousel usually does. */}
+        <div className="mt-10 -mx-6 flex w-full gap-3 overflow-x-auto px-6 pb-1 snap-x snap-mandatory no-scrollbar md:hidden">
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...SNAP, delay: 0.2 }}
+            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              MITOCHONDRIA
+            </p>
+            <p className="mt-2 text-xs leading-snug text-foreground">
+              What is the powerhouse of the cell?
+            </p>
+            <p className="mt-2 text-[10px] text-muted-foreground">✕  ✓  Swipe</p>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...SNAP, delay: 0.28 }}
+            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              PHOTOSYNTHESIS
+            </p>
+            <p className="mt-2 text-xs leading-snug text-foreground">
+              Plants use ▢▢▢▢▢ to absorb light.
+            </p>
+            <p className="mt-2 text-[10px] text-muted-foreground">Nailed it.</p>
+          </motion.div>
+          {/* The only card with real data for a returning logged-in user -
+              Navbar (the only other place StreakCounter appears) is hidden
+              entirely on native, so this is the sole surface where a
+              logged-in mobile user sees their real streak at all. Signed-out
+              visitors keep the static marketing mock. */}
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ ...SNAP, delay: 0.36 }}
+            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+              STREAK
+            </p>
+            {status === "authenticated" ? (
+              <div className="mt-2">
+                <StreakCounter
+                  streak={session?.user?.currentStreak ?? 0}
+                  onClick={() => setStreakOpen(true)}
+                />
+              </div>
+            ) : (
+              <p className="mt-2 text-xs leading-snug text-foreground">🔥  7</p>
+            )}
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              {status === "authenticated" ? "Tap to view details" : "You're on fire"}
+            </p>
+          </motion.div>
+        </div>
 
         {decks.length > 0 && (
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">
@@ -724,8 +991,17 @@ export default function Home() {
       {/* ========================== FEATURES ========================== */}
       <FeaturesSection />
 
+      {/* ======================= HOW IT WORKS ========================== */}
+      <HowItWorksSection />
+
       {/* ============================= FAQ ============================ */}
       <FaqSection />
+
+      {/* ========================== FINAL CTA ========================== */}
+      <FinalCtaSection />
+
+      {/* ============================ FOOTER ============================ */}
+      <SiteFooter />
     </main>
   );
 }

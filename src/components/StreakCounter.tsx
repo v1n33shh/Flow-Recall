@@ -10,13 +10,19 @@ import { motion } from "motion/react";
 // Tier thresholds — same scale as StreakModal so the two components stay in sync.
 type FlameTier = { from: string; via: string; to: string; core: string };
 
+// Colors must match StreakModal.tsx's getFlameTier exactly at every
+// threshold - this was drifting (this file had a "Ruby red" 7+ tier and an
+// amber "Inferno" 3+ tier that don't exist in the modal's palette at all,
+// so the navbar flame and the modal's flame showed different colors for the
+// same streak length despite this comment). StreakModal is the source of
+// truth since it's the richer, deeper surface.
 function getFlameTier(streak: number): FlameTier {
   if (streak >= 14)
     return { from: "#FFFFFF", via: "#E2E8F0", to: "#94A3B8", core: "#FFFFFF" }; // God Tier — silver/white
   if (streak >= 7)
-    return { from: "#F43F5E", via: "#E11D48", to: "#BE123C", core: "#FFE4E6" }; // Ruby red
-  if (streak >= 3)
     return { from: "#FBBF24", via: "#F59E0B", to: "#EA580C", core: "#FEF3C7" }; // Inferno — amber/orange
+  if (streak >= 3)
+    return { from: "#C084FC", via: "#9333EA", to: "#7E22CE", core: "#F3E8FF" }; // Heating Up — amethyst
   return { from: "#93C5FD", via: "#3B82F6", to: "#2563EB", core: "#DBEAFE" };   // The Spark — electric azure
 }
 

@@ -354,6 +354,11 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
   }, [pageNumber, numPages, selection, tappedHighlight, clearSelection, onExit]);
 
   function goToPage(next: number) {
+    // Without this, changing pages leaves the definition/highlight popover
+    // floating at its old screen position, now overlaid on unrelated new-page
+    // content, until the user happens to tap inside the page area (previously
+    // the only thing wired to dismiss it).
+    closePopover();
     setPageNumber(Math.min(numPages, Math.max(1, next)));
   }
 

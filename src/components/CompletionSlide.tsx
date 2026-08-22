@@ -93,6 +93,10 @@ export default function CompletionSlide({
     try {
       const res = await fetch(apiUrl("/api/study/track"), {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Lets the server compute "today" in this user's own timezone
+        // instead of the server process's (see src/lib/localDay.ts).
+        body: JSON.stringify({ timezoneOffsetMinutes: new Date().getTimezoneOffset() }),
         credentials: API_FETCH_CREDENTIALS,
       });
       if (!res.ok) return;

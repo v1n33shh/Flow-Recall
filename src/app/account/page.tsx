@@ -300,8 +300,8 @@ function SignedOutPrompt() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 32, delay: 0.08 }}
       >
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Welcome to FlowRecall</h1>
-        <p className="mx-auto mt-2 max-w-[22rem] text-sm text-zinc-500">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome to FlowRecall</h1>
+        <p className="mx-auto mt-2 max-w-[22rem] text-sm text-muted-foreground">
           Sign in to see your plan, streak, and account settings.
         </p>
       </motion.div>
@@ -313,7 +313,7 @@ function SignedOutPrompt() {
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 32, delay: 0.16 }}
-        className="mt-2 flex w-full max-w-xs items-center justify-center gap-3 rounded-full border border-white/10 bg-white/[0.03] px-6 py-3.5 text-sm font-medium text-zinc-100 transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-2 flex w-full max-w-xs items-center justify-center gap-3 rounded-full border border-border bg-foreground/[0.03] px-6 py-3.5 text-sm font-medium text-foreground transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <GoogleIcon />
         {loading ? "Opening..." : "Continue with Google"}
@@ -327,7 +327,7 @@ function SignedOutPrompt() {
         <Link
           href="/login"
           onClick={vibrateTap}
-          className="text-sm text-zinc-500 underline-offset-4 transition-colors hover:text-zinc-300 hover:underline"
+          className="text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
         >
           or sign in with email
         </Link>

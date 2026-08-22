@@ -44,6 +44,11 @@ export type Deck = {
    * in storage.ts for JIT-generating them later from the Library. Omitted
    * entirely (not an empty array) once nothing is left to generate. */
   pendingChunks?: string[];
+  /** The model id this deck was generated with - continuing it later (the
+   * home page's "Generate Next Section") reuses this instead of silently
+   * falling back to the free model regardless of the user's actual plan.
+   * Optional/undefined for decks saved before this field existed. */
+  model?: string;
 };
 
 export type BookType = "epub" | "pdf" | "text";

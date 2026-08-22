@@ -152,14 +152,29 @@ export async function POST(request: Request) {
     }));
 
     // Record this deck against the lifetime quota - only on the first chunk.
+    // Atomic + conditional for FREE (not the plain read-then-write this used
+    // to be) - two concurrent requests reading the same stale `generatedTotal`
+    // before either write lands could otherwise both pass the earlier check
+    // and both increment, letting a FREE account get more than its one
+    // lifetime deck. PRO has no cap, so its increment stays unconditional.
     if (isFirstChunk) {
-      await prisma.user.update({
-        where: { id: session.user.id },
-        data: {
-          decksGeneratedToday: generatedTotal + 1,
-          lastDeckGeneratedDate: new Date(),
-        },
-      });
+      if (plan === "PRO") {
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: { decksGeneratedToday: { increment: 1 }, lastDeckGeneratedDate: new Date() },
+        });
+      } else {
+        const result = await prisma.user.updateMany({
+          where: { id: session.user.id, decksGeneratedToday: { lt: 1 } },
+          data: { decksGeneratedToday: { increment: 1 }, lastDeckGeneratedDate: new Date() },
+        });
+        if (result.count === 0) {
+          // Lost a race for the one free slot - generation already happened
+          // and cost real money, but a FREE account must never end up with
+          // more than its one lifetime deck.
+          return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
+        }
+      }
     }
 
     return Response.json({ concepts });

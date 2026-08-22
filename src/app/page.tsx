@@ -563,7 +563,10 @@ export default function Home() {
           // first chunk) defaults to treating every unmarked request as a first
           // chunk and wrongly re-blocks a free user mid-way through their own
           // already-started deck.
-          body: JSON.stringify({ text: batch[i], isFirstChunk: false }),
+          // model: deck.model - without this, an unset model falls back to the
+          // free model server-side regardless of plan, silently downgrading a
+          // Pro user's continuation chunks to the cheap model they didn't pick.
+          body: JSON.stringify({ text: batch[i], isFirstChunk: false, model: deck.model }),
           credentials: API_FETCH_CREDENTIALS,
         });
 

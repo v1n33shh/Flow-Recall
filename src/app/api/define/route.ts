@@ -113,10 +113,28 @@ export async function POST(request: Request) {
     // call or a malformed response above returns before this and costs the
     // user nothing. Incremented regardless of plan (see schema.prisma) so
     // it doubles as a usage metric once a user is Pro.
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { definitionsUsed: definitionsUsed + 1 },
-    });
+    //
+    // Atomic + conditional for FREE (not the plain read-then-write this used
+    // to be) - two concurrent requests reading the same stale `definitionsUsed`
+    // before either write lands could otherwise both pass the earlier check
+    // and both increment, letting a FREE account exceed the lifetime cap.
+    // PRO has no cap, so its increment stays unconditional.
+    if (plan === "PRO") {
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { definitionsUsed: { increment: 1 } },
+      });
+    } else {
+      const result = await prisma.user.updateMany({
+        where: { id: session.user.id, definitionsUsed: { lt: FREE_DEFINITION_LIMIT } },
+        data: { definitionsUsed: { increment: 1 } },
+      });
+      if (result.count === 0) {
+        // Lost a race for the last free slot - the lookup already happened
+        // and cost real money, but a FREE account must never end up over cap.
+        return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
+      }
+    }
 
     return Response.json(validated.data);
   } catch (error) {

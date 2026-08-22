@@ -251,6 +251,21 @@ export default function EpubReaderView({
 
   const clearPopover = useCallback(() => setPopover(null), []);
 
+  // Every page-turn trigger routes through these instead of calling
+  // renditionRef directly - without dismissing the popover first, turning
+  // the page leaves it floating at its old screen position, now overlaid on
+  // unrelated new-page content, until the user happens to tap inside the
+  // content area (the only place that was wired to dismiss it before).
+  const goToPrevPage = useCallback(() => {
+    clearPopover();
+    renditionRef.current?.prev();
+  }, [clearPopover]);
+
+  const goToNextPage = useCallback(() => {
+    clearPopover();
+    renditionRef.current?.next();
+  }, [clearPopover]);
+
   // Tapping an EXISTING highlight's own rendered mark - epub.js attaches this
   // directly to the mark's SVG element (click + touchstart), so it's a
   // completely separate path from "capture a new selection" below: no
@@ -450,8 +465,8 @@ export default function EpubReaderView({
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "ArrowRight") renditionRef.current?.next();
-      if (e.key === "ArrowLeft") renditionRef.current?.prev();
+      if (e.key === "ArrowRight") goToNextPage();
+      if (e.key === "ArrowLeft") goToPrevPage();
       if (e.key === "Escape") {
         if (popover) clearPopover();
         else onExit();
@@ -459,7 +474,7 @@ export default function EpubReaderView({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [popover, clearPopover, onExit]);
+  }, [popover, clearPopover, onExit, goToNextPage, goToPrevPage]);
 
   function adjustFont(next: number) {
     setFontPercent(next);
@@ -548,7 +563,7 @@ export default function EpubReaderView({
               <button
                 type="button"
                 aria-label="Previous page"
-                onClick={() => renditionRef.current?.prev()}
+                onClick={goToPrevPage}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90"
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
@@ -558,7 +573,7 @@ export default function EpubReaderView({
               <button
                 type="button"
                 aria-label="Next page"
-                onClick={() => renditionRef.current?.next()}
+                onClick={goToNextPage}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90"
               >
                 <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
@@ -593,13 +608,13 @@ export default function EpubReaderView({
           <button
             type="button"
             aria-label="Previous page"
-            onClick={() => renditionRef.current?.prev()}
+            onClick={goToPrevPage}
             className="absolute inset-y-[15%] left-0 z-10 w-[15%] cursor-w-resize"
           />
           <button
             type="button"
             aria-label="Next page"
-            onClick={() => renditionRef.current?.next()}
+            onClick={goToNextPage}
             className="absolute inset-y-[15%] right-0 z-10 w-[15%] cursor-e-resize"
           />
         </>

@@ -126,7 +126,14 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   const { data: session, update: updateSession } = useSession();
   const isPro = session?.user?.plan === "PRO";
   useEffect(() => {
-    fetch(apiUrl("/api/study/track"), { method: "POST", credentials: API_FETCH_CREDENTIALS })
+    fetch(apiUrl("/api/study/track"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Lets the server compute "today" in this user's own timezone instead
+      // of the server process's (see src/lib/localDay.ts).
+      body: JSON.stringify({ timezoneOffsetMinutes: new Date().getTimezoneOffset() }),
+      credentials: API_FETCH_CREDENTIALS,
+    })
       .then(async (res) => {
         if (!res.ok) return;
         const { currentStreak } = await res.json();

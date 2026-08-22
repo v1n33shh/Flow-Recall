@@ -7,6 +7,17 @@ import { grantPro, renewPro, revokePro } from "@/lib/billing";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// The installed Stripe SDK is pinned to an API version (see src/lib/stripe.ts)
+// where `current_period_end` moved off Subscription entirely and onto each
+// SubscriptionItem - reading it off the subscription itself silently returns
+// undefined forever, which is exactly the bug this helper fixes. Single-item
+// subscriptions only (this app's pricing has no multi-item subs), so the
+// first item is the one that matters.
+function getSubscriptionPeriodEnd(sub: Stripe.Subscription): Date | null {
+  const periodEnd = sub.items.data[0]?.current_period_end;
+  return typeof periodEnd === "number" ? new Date(periodEnd * 1000) : null;
+}
+
 export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -54,10 +65,7 @@ export async function POST(request: Request) {
         if (subscriptionId) {
           try {
             const sub = await stripe.subscriptions.retrieve(subscriptionId);
-            const anySub = sub as unknown as { current_period_end?: number };
-            if (typeof anySub.current_period_end === "number") {
-              currentPeriodEnd = new Date(anySub.current_period_end * 1000);
-            }
+            currentPeriodEnd = getSubscriptionPeriodEnd(sub);
           } catch (e) {
             console.error("[stripe/webhook] could not retrieve subscription", subscriptionId, e);
           }
@@ -85,12 +93,9 @@ export async function POST(request: Request) {
       // stale after the first period and incorrectly expire them.
       case "customer.subscription.updated": {
         const sub = event.data.object as Stripe.Subscription;
-        const anySub = sub as unknown as { current_period_end?: number };
-        if ((sub.status === "active" || sub.status === "trialing") && typeof anySub.current_period_end === "number") {
-          const result = await renewPro(
-            { stripeSubscriptionId: sub.id },
-            new Date(anySub.current_period_end * 1000),
-          );
+        const periodEnd = getSubscriptionPeriodEnd(sub);
+        if ((sub.status === "active" || sub.status === "trialing") && periodEnd) {
+          const result = await renewPro({ stripeSubscriptionId: sub.id }, periodEnd);
           if (result.count === 0) {
             console.error("[stripe/webhook] subscription.updated matched no user", sub.id);
           }

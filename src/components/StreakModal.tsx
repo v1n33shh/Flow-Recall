@@ -171,7 +171,11 @@ export default function StreakModal({
     Promise.resolve().then(() => {
       if (!cancelled) setError(null);
     });
-    fetch(apiUrl("/api/streak"), { credentials: API_FETCH_CREDENTIALS })
+    // tzOffset lets the server compute "today"/the week view in this user's
+    // own timezone instead of the server process's (see src/lib/localDay.ts).
+    fetch(apiUrl(`/api/streak?tzOffset=${new Date().getTimezoneOffset()}`), {
+      credentials: API_FETCH_CREDENTIALS,
+    })
       .then(async (res) => ({ ok: res.ok, json: await res.json() }))
       .then(({ ok, json }) => {
         if (cancelled) return;

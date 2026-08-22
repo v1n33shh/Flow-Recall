@@ -138,9 +138,14 @@ export default function IngestPage() {
     // Chunks are sent one at a time, in order - Promise.all-ing these would
     // fire them all at once and trip Groq's free-tier rate limit instantly.
     const accumulated: Concept[] = [];
+    // Tracks which chunk was in flight when a failure happened, so the catch
+    // block can recover the unprocessed remainder instead of discarding it -
+    // see the comment on the catch block below for why this matters.
+    let failedAtIndex = chunks.length;
 
     try {
       for (let i = 0; i < chunks.length; i++) {
+        failedAtIndex = i;
         setCurrentChunk(i + 1);
 
         const res = await fetch(apiUrl("/api/ingest"), {
@@ -172,10 +177,13 @@ export default function IngestPage() {
         }
       }
 
+      // Every chunk in this batch succeeded - nothing left to recover if
+      // saveDeck itself throws below, so there's no "failed at" index anymore.
+      failedAtIndex = chunks.length;
       setConcepts(accumulated);
       // Auto-persist immediately so a refresh (even before the user clicks
       // "Start studying") never loses a freshly generated deck.
-      const deck = saveDeck(titleRef.current, accumulated, pendingChunks);
+      const deck = saveDeck(titleRef.current, accumulated, pendingChunks, selectedModel);
       setSavedDeckId(deck.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -183,6 +191,27 @@ export default function IngestPage() {
         // Swap the generic error banner for the dedicated upsell block.
         setError(null);
         setShowPaywall(true);
+      } else if (accumulated.length > 0) {
+        // A later chunk failed after at least one earlier chunk already
+        // succeeded. Chunk 0 succeeding is exactly what spends a FREE user's
+        // lifetime deck quota server-side (see /api/ingest's isFirstChunk
+        // gate) - discarding `accumulated` here would burn that one-time
+        // quota for nothing. Save what we got instead, and queue the chunk
+        // that failed plus everything after it (both the rest of this batch
+        // and any truncation overflow) as pendingChunks - "Generate Next
+        // Section" on the home page already sends isFirstChunk: false, so
+        // finishing this deck later costs no extra quota.
+        const deck = saveDeck(
+          titleRef.current,
+          accumulated,
+          [...chunks.slice(failedAtIndex), ...pendingChunks],
+          selectedModel,
+        );
+        setSavedDeckId(deck.id);
+        setConcepts(accumulated);
+        setError(
+          "Generation hit a snag partway through, but we saved what we got. Go to your library and tap \"Generate Next Section\" to finish this deck - it won't cost you anything extra.",
+        );
       } else {
         setError(message);
       }

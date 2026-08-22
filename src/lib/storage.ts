@@ -91,14 +91,22 @@ export function getSavedDecks(): Deck[] {
 
 /** Persists a freshly generated deck so it survives a page refresh. Newest
  * first. `pendingChunks` carries any leftover text the Speed-First Cap
- * didn't process yet - see appendConceptsToDeck for JIT-generating it later. */
-export function saveDeck(title: string, concepts: Concept[], pendingChunks: string[] = []): Deck {
+ * didn't process yet - see appendConceptsToDeck for JIT-generating it later.
+ * `model` records what generated it, so a later continuation reuses the same
+ * model instead of silently falling back to the free one. */
+export function saveDeck(
+  title: string,
+  concepts: Concept[],
+  pendingChunks: string[] = [],
+  model?: string,
+): Deck {
   const deck: Deck = {
     id: crypto.randomUUID(),
     title: title.trim() || "Untitled Notes",
     createdAt: Date.now(),
     concepts,
     ...(pendingChunks.length > 0 ? { pendingChunks } : {}),
+    ...(model ? { model } : {}),
   };
 
   const next = [deck, ...getSavedDecks()];

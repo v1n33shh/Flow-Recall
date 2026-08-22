@@ -10,7 +10,7 @@ import { vibrateTap } from "@/lib/haptics";
 
 const FREE_FEATURES = [
   "1 deck per day (up to 60,000 chars)",
-  "Llama 3.3 70B — fast, capable free model",
+  "Qwen3 27B — fast, capable free model",
   "Active-recall study feed with spaced repetition",
   "Daily streak tracking",
   "Save decks to your library",

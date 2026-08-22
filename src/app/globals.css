@@ -31,6 +31,13 @@
   --foreground: 0 0% 98%;
   --accent: 0 0% 100%;
   --accent-foreground: 0 0% 2%;
+  /* The one deliberate exception to "no hue anywhere": a reading highlight
+     painted in pure white/black (the achromatic accent) is unreadable as a
+     highlight - it just looks like emphasis. This azure is scoped to the
+     reader's word/phrase highlights only (selection overlay + saved marks)
+     and, unlike accent, does NOT invert in light mode - the same blue reads
+     fine on both a near-black and a near-white page. */
+  --reader-highlight: 217 91% 60%;
   /* MobileTabBar.tsx overwrites this with its real measured height on mount
      (ResizeObserver) - this fallback only covers the first paint before that
      effect runs, so it should track the bar's actual rest-state height. */
@@ -64,6 +71,7 @@
   --color-foreground: hsl(var(--foreground));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-reader-highlight: hsl(var(--reader-highlight));
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -97,10 +105,11 @@ body {
    group, never this child element. SVG presentation attributes (set via
    setAttribute, as marks-pane does) sit below author stylesheets in the CSS
    cascade regardless of specificity, so a plain rule here is enough to win -
-   this is the only way to actually recolor it to the accent token. Scoped to
-   our own annotation className so it can't affect any unrelated SVG on the page. */
+   this is the only way to actually recolor it to the reader-highlight token.
+   Scoped to our own annotation className so it can't affect any unrelated
+   SVG on the page. */
 [ref="flowrecall-highlight"] line {
-  stroke: hsl(var(--accent));
+  stroke: hsl(var(--reader-highlight));
   stroke-width: 3px;
   stroke-opacity: 0.9;
 }

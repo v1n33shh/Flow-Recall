@@ -19,6 +19,9 @@ import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
 import DisplaySettingsMenu from "./DisplaySettingsMenu";
 import {
   FONT_FAMILY_CSS,
+  FONT_PERCENT_MAX,
+  FONT_PERCENT_MIN,
+  FONT_PERCENT_STEP,
   getReaderPreferences,
   setReaderPreferences,
   type FontFamilyId,
@@ -122,7 +125,7 @@ function renderParagraphWithHighlights(
         <mark
           key={i}
           onClick={(e) => onHighlightClick(record, e)}
-          className="cursor-pointer border-b-[3px] border-accent bg-transparent text-inherit"
+          className="cursor-pointer border-b-[3px] border-reader-highlight bg-transparent text-inherit"
         >
           {text.slice(start, end)}
         </mark>,
@@ -327,9 +330,9 @@ export default function TextReaderView({ bookId, onExit }: { bookId: string; onE
           typography={{
             fontPercent,
             onFontPercentChange: adjustFont,
-            fontMin: 80,
-            fontMax: 160,
-            fontStep: 2,
+            fontMin: FONT_PERCENT_MIN,
+            fontMax: FONT_PERCENT_MAX,
+            fontStep: FONT_PERCENT_STEP,
             fontFamily,
             onFontFamilyChange: adjustFontFamily,
           }}

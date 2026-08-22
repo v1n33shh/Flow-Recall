@@ -25,7 +25,65 @@ export type TypographyControl = {
   onFontFamilyChange: (family: FontFamilyId) => void;
 };
 
+/** EPUB-only: lets the reader pick paginated (tap/swipe through discrete
+ * pages) vs. a continuous vertical scroll. Omitted entirely by PDF (fixed
+ * page images, pagination is inherent to the format) and by TextReaderView
+ * (already pure continuous scroll with no alternative to offer). */
+export type LayoutControl = {
+  mode: "paginated" | "scrolling";
+  onModeChange: (mode: "paginated" | "scrolling") => void;
+};
+
 const FONT_FAMILY_IDS: FontFamilyId[] = ["serif", "sans", "legible"];
+const LAYOUT_MODES: { id: "paginated" | "scrolling"; label: string }[] = [
+  { id: "paginated", label: "Paginated" },
+  { id: "scrolling", label: "Scrolling" },
+];
+
+function StepperRow({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-0.5 rounded-full border border-border bg-foreground/5 p-0.5">
+        <button
+          type="button"
+          aria-label={`Decrease ${label.toLowerCase()}`}
+          onClick={() => onChange(Math.max(min, value - step))}
+          disabled={value <= min}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90 disabled:opacity-30"
+        >
+          <span className="text-base leading-none">−</span>
+        </button>
+        <span className="w-11 text-center text-xs font-medium tabular-nums text-foreground">
+          {Math.round(value)}%
+        </span>
+        <button
+          type="button"
+          aria-label={`Increase ${label.toLowerCase()}`}
+          onClick={() => onChange(Math.min(max, value + step))}
+          disabled={value >= max}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90 disabled:opacity-30"
+        >
+          <span className="text-base leading-none">+</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SliderRow({
   label,
@@ -71,9 +129,11 @@ function SliderRow({
 export default function DisplaySettingsMenu({
   zoom,
   typography,
+  layout,
 }: {
   zoom?: ZoomControl;
   typography?: TypographyControl;
+  layout?: LayoutControl;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -141,9 +201,8 @@ export default function DisplaySettingsMenu({
 
               {typography && (
                 <>
-                  <SliderRow
+                  <StepperRow
                     label="Font Size"
-                    valueLabel={`${Math.round(typography.fontPercent)}%`}
                     value={typography.fontPercent}
                     min={typography.fontMin}
                     max={typography.fontMax}
@@ -178,6 +237,32 @@ export default function DisplaySettingsMenu({
                     </div>
                   </div>
                 </>
+              )}
+
+              {layout && (
+                <div className="border-t border-border pt-4">
+                  <p className="text-xs font-medium text-muted-foreground">Layout</p>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    {LAYOUT_MODES.map(({ id, label }) => {
+                      const selected = layout.mode === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => layout.onModeChange(id)}
+                          aria-pressed={selected}
+                          className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors ${
+                            selected
+                              ? "border-accent/50 bg-accent/10 text-accent"
+                              : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               )}
             </div>
           </motion.div>

@@ -1,16 +1,24 @@
 export type FontFamilyId = "serif" | "sans" | "legible";
+export type EpubScrollMode = "paginated" | "scrolling";
 
 export type ReaderPreferences = {
   fontPercent: number;
   fontFamily: FontFamilyId;
+  epubScrollMode: EpubScrollMode;
 };
 
 const STORAGE_KEY = "flowrecall:reader-prefs";
 
+// Single source of truth for the font-size stepper's range (DisplaySettingsMenu)
+// and every reader view that reports its bounds to it.
+export const FONT_PERCENT_MIN = 80;
+export const FONT_PERCENT_MAX = 160;
+export const FONT_PERCENT_STEP = 2;
+
 // Matches the reading experience every existing user already has (Georgia
-// serif at 112%) - upgrading to this preference store causes zero visual
-// change until someone actually opens the new Display Settings menu.
-const DEFAULTS: ReaderPreferences = { fontPercent: 112, fontFamily: "serif" };
+// serif at 112%, paginated) - upgrading to this preference store causes zero
+// visual change until someone actually opens the new Display Settings menu.
+const DEFAULTS: ReaderPreferences = { fontPercent: 112, fontFamily: "serif", epubScrollMode: "paginated" };
 
 // EPUB content renders inside epub.js's own sandboxed iframe documents,
 // which do NOT inherit the parent document's CSS custom properties or
@@ -43,6 +51,10 @@ function isFontFamilyId(value: unknown): value is FontFamilyId {
   return value === "serif" || value === "sans" || value === "legible";
 }
 
+function isEpubScrollMode(value: unknown): value is EpubScrollMode {
+  return value === "paginated" || value === "scrolling";
+}
+
 /** Global, cross-book reading preference - deliberately NOT stored per-book
  * in IndexedDB (see readerStorage.ts) since typography taste is personal and
  * expected to carry across every book, unlike PDF zoom which stays per-book
@@ -57,6 +69,7 @@ export function getReaderPreferences(): ReaderPreferences {
     return {
       fontPercent: typeof parsed.fontPercent === "number" ? parsed.fontPercent : DEFAULTS.fontPercent,
       fontFamily: isFontFamilyId(parsed.fontFamily) ? parsed.fontFamily : DEFAULTS.fontFamily,
+      epubScrollMode: isEpubScrollMode(parsed.epubScrollMode) ? parsed.epubScrollMode : DEFAULTS.epubScrollMode,
     };
   } catch {
     return DEFAULTS;

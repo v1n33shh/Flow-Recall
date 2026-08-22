@@ -111,7 +111,7 @@ function PdfHighlightOverlay({
             }}
           >
             <span
-              className="absolute inset-x-0 bottom-0 block rounded-[1px] bg-accent"
+              className="absolute inset-x-0 bottom-0 block rounded-[1px] bg-reader-highlight"
               style={{ height: UNDERLINE_THICKNESS, opacity: 0.9 }}
             />
           </button>

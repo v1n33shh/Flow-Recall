@@ -29,9 +29,13 @@ import DisplaySettingsMenu from "./DisplaySettingsMenu";
 import SelectionHighlight from "./SelectionHighlight";
 import {
   FONT_FAMILY_CSS,
+  FONT_PERCENT_MAX,
+  FONT_PERCENT_MIN,
+  FONT_PERCENT_STEP,
   READER_FONTS_HREF,
   getReaderPreferences,
   setReaderPreferences,
+  type EpubScrollMode,
   type FontFamilyId,
 } from "@/lib/readerPreferences";
 
@@ -99,6 +103,83 @@ function flattenToc(items: NavItem[]): NavItem[] {
   return items.flatMap((item) => [item, ...(item.subitems ? flattenToc(item.subitems) : [])]);
 }
 
+/** "Jump to any chapter" trigger + popover - the chapter list itself
+ * (`toc`) was already being parsed and flattened just to label the current
+ * chapter in the header; this is the first place it's actually rendered.
+ * Visual recipe matches DisplaySettingsMenu's panel exactly (same corner
+ * radius, border, blur, shadow) so it reads as part of the same toolbar
+ * family, not a bolted-on dialog. */
+function ChaptersMenu({ toc, onSelect }: { toc: NavItem[]; onSelect: (href: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(e: PointerEvent) {
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  if (toc.length === 0) return null;
+
+  return (
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label="Chapters"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-foreground transition-colors active:scale-90 ${
+          open ? "bg-foreground/15" : "hover:bg-foreground/10"
+        }`}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+          <path
+            d="M4 6h16M4 12h16M4 18h10"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          ref={panelRef}
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 max-h-80 w-72 overflow-y-auto rounded-2xl border border-border bg-surface/90 p-2 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+        >
+          {toc.map((item, i) => (
+            <button
+              key={`${item.href}:${i}`}
+              type="button"
+              onClick={() => {
+                onSelect(item.href);
+                setOpen(false);
+              }}
+              className="block w-full truncate rounded-xl px-3 py-2 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground"
+            >
+              {item.label.trim()}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function registerObsidianTheme(rendition: Rendition) {
   // Matches the app's "Pure Monochrome" tokens, but swaps to a serif reading
   // face - established typography practice for long-form body text, and
@@ -117,16 +198,36 @@ function registerObsidianTheme(rendition: Rendition) {
     },
     p: { "margin-bottom": "1.1em !important" },
     a: { color: "#FFFFFF !important" },
-    "::selection": { background: "rgba(255,255,255,0.25)" },
+    // Literal --reader-highlight blue (epub.js's iframe can't see our :root
+    // custom properties) - keep in sync with SelectionHighlight.tsx/globals.css.
+    "::selection": { background: "rgba(59,130,246,0.35)" },
   });
   rendition.themes.select("obsidian");
 }
 
-export default function EpubReaderView({ bookId, onExit }: { bookId: string; onExit: () => void }) {
+export default function EpubReaderView({
+  bookId,
+  onExit,
+  onScrollModeChange,
+}: {
+  bookId: string;
+  onExit: () => void;
+  /** Called after a new epub scroll-mode preference is persisted - epub.js's
+   * flow can't be safely hot-swapped on a live rendition, so the parent
+   * (ReaderOpenDispatcher) responds by bumping this component's `key`,
+   * forcing a clean remount that re-reads the new preference at setup. The
+   * CFI position survives the remount since it's already persisted to
+   * IndexedDB independent of flow mode. */
+  onScrollModeChange?: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const bookRef = useRef<Book | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
   const tocRef = useRef<NavItem[]>([]);
+  // Read once per mount and never updated from within this instance - see
+  // onScrollModeChange's doc comment above for why a change mid-session
+  // forces a full remount (a fresh `key`) rather than updating this in place.
+  const [scrollMode] = useState<EpubScrollMode>(() => getReaderPreferences().epubScrollMode);
   // Guards against a genuine race: loading saved highlights on mount and the
   // user creating a new one via handleHighlight are two independent async
   // paths that can BOTH resolve for the same record (e.g. the user
@@ -145,6 +246,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
   // default and then snapping to it.
   const [fontPercent, setFontPercent] = useState(() => getReaderPreferences().fontPercent);
   const [fontFamily, setFontFamily] = useState<FontFamilyId>(() => getReaderPreferences().fontFamily);
+  const [toc, setToc] = useState<NavItem[]>([]);
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
   const clearPopover = useCallback(() => setPopover(null), []);
@@ -201,7 +303,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
         const rendition = book.renderTo(containerRef.current, {
           width: "100%",
           height: "100%",
-          flow: "paginated",
+          flow: scrollMode === "scrolling" ? "scrolled-doc" : "paginated",
           spread: "none",
           allowScriptedContent: false,
         });
@@ -291,6 +393,7 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
 
         const navigation = await book.loaded.navigation;
         tocRef.current = flattenToc(navigation.toc);
+        setToc(tocRef.current);
         const current = rendition.currentLocation() as unknown as { start: { href: string } } | undefined;
         if (current?.start?.href) {
           const match = tocRef.current.find((item) => item.href.split("#")[0] === current.start.href.split("#")[0]);
@@ -370,6 +473,16 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
     setReaderPreferences({ fontFamily: next });
   }
 
+  function adjustScrollMode(next: EpubScrollMode) {
+    if (next === scrollMode) return;
+    setReaderPreferences({ epubScrollMode: next });
+    onScrollModeChange?.();
+  }
+
+  function goToChapter(href: string) {
+    void renditionRef.current?.display(href);
+  }
+
   async function handleHighlight() {
     if (popover?.kind !== "selection") return;
     const record = await addHighlight(bookId, popover.data.phrase, popover.data.rawPosition);
@@ -429,33 +542,68 @@ export default function EpubReaderView({ bookId, onExit }: { bookId: string; onE
       progress={progress}
       loading={loadState === "loading"}
       controls={
-        <DisplaySettingsMenu
-          typography={{
-            fontPercent,
-            onFontPercentChange: adjustFont,
-            fontMin: 80,
-            fontMax: 160,
-            fontStep: 2,
-            fontFamily,
-            onFontFamilyChange: adjustFontFamily,
-          }}
-        />
+        <>
+          {scrollMode === "paginated" && (
+            <div className="flex items-center gap-0.5 rounded-full border border-border bg-foreground/5 p-0.5">
+              <button
+                type="button"
+                aria-label="Previous page"
+                onClick={() => renditionRef.current?.prev()}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                aria-label="Next page"
+                onClick={() => renditionRef.current?.next()}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-foreground transition-colors hover:bg-foreground/10 active:scale-90"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                  <path d="M9 5l7 7-7 7" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          )}
+          <ChaptersMenu toc={toc} onSelect={goToChapter} />
+          <DisplaySettingsMenu
+            typography={{
+              fontPercent,
+              onFontPercentChange: adjustFont,
+              fontMin: FONT_PERCENT_MIN,
+              fontMax: FONT_PERCENT_MAX,
+              fontStep: FONT_PERCENT_STEP,
+              fontFamily,
+              onFontFamilyChange: adjustFontFamily,
+            }}
+            layout={{ mode: scrollMode, onModeChange: adjustScrollMode }}
+          />
+        </>
       }
     >
-      {/* Tap zones for page turns - narrow edge bands so the wide center
-          column is left completely free for native text selection. */}
-      <button
-        type="button"
-        aria-label="Previous page"
-        onClick={() => renditionRef.current?.prev()}
-        className="absolute inset-y-0 left-0 z-10 w-[15%] cursor-w-resize"
-      />
-      <button
-        type="button"
-        aria-label="Next page"
-        onClick={() => renditionRef.current?.next()}
-        className="absolute inset-y-0 right-0 z-10 w-[15%] cursor-e-resize"
-      />
+      {/* Tap zones for page turns - narrow edge bands, inset from the top and
+          bottom so a stray tap near either edge of the content pane can't
+          accidentally flip a page; the wide center column stays free for
+          native text selection either way. Only meaningful in paginated flow
+          - scrolled-doc has no "page" to turn, native scroll takes over. */}
+      {scrollMode === "paginated" && (
+        <>
+          <button
+            type="button"
+            aria-label="Previous page"
+            onClick={() => renditionRef.current?.prev()}
+            className="absolute inset-y-[15%] left-0 z-10 w-[15%] cursor-w-resize"
+          />
+          <button
+            type="button"
+            aria-label="Next page"
+            onClick={() => renditionRef.current?.next()}
+            className="absolute inset-y-[15%] right-0 z-10 w-[15%] cursor-e-resize"
+          />
+        </>
+      )}
 
       <div ref={containerRef} className="h-full w-full px-2" />
 

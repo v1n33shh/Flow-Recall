@@ -167,6 +167,11 @@ function ReaderLibrary({ onOpenBook }: { onOpenBook: (id: string) => void }) {
  * decide WHICH one to render. */
 function ReaderOpenDispatcher({ bookId, onExit }: { bookId: string; onExit: () => void }) {
   const [type, setType] = useState<BookMeta["type"] | "not-found" | null>(null);
+  // epub.js can't safely hot-swap its paginated/scrolled-doc flow on a live
+  // rendition - EpubReaderView responds to a scroll-mode change by calling
+  // this, which bumps the key below to force a clean remount that re-reads
+  // the new preference at setup (see EpubReaderView's onScrollModeChange doc).
+  const [epubRenderKey, setEpubRenderKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +189,14 @@ function ReaderOpenDispatcher({ bookId, onExit }: { bookId: string; onExit: () =
   }
   if (type === "pdf") return <PdfReaderView bookId={bookId} onExit={onExit} />;
   if (type === "text") return <TextReaderView bookId={bookId} onExit={onExit} />;
-  return <EpubReaderView bookId={bookId} onExit={onExit} />;
+  return (
+    <EpubReaderView
+      key={epubRenderKey}
+      bookId={bookId}
+      onExit={onExit}
+      onScrollModeChange={() => setEpubRenderKey((k) => k + 1)}
+    />
+  );
 }
 
 function ReaderPageContent() {

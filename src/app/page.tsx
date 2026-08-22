@@ -15,6 +15,7 @@ import {
   useSavedDecks,
 } from "@/lib/storage";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { useIsNative } from "@/lib/useIsNative";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
@@ -269,7 +270,7 @@ function FeaturesSection() {
     >
       <motion.div {...reveal()} className="mx-auto max-w-3xl text-center">
         <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
           Why FlowRecall
         </p>
         <h2
@@ -430,6 +431,12 @@ function FaqSection() {
 export default function Home() {
   const router = useRouter();
   const decks = useSavedDecks();
+  // Navbar.tsx hides itself entirely on native (MobileTabBar is its only
+  // chrome) - the hero's min-h-[88vh]/justify-center centering was tuned for
+  // the web layout, where that floating navbar above it justifies some
+  // space. With nothing above it on native, the same centering leaves a
+  // large dead zone under the status bar instead of anchoring near the top.
+  const isNative = useIsNative();
 
   const [generatingDeckIds, setGeneratingDeckIds] = useState<Set<string>>(new Set());
   const [jitErrors, setJitErrors] = useState<Record<string, string>>({});
@@ -540,7 +547,9 @@ export default function Home() {
         aria-labelledby="hero-heading"
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
-        className="relative flex min-h-[88vh] flex-col items-center justify-center overflow-hidden px-6 py-16 text-center [perspective:1200px] sm:py-24"
+        className={`relative flex flex-col items-center overflow-hidden px-6 text-center [perspective:1200px] ${
+          isNative ? "justify-start pt-6 pb-16" : "min-h-[88vh] justify-center py-16 sm:py-24"
+        }`}
       >
         <MarqueeBackground />
 
@@ -577,7 +586,7 @@ export default function Home() {
           transition={SNAP}
           className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-accent shadow-[0_0_8px_2px_hsl(var(--accent)/0.6)]" />
+          <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
           Active recall, disguised as doomscrolling
         </motion.p>
         <motion.h1

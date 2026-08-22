@@ -1,6 +1,73 @@
 # FlowRecall — Handoff
 
-Status as of this handoff: **Full SaaS layer added on top of the original app — user accounts, server-side multi-model AI, Stripe Pro subscriptions, and daily-streak gamification.** The sections in this doc from "## What FlowRecall is" onward describe the earlier **BYOK / account-less** era and are retained for history and product context, but several of their claims (no accounts, "No env vars," client-supplied Groq key for ingestion, `resolveIngestModel → llama-3.3-70b-versatile`) are now **superseded** — see the section immediately below, which is the authoritative description of the current state. Verified end-to-end in-browser (Playwright), including a 13/13 streak-flow pass. Still not committed to git (no repo initialized) and no standing automated test suite.
+**Read this top section first.** It supersedes everything below it (including the "CURRENT STATE — Accounts, Multi-Model AI..." section, which was itself once the current-state summary and is now historical). Everything in this top section reflects the repo as of **2026-08-22**, fully committed and pushed to `origin/main` (HEAD: `fff44ea`).
+
+---
+
+## 🔴 START HERE — 2026-08-22 session
+
+App is a Next.js 16 + Capacitor v8 Android app, Postgres/Supabase-backed, with real accounts (Google OAuth + credentials), Stripe + Razorpay billing, an AI flashcard pipeline (Groq/OpenAI/Anthropic), and a full EPUB/PDF/text reader. This session did two things: (1) closed out nearly everything needed to submit to the Google Play Store, and (2) did a significant design pass on the reader and home page. **Nothing is broken or half-done** — every change below was type-checked, linted, built, and verified live on the user's physical Android device before being committed.
+
+### Play Store readiness — what's DONE
+
+- **Privacy policy**: live at `/privacy` (`src/app/privacy/page.tsx`), linked from Account/login/register footers. Required for both the Play Store listing and Google OAuth verification.
+- **Release signing**: `android/app/flowrecall-release.jks` + `android/keystore.properties` exist (both gitignored). `android/app/build.gradle` has a conditional `signingConfigs.release` sourced from `keystore.properties`. **The user has a plaintext backup at `~/Desktop/FlowRecall-release-keystore-credentials.txt`** — remind them to move it to a password manager and delete the file if that hasn't happened yet.
+- **Mobile OAuth deep-link hardened, two layers**:
+  1. Single-use bridge tokens — `UsedMobileBridgeToken` Prisma model, enforced in `src/app/api/auth/mobile-exchange/route.ts` (unique-constraint + P2002 catch).
+  2. Verified Android App Link (not a bare custom scheme) — `public/.well-known/assetlinks.json`, `android:autoVerify="true"` in `AndroidManifest.xml` for `https://www.flowrecall.app/auth-callback`, config in `src/lib/mobileAuth.ts`. The old `flowrecall://` scheme is kept ONLY as a fallback (`src/app/auth-callback/page.tsx` forwards to it if the OS doesn't intercept the https link).
+  3. ⚠️ **Follow-up once the app has its first Play Console upload**: add Google Play App Signing's own SHA-256 as a second entry in `assetlinks.json` (Play re-signs the APK with its own key, which won't match the upload-key fingerprint currently in that file).
+- **Production outage prevented**: Supabase free-tier auto-pauses on inactivity — this caused a real outage earlier. Fixed with a Vercel Cron (`vercel.json` → `/api/cron/keep-alive`, daily) that pings the DB. **Confirmed actually firing** (user pasted real `vercel-cron/1.0` invocation logs showing `200`).
+- **AI generation outage fixed**: Groq deprecated `llama-3.3-70b-versatile` mid-flight. Root-caused a second failure too (the replacement `openai/gpt-oss-120b`/`qwen/qwen3.6-27b` reasoning models silently burn the whole token budget on a hidden `<think>` block). Current `FREE_MODEL` in `src/lib/ai.ts` is `qwen/qwen3.6-27b` with `GROQ_PROVIDER_OPTIONS = { groq: { reasoningEffort: "none" } }` passed to every `generateText` call. Verified end-to-end with a live study session on-device.
+- **Billing bug fixed**: Pro subscriptions never expired. `src/lib/billing.ts` now has `resolveEffectivePlan()` (checks `currentPeriodEnd`, self-heals via `revokePro`) wired into every route that gates on plan.
+- **Auth hardening**: removed `allowDangerousEmailAccountLinking` from the Google provider in `src/auth.ts` (was an account-takeover-adjacent misconfiguration).
+- **Google OAuth consent screen**: published to production by the user (confirmed).
+- **Razorpay**: switched to live keys, redeployed, smoke-tested (confirmed working, real order created).
+- **Play Store visual assets — all done and on disk**, `~/Desktop/Flowrecall/play-store-assets/`:
+  - `icon.png` (512×512) and `feature-graphic.png` (1024×500) — the "sealed badge" design (Flag Mark logo in a raised rounded tile next to the wordmark). Editable source canvas: `https://claude.ai/code/artifact/09d014eb-e7c5-4be5-9c47-97727edc2660`.
+  - `screenshots/01-home-hero.png` through `06-account.png` — captured on-device, cleaned up (status bar cropped out, the reader screenshot's real book content replaced with fictional text, the account screenshot's real name/avatar changed to a placeholder "Alex"/"A").
+  - Store listing description and Data Safety form answers were drafted in conversation (not saved to a file — if lost, redo them, it's a quick pass).
+
+### Play Store readiness — what's LEFT (all blocked on the user, not on code)
+
+- Create the Google Play Developer account ($25 fee) — **blocked on the user's debit card arriving**.
+- Once the account exists: paste the Data Safety answers into Play Console, upload the store listing description, upload the icon/feature-graphic/screenshots above, do the first APK/AAB upload.
+- After the first Play Console upload: add Play App Signing's SHA-256 to `assetlinks.json` (see follow-up note above).
+- Low priority / optional, deliberately deferred: rate limiting on `/api/auth/register` and credentials sign-in.
+
+### Reader upgrades (commit `910d5d6`)
+
+- **Reading highlights recolored blue.** New theme-aware-ish token system in `globals.css`: `--reader-highlight` (blue, `217 91% 60%`, same in both themes — used for the actual highlight marks/selection in `SelectionHighlight.tsx`, `EpubReaderView.tsx`, `PdfReaderView.tsx`, `TextReaderView.tsx`) and `--pulse-accent` (same blue in dark mode, but inverts to plain black in light mode — used for small "is this alive" status dots). These are the app's only two deliberate exceptions to its strict black/white "Pure Monochrome" system (documented at the top of `globals.css`).
+- **Font size is now a +/- stepper**, not a slider (`DisplaySettingsMenu.tsx`). Bounds centralized as `FONT_PERCENT_MIN/MAX/STEP` in `src/lib/readerPreferences.ts`.
+- **EPUB gained a Paginated/Scrolling toggle** (`epubScrollMode` preference). Switching forces a clean remount (epub.js can't safely hot-swap `flow` on a live rendition) via a `key` bump owned by `ReaderOpenDispatcher` in `src/app/reader/page.tsx`.
+- **EPUB navigation fixed**: added an explicit prev/next pill (matching PDF's, which already had one) and a new "Chapters" jump list built from the TOC data that was already being parsed but never rendered. Also fixed the actual bug behind "tapping near the top of the screen flips the page" — the invisible edge tap-zones were `inset-y-0` (full screen height); now `top-[15%] bottom-[15%]`.
+
+### Home page redesign (commits `bd61828`, `3bc78b7`, `fff44ea`)
+
+The user's own words: home page "looks dull." Root causes, all fixed in `src/app/page.tsx`:
+1. No closing CTA or footer anywhere — page just stopped after the FAQ. → Added `FinalCtaSection` + `SiteFooter`.
+2. Decoration (glow orbs, film grain, floating cards) was gated `hidden md:block`/`lg:block` — **invisible on the user's actual device** (Capacitor/mobile), which was the single biggest reason it read as dull there. → Un-gated the cheap decoration, right-sized the expensive orbs to render smaller on mobile, added a mobile-only swipeable card carousel as a real touch equivalent of the desktop mouse-parallax cards.
+3. Every section repeated the exact same centered-pill + centered-heading + centered-paragraph shape. → Added `HowItWorksSection`, the one deliberately left-aligned, no-pill, ghost-numeral section on the page.
+4. Feature cards 2 and 3 looked unfinished next to card 1's glow+diagram. → Gave them small finished visuals (a streak-calendar strip, a before/after mock) instead of a bare repeated tag pill.
+5. **Color discipline**: the mobile carousel briefly used the shared `<StreakCounter>` component for a real personalization touch — but that component's flame recolors by tier (blue → purple → amber → silver as a streak grows, see `StreakCounter.tsx`'s `getFlameTier`), which would have broken the home page's black/white/one-blue rule the moment a user's streak passed day 3. **Fixed**: that one card now uses a small inline pill hardcoded to the single blue, forever, regardless of streak length. Tapping it still opens the full-color `StreakModal` unchanged — that richer reward is fine on the deeper, opt-in surface, just not on the always-visible marketing page.
+6. The gray/highlight scale had drifted into near-duplicate one-off values (3 different glow opacities, 6 different white-inset alpha values). Consolidated to one glow strength (two, for a deliberate near/far pair on one orb) and two highlight intensities (0.08 for monochrome glass surfaces, 0.18/0.22 resting/hover for accent buttons).
+7. **Animation**: the user asked whether to cut all animation for max "clean" feel. Answer given and implemented: **no** — one-shot entrance/scroll-reveal/hover animations are what make Linear/Vercel/Stripe-style pages feel premium; cutting them would make it feel static and cheap. The ONE thing actually worth cutting was the background marquee text's perpetual infinite scroll (the only looping animation on the page) — it's now a static (but still visible, still dim/rotated) texture. Every other animation is untouched.
+
+### Design philosophy to preserve in any future work on this app
+
+- **"Pure Monochrome"**, documented at the top of `src/app/globals.css`: no color anywhere except contrast (white pops on black, black pops on white, fully inverting between themes via `[data-theme="light"]`).
+- Exactly two deliberate hue exceptions, both blue, both explained by name in `globals.css`'s own comments: `--reader-highlight` (reading highlights, never inverts) and `--pulse-accent` (status dots, inverts to black in light mode).
+- A third, older, pre-existing exception: `StreakCounter`/`StreakModal`'s multi-color flame-tier system (blue/purple/amber/silver). This is confined to deep/opt-in surfaces (Account, Navbar, the streak modal) — **never reuse it on a page meant to hold strict monochrome discipline** (that was the exact mistake caught and fixed this session on the home page).
+- Motion: keep one-shot and interaction-driven animation (entrance springs, `whileInView` scroll-reveal, hover transitions, cursor-parallax). Avoid perpetual/infinite looping motion in the background — it reads as attention-seeking, not premium.
+
+### Environment quirks worth knowing (this sandbox specifically)
+
+- **No GitHub push credentials.** Every session ends with local commits that the user has to `git push` themselves from their own terminal.
+- Bash's cwd occasionally resets to `/home/dizzyeyes` between tool calls — `cd` explicitly or use absolute paths, don't chain `cd` across separate Bash calls.
+- ADB device connection drops intermittently mid-session — just ask the user to check the USB cable and retry `adb devices -l`.
+- Long sessions can leave a stale `next start`/`next dev` process squatting on a port from earlier testing. If a headless screenshot or curl check comes back unstyled/broken, check `lsof -ti:PORT` for a leftover process before assuming the code is broken — a stale server can serve HTML referencing CSS chunk hashes that no longer exist on disk after a rebuild, producing a 500 on the CSS file.
+- Headless Chrome screenshots are unreliable for two things in this codebase: sections using `min-h-[88vh]` (scales with whatever `--window-size` height you pass, so there's no window size that gives correct proportions for both the hero and the rest of the page at once) and `motion/react`'s `whileInView` (IntersectionObserver often doesn't fire before a static screenshot is captured, even in a huge viewport). For both, either use `--print-to-pdf` (fixed page size, sidesteps the vh issue) or just trust on-device verification over fighting the headless tooling.
+- Physical device: 1080×2400, but ADB screenshots are shown to Claude scaled down to 900×2000 — multiply the coordinates you see by 1.2 before calling `adb shell input tap/swipe`.
+- Rebuilding the Android app after any web change: `npm run build:apk` (static-exports Next.js + `cap sync`) → `cd android && ./gradlew assembleDebug` → `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 

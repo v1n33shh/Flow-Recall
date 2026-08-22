@@ -4,8 +4,7 @@ import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { startTransition, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { motion, useMotionValue, useSpring, useTransform, type MotionValue } from "motion/react";
+import { motion } from "motion/react";
 import type { Concept, Deck } from "@/lib/types";
 import {
   appendConceptsToDeck,
@@ -18,7 +17,6 @@ import {
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
-import StreakModal from "@/components/StreakModal";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
@@ -72,125 +70,8 @@ const SOFTWARE_APP_JSONLD = {
 const NOISE_BACKGROUND =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
-const MARQUEE_ROWS = [
-  {
-    text: "ACTIVE RECALL • DOOMSCROLLING • MAX PERFORMANCE • ",
-    top: "6%",
-    rotate: -8,
-    className: "text-foreground/10",
-  },
-  {
-    text: "GROQ POWERED • ZERO FRICTION • STUDY HARDER • ",
-    top: "42%",
-    rotate: 7,
-    className: "text-foreground/[0.07]",
-  },
-  {
-    text: "NO CREDIT CARD • BLAZING FAST • FLOWRECALL • ",
-    top: "78%",
-    rotate: -5,
-    className: "text-foreground/10",
-  },
-];
-
-type MockCard = {
-  className: string;
-  depth: number;
-  delay: number;
-  label: string;
-  labelColor: string;
-  body: string;
-  footer: string;
-};
-
-const MOCK_CARDS: MockCard[] = [
-  {
-    className: "left-[4%] top-[12%] hidden md:block",
-    depth: 1,
-    delay: 0,
-    label: "MITOCHONDRIA",
-    labelColor: "text-muted-foreground/70",
-    body: "What is the powerhouse of the cell?",
-    footer: "✕  ✓  Swipe",
-  },
-  {
-    className: "right-[6%] top-[8%] hidden lg:block",
-    depth: 1.6,
-    delay: 0.1,
-    label: "PHOTOSYNTHESIS",
-    labelColor: "text-muted-foreground/70",
-    body: "Plants use ▢▢▢▢▢ to absorb light.",
-    footer: "Nailed it.",
-  },
-  {
-    className: "bottom-[10%] right-[10%] hidden md:block",
-    depth: 1.2,
-    delay: 0.2,
-    label: "STREAK",
-    labelColor: "text-muted-foreground/70",
-    body: "🔥  7",
-    footer: "You're on fire",
-  },
-];
-
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-// Static brand texture, not an animated marquee - perpetual background
-// motion is the one thing on this page that read as attention-seeking
-// rather than restrained (everything else is one-shot entrance/scroll-
-// reveal or interaction-driven). Same giant dim rotated type, just still.
-function MarqueeBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-      {MARQUEE_ROWS.map((row, i) => (
-        <div
-          key={i}
-          className="absolute w-[250vw]"
-          style={{ top: row.top, left: "50%", transform: `translateX(-50%) rotate(${row.rotate}deg)` }}
-        >
-          <div
-            className={`flex whitespace-nowrap text-[5rem] font-black uppercase leading-none tracking-tighter sm:text-[7rem] md:text-[9rem] ${row.className}`}
-          >
-            <span>{row.text.repeat(3)}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-type ParallaxCardProps = {
-  card: MockCard;
-  mouseX: MotionValue<number>;
-  mouseY: MotionValue<number>;
-};
-
-function ParallaxCard({ card, mouseX, mouseY }: ParallaxCardProps) {
-  // Shift opposite to the cursor, scaled by each card's own "depth" so they
-  // don't all move in lockstep - and tilt in 3D toward the cursor for a
-  // physical, responsive feel instead of a flat drag.
-  const x = useTransform(mouseX, [-1, 1], [card.depth * 24, card.depth * -24]);
-  const y = useTransform(mouseY, [-1, 1], [card.depth * 24, card.depth * -24]);
-  const rotateY = useTransform(mouseX, [-1, 1], [-14, 14]);
-  const rotateX = useTransform(mouseY, [-1, 1], [14, -14]);
-
-  return (
-    <motion.div
-      style={{ x, y, rotateX, rotateY }}
-      initial={{ opacity: 0, scale: 0.5, rotate: 0 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ ...SNAP, delay: card.delay }}
-      className={`absolute w-44 rounded-2xl border border-border bg-surface p-3 text-left ${card.className}`}
-    >
-      <p className={`text-[10px] font-semibold uppercase tracking-wide ${card.labelColor}`}>
-        {card.label}
-      </p>
-      <p className="mt-2 text-xs leading-snug text-foreground">{card.body}</p>
-      <p className="mt-2 text-[10px] text-muted-foreground">{card.footer}</p>
-    </motion.div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -527,8 +408,16 @@ function FaqSection() {
 // Closing conversion moment - the page previously ended cold on the FAQ
 // accordion with nothing after it. Deliberately spacious again (mirrors the
 // hero's rhythm) as a closing "breath" after the denser How-It-Works/FAQ
-// sections, and reuses the hero's gradient-text heading treatment so the
-// page visually bookends itself.
+// sections, and reuses the hero's solid-heading treatment so the page
+// visually bookends itself (both headings dropped their gradient fade -
+// a diagonal fade across a wrapping headline read as "dull" at the tail end).
+// Its copy is deliberately a different rhetorical move from the hero's,
+// not just different words for the same one - the hero states the solution
+// as a punchy imperative ("Stop re-reading. Start recalling."), so a second
+// imperative down here read as pure repetition. This one leads with the
+// uncomfortable, research-backed problem (the Ebbinghaus forgetting curve -
+// see the FAQ's own "research-backed" claim) before naming the fix, which is
+// a distinct AIDA-style close instead of an echo.
 function FinalCtaSection() {
   return (
     <section
@@ -541,16 +430,16 @@ function FinalCtaSection() {
       <motion.h2
         {...reveal()}
         id="final-cta-heading"
-        className="bg-gradient-to-br from-foreground via-foreground/70 to-foreground/40 bg-clip-text pb-2 font-sans text-3xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] sm:text-5xl"
+        className="pb-2 font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
       >
-        Stop re-reading. Start recalling.
+        You&apos;ll forget most of this by tomorrow.
       </motion.h2>
       <motion.p
         {...reveal(0.05)}
         className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg"
       >
-        Upload your first PDF and see your first flashcard feed in under a
-        minute - no credit card required.
+        That&apos;s the forgetting curve talking, not a guess. FlowRecall&apos;s
+        spaced repetition is built to beat it.
       </motion.p>
       <motion.div
         {...reveal(0.1)}
@@ -619,27 +508,9 @@ export default function Home() {
   // space. With nothing above it on native, the same centering leaves a
   // large dead zone under the status bar instead of anchoring near the top.
   const isNative = useIsNative();
-  const { data: session, status } = useSession();
-  const [streakOpen, setStreakOpen] = useState(false);
 
   const [generatingDeckIds, setGeneratingDeckIds] = useState<Set<string>>(new Set());
   const [jitErrors, setJitErrors] = useState<Record<string, string>>({});
-
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
-  const smoothMouseX = useSpring(mouseX, { stiffness: 150, damping: 20, mass: 0.5 });
-  const smoothMouseY = useSpring(mouseY, { stiffness: 150, damping: 20, mass: 0.5 });
-
-  function handleMouseMove(event: ReactMouseEvent<HTMLElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    mouseX.set(((event.clientX - rect.left) / rect.width) * 2 - 1);
-    mouseY.set(((event.clientY - rect.top) / rect.height) * 2 - 1);
-  }
-
-  function handleMouseLeave() {
-    mouseX.set(0);
-    mouseY.set(0);
-  }
 
   function handleStudyNow(deck: Deck, isFullyMastered: boolean) {
     // A 100%-mastered session resuming normally would hydrate a queue with
@@ -686,7 +557,13 @@ export default function Home() {
         const res = await fetch(apiUrl("/api/ingest"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: batch[i] }),
+          // isFirstChunk: false - this is continuing a deck the user already
+          // spent their one free generation on, not starting a new one. Without
+          // this, the server's lifetime-limit gate (which only checks on a
+          // first chunk) defaults to treating every unmarked request as a first
+          // chunk and wrongly re-blocks a free user mid-way through their own
+          // already-started deck.
+          body: JSON.stringify({ text: batch[i], isFirstChunk: false }),
           credentials: API_FETCH_CREDENTIALS,
         });
 
@@ -726,24 +603,14 @@ export default function Home() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APP_JSONLD) }}
       />
 
-      <StreakModal
-        open={streakOpen}
-        onClose={() => setStreakOpen(false)}
-        fallbackStreak={session?.user?.currentStreak ?? 0}
-      />
-
       {/* ============================ HERO ============================ */}
       <section
         aria-labelledby="hero-heading"
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        className={`relative flex flex-col items-center overflow-hidden px-6 text-center [perspective:1200px] ${
+        className={`relative flex flex-col items-center overflow-hidden px-6 text-center ${
           isNative ? "justify-start pt-6 pb-16" : "min-h-[88vh] justify-center py-16 sm:py-24"
         }`}
       >
-        <MarqueeBackground />
-
-      {/* Faded spotlight grid - a fine ruled pattern masked with a radial
+        {/* Faded spotlight grid - a fine ruled pattern masked with a radial
           gradient so it dissolves into darkness at the edges, leaving a subtle
           lit "stage" behind the hero copy. */}
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
@@ -772,11 +639,7 @@ export default function Home() {
         style={{ backgroundImage: NOISE_BACKGROUND }}
       />
 
-      {MOCK_CARDS.map((card, i) => (
-        <ParallaxCard key={i} card={card} mouseX={smoothMouseX} mouseY={smoothMouseY} />
-      ))}
-
-        <div className="relative z-10 flex flex-col items-center">
+        <div className="relative z-10 flex w-full flex-col items-center">
         <motion.p
           initial={{ opacity: 0, y: -24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -791,26 +654,26 @@ export default function Home() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.05 }}
           id="hero-heading"
-          className="max-w-2xl bg-gradient-to-br from-foreground via-foreground/70 to-foreground/40 bg-clip-text pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-transparent [text-wrap:balance] md:text-7xl"
+          className={`max-w-2xl pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] md:text-7xl ${
+            isNative ? "mt-12" : ""
+          }`}
         >
-          The AI Flashcards App That Turns PDFs Into Active Recall
+          Stop re-reading. Start recalling.
         </motion.h1>
         <motion.p
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.1 }}
-          className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
+          className="mt-5 w-full max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
         >
-          Upload any lecture PDF, and FlowRecall instantly generates an
-          addictive, gamified active-recall feed. Stop passively re-reading
-          notes and start hard-wiring knowledge into your brain. Master a
-          semester&apos;s worth of material in half the time.
+          Upload your first PDF and see your first flashcard feed in under a
+          minute. No credit card required.
         </motion.p>
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.15 }}
-          className="mt-10 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row"
+          className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row"
         >
           {/* Secondary CTA - minimalist glassmorphic outline. */}
           <Link
@@ -829,90 +692,6 @@ export default function Home() {
             Start ingesting notes
           </Link>
         </motion.div>
-
-        {/* Mobile-only touch equivalent of the desktop ParallaxCard cluster -
-            those are mouse-tilt driven (onMouseMove never fires on touch), so
-            un-hiding them isn't the fix; this is a real, swipeable substitute
-            instead of "zero premium cards on mobile." Bleeds to the viewport
-            edge (-mx-6 px-6) the same way a mobile carousel usually does. */}
-        <div className="mt-10 -mx-6 flex w-full gap-3 overflow-x-auto px-6 pb-1 snap-x snap-mandatory no-scrollbar md:hidden">
-          <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...SNAP, delay: 0.2 }}
-            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-              MITOCHONDRIA
-            </p>
-            <p className="mt-2 text-xs leading-snug text-foreground">
-              What is the powerhouse of the cell?
-            </p>
-            <p className="mt-2 text-[10px] text-muted-foreground">✕  ✓  Swipe</p>
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...SNAP, delay: 0.28 }}
-            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-              PHOTOSYNTHESIS
-            </p>
-            <p className="mt-2 text-xs leading-snug text-foreground">
-              Plants use ▢▢▢▢▢ to absorb light.
-            </p>
-            <p className="mt-2 text-[10px] text-muted-foreground">Nailed it.</p>
-          </motion.div>
-          {/* The only card with real data for a returning logged-in user -
-              Navbar (the only other place StreakCounter appears) is hidden
-              entirely on native, so this is the sole surface where a
-              logged-in mobile user sees their real streak at all. Signed-out
-              visitors keep the static marketing mock.
-
-              Deliberately NOT the shared <StreakCounter> component here -
-              its flame recolors by tier (blue under 3 days, then purple,
-              amber, silver - see StreakCounter.tsx's getFlameTier). That's
-              the right reward on the tap-through StreakModal below, but this
-              is the one always-visible marketing surface that must never
-              drift off the site's single blue exception as a user's real
-              streak grows. This flame is hardcoded to that one blue,
-              permanently, regardless of streak length. */}
-          <motion.div
-            initial={{ opacity: 0, y: 16, scale: 0.94 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ ...SNAP, delay: 0.36 }}
-            className="w-[72%] max-w-[260px] shrink-0 snap-center rounded-2xl border border-border bg-surface p-3 text-left"
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
-              STREAK
-            </p>
-            {status === "authenticated" ? (
-              <button
-                type="button"
-                onClick={() => setStreakOpen(true)}
-                className="mt-2 flex items-center gap-1.5 rounded-full border border-border bg-surface/60 px-2.5 py-1 text-sm font-semibold text-pulse-accent transition-transform active:scale-95"
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden="true">
-                  <path
-                    d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z"
-                    fill="currentColor"
-                  />
-                  <path
-                    d="M12 21a2.9 2.9 0 0 0 2.9-2.9c0-1.5-1.1-2.5-1.8-3.6-.8 1.1-1.6 1.7-2.2 2.6-.4.6-.7 1-.7 1.6A2.8 2.8 0 0 0 12 21z"
-                    fill="#DBEAFE"
-                  />
-                </svg>
-                <span className="tabular-nums text-foreground">{session?.user?.currentStreak ?? 0}</span>
-              </button>
-            ) : (
-              <p className="mt-2 text-xs leading-snug text-foreground">🔥  7</p>
-            )}
-            <p className="mt-2 text-[10px] text-muted-foreground">
-              {status === "authenticated" ? "Tap to view details" : "You're on fire"}
-            </p>
-          </motion.div>
-        </div>
 
         {decks.length > 0 && (
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">

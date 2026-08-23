@@ -616,8 +616,18 @@ export default function Home() {
       >
         {/* Faded spotlight grid - a fine ruled pattern masked with a radial
           gradient so it dissolves into darkness at the edges, leaving a subtle
-          lit "stage" behind the hero copy. */}
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
+          lit "stage" behind the hero copy. Web-only: the radial mask's fade
+          zone is a fixed percentage of the box it's in, and on native's
+          short, narrow content-fit hero (no min-height, unlike web's
+          min-h-[88vh]) that math compresses the fade into a small vertical
+          span - instead of a soft wash it reads as a visibly gridded,
+          uneven patch layered on top of the glow orbs below. Confirmed via
+          real-device WebView inspection (Chrome DevTools over the app's
+          devtools socket) - the mask itself computes and renders correctly,
+          this is a proportions problem, not a rendering bug. */}
+      {!isNative && (
+        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
+      )}
 
       {/* Ambient glow orbs - purely decorative, blurred color washes that sit
           behind the hero to give the page depth. pointer-events-none and

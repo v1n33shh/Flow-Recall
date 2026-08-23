@@ -142,10 +142,17 @@ const CARD =
   "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
 
 function FeaturesSection() {
+  // Only the top gap (which abuts the hero's own bottom padding) needs
+  // shrinking on native - the two combined otherwise leave up to ~160px of
+  // dead space before "Why FlowRecall" even starts. Bottom/desktop spacing
+  // is untouched.
+  const isNative = useIsNative();
   return (
     <section
       aria-labelledby="features-heading"
-      className="relative z-10 mx-auto w-full max-w-6xl px-6 py-24 sm:py-32"
+      className={`relative z-10 mx-auto w-full max-w-6xl px-6 ${
+        isNative ? "pt-10 pb-24" : "py-24 sm:py-32"
+      }`}
     >
       <motion.div {...reveal()} className="mx-auto max-w-3xl text-center">
         <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md">
@@ -611,37 +618,38 @@ export default function Home() {
       <section
         aria-labelledby="hero-heading"
         className={`relative flex flex-col items-center overflow-hidden px-6 text-center ${
-          isNative ? "justify-start pt-6 pb-16" : "min-h-[88vh] justify-center py-16 sm:py-24"
+          isNative ? "justify-start pt-6 pb-8" : "min-h-[88vh] justify-center py-16 sm:py-24"
         }`}
       >
-        {/* Faded spotlight grid - a fine ruled pattern masked with a radial
-          gradient so it dissolves into darkness at the edges, leaving a subtle
-          lit "stage" behind the hero copy. Web-only: the radial mask's fade
-          zone is a fixed percentage of the box it's in, and on native's
-          short, narrow content-fit hero (no min-height, unlike web's
-          min-h-[88vh]) that math compresses the fade into a small vertical
-          span - instead of a soft wash it reads as a visibly gridded,
-          uneven patch layered on top of the glow orbs below. Confirmed via
-          real-device WebView inspection (Chrome DevTools over the app's
-          devtools socket) - the mask itself computes and renders correctly,
-          this is a proportions problem, not a rendering bug. */}
+        {/* Hero decoration (grid + glow orbs) is web-only. Both were tuned
+          for web's tall min-h-[88vh] hero; on native's short, narrow
+          content-fit box (no min-height) they don't scale down cleanly -
+          the grid's radial fade compresses into a visibly gridded patch,
+          and with that gone the bottom-right glow orb (positioned right
+          near the CTA buttons) stands out on its own as an isolated grey
+          blob instead of blending into a wash. Rather than keep chasing
+          individual artifacts, native gets a flat, pure black hero
+          background instead - confirmed live on-device as the preferred
+          look. Web/desktop keeps the full effect unchanged, where the
+          taller hero gives it room to actually work. */}
       {!isNative && (
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
-      )}
+        <>
+          {/* Faded spotlight grid - a fine ruled pattern masked with a radial
+            gradient so it dissolves into darkness at the edges, leaving a
+            subtle lit "stage" behind the hero copy. */}
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
 
-      {/* Ambient glow orbs - purely decorative, blurred color washes that sit
-          behind the hero to give the page depth. pointer-events-none and
-          -z-10 keep them clear of the marquee, cards, and interactive content.
-          Two of three stay visible (smaller) on mobile - only the static
-          background-image/blur cost is paid, no animation, so it's cheap
-          even on low-end Android; the third stays desktop-only since three
-          full-size blurred layers is a real one-time paint cost worth
-          reserving for larger screens. */}
-      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl md:h-[38rem] md:w-[38rem]" />
-        <div className="absolute top-1/3 -left-32 hidden h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl md:block" />
-        <div className="absolute -bottom-24 right-[-8rem] h-64 w-64 rounded-full bg-foreground/5 blur-3xl md:h-[32rem] md:w-[32rem]" />
-      </div>
+          {/* Ambient glow orbs - purely decorative, blurred color washes that
+            sit behind the hero to give the page depth. pointer-events-none
+            and -z-10 keep them clear of the marquee, cards, and interactive
+            content. */}
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+            <div className="absolute -top-40 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl md:h-[38rem] md:w-[38rem]" />
+            <div className="absolute top-1/3 -left-32 hidden h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl md:block" />
+            <div className="absolute -bottom-24 right-[-8rem] h-64 w-64 rounded-full bg-foreground/5 blur-3xl md:h-[32rem] md:w-[32rem]" />
+          </div>
+        </>
+      )}
 
       {/* Cinematic film grain - a fixed, whisper-faint noise texture over the
           whole viewport for a physical, filmic surface. A static background-

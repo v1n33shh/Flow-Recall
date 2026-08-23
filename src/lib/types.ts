@@ -97,7 +97,7 @@ export type HighlightRecord = {
   createdAt: number;
 };
 
-export type ChallengeLevel = 1 | 2 | 3;
+export type ChallengeLevel = 1 | 2;
 export type ChallengeOutcome = "correct" | "incorrect" | "skipped";
 
 /** One card in a study session's live queue - the same concept appears at

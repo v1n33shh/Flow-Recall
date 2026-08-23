@@ -101,6 +101,7 @@ export default function ClozeChallenge({ concept, onAnswered }: ClozeChallengePr
           cloze: hasBlank ? concept.cloze : concept.question,
           correctAnswer: concept.answer,
           userAnswer: attempt,
+          timezoneOffsetMinutes: new Date().getTimezoneOffset(),
         }),
       });
       if (!res.ok) throw new Error(`grade request failed: ${res.status}`);

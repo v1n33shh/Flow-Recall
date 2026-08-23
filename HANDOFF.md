@@ -1,6 +1,49 @@
 # FlowRecall — Handoff
 
-**Read this top section first.** It supersedes everything below it (including the "🔴 START HERE — 2026-08-22, earlier session" block further down, which was itself once this file's current-state summary and is now historical). Everything in this top section reflects the repo as of **2026-08-22**, fully committed and pushed to `origin/main` (HEAD: `2044dad`).
+**Read this top section first.** It supersedes everything below it (including the "🔴 START HERE — 2026-08-22, later session" block immediately following, which was itself once this file's current-state summary and is now historical). Everything in this top section reflects the repo as of **2026-08-23**, committed through `ed97e10` (only `99bb4ed` onward is pushed to `origin/main` as of writing - confirm with `git status`/`git log origin/main..HEAD` before assuming later commits are live anywhere but this machine and production).
+
+---
+
+## 🔴 START HERE — 2026-08-23: Level 2 cloze rebuilt end-to-end, migration history fixed, first test suite
+
+Long single session driven entirely by live user feedback on the Level 2 "fill in the blank" cloze challenge, each round found via the user actually using the feature and reporting what felt wrong - not pre-planned. Ended up touching grading correctness, a color-system gap, dead code, database migration history, and (for the first time) automated tests. Everything below was type-checked, linted, built, and verified live (on the physical Android device for anything UI-visible, against the real production database for anything DB-related) before committing.
+
+### Level 2 cloze: from "bolted onto swipe" to a real independent question, then honestly graded
+
+- **The whole feature was rebuilt from scratch this session** after the user tried a first version (cloze answer shown as a follow-up on the same swipe card) and correctly called it useless - the answer was already visible from the swipe side, so there was nothing to actually recall. Now: `ClozeChallenge.tsx` is a fully separate component, and `src/lib/studyQueue.ts`'s `buildConceptQueueItems` guarantees every concept gets **two independently-shuffled lanes** (one swipe, one cloze) that are never adjacent in the feed - built as two independent permutation "rounds," not a shuffle-then-patch (an earlier flat-shuffle approach failed a real 3-concept test case; see that function's doc comment and its test in `studyQueue.test.ts`).
+- **Grading went through three real, user-driven iterations**:
+  1. First cut: strict normalized-string match (case/whitespace only). User found it marked correct answers wrong over simple wording differences.
+  2. Added `src/lib/clozeMatch.ts`'s `normalizeForCompare` (articles, trailing punctuation, per-word plural/verb-conjugation `s` - deliberately per-word, not end-of-string-only, since a verb mismatch can land anywhere in a multi-word answer) **plus** a self-report fallback ("did you get it right?" buttons) for anything the normalizer still missed.
+  3. User's key objection, verbatim-in-spirit: a casual/dishonest tap on those buttons could mark a wrong answer "correct" with nothing checking it. **Final architecture**: `/api/cloze-grade` (new route) makes an AI call - fired the instant a non-exact answer is submitted, in parallel with the student choosing, never gated behind their tap - and its verdict is authoritative even if it contradicts what the student picked. Self-report only survives as a last-resort fallback if the AI call itself fails (network/parse error), and even then it's preceded by a short forced-then-removed pause (the user also asked to cut an anxiety-inducing artificial wait once the AI became the source of truth for the *common* path).
+  4. The ingest prompt (`/api/ingest`) also needed a fix here: the AI was putting a full restated sentence in `answer` instead of the literal blank-filler, which is what made even the *correct* exact-match path fail on genuinely right answers.
+- **Rate limiting** (`src/lib/clozeGradeRateLimit.ts`): this AI call fires automatically during normal study, not on a deliberate action, so it's an abuse ceiling (200/day/user, FREE and PRO alike, same free model either way) rather than a plan-gated feature limit like `decksGeneratedToday` - a hard low cap would break the honest-grading guarantee mid-session for a heavy studier. Integration-tested against the real database (disposable users, deleted after each test) rather than mocked, since the whole point is Postgres's atomic-increment/day-rollover semantics.
+
+### Color tokens: found and fixed a real "Pure Monochrome" violation
+
+`SwipeChallenge.tsx`/`ClozeChallenge.tsx` were already using hardcoded `emerald-*`/`rose-*`/`amber-*` Tailwind classes for correct/incorrect/pending feedback with zero representation in `globals.css`'s token system - an undocumented violation of the "Pure Monochrome" exception rule (see "Design philosophy to preserve" further down, already updated to reflect this), not something this session introduced. Formalized as `--success`/`--danger`/`--pending` (same `H S% L%` + `@theme inline` pattern as `--reader-highlight`/`--pulse-accent`), with real light-mode variants added (the old hardcoded classes had none - `text-emerald-400` etc. never adapted to light mode at all).
+
+### Level 3 vestige removed
+
+`ChallengeLevel` was typed `1 | 2 | 3` with no code path ever assigning `3` (`buildConceptQueueItems` only ever picks 1 or 2) - a leftover from an original 3-level design (`ChatChallenge`, free-text "teach it back" graded via LLM) documented in the "2026-08-22, earlier session" block further down, whose component never survived an earlier rewrite. Narrowed the type to `1 | 2` and deleted the orphaned `/api/grade` route (confirmed zero references anywhere first) that was its unused grading endpoint. If a real Level 3 ever gets built, it's a from-scratch feature, not a resurrection - nothing of the old design survives except that route's now-deleted Feynman-style grading prompt as a reference point.
+
+### Database migration history was silently broken - now fixed, carefully
+
+Investigating why `prisma migrate dev` reported drift (and offered a full schema reset — **did not run it**, see the environment-quirks note below) found that nearly this entire schema - every billing field, every gamification/limit counter, the whole `StudyDay` table - was added to production directly at some point (almost certainly `prisma db push`) without ever generating a migration file, and separately, the two migrations that *did* exist (`init`, `add_used_mobile_bridge_token`) were never marked applied in Prisma's own tracking table at all. Both fixed without touching any live data or running schema-modifying SQL against production:
+- Hand-wrote (not tool-generated - `prisma migrate diff` renders this gap as an unsafe-to-replay DROP+CREATE because of a `plan` enum→text change) a purely additive gap-fill migration, **validated by actually running the full migration sequence via `prisma migrate deploy` against a genuinely fresh scratch schema** on the same Postgres server before touching production.
+- Marked all new/previously-untracked migrations applied via `prisma migrate resolve --applied` against production (this only writes to Prisma's tracking table, never executes the migration's SQL).
+- `prisma migrate status` now reports "Database schema is up to date" against production.
+
+### First automated test suite (`npm test`, Vitest)
+
+Every verification up to this point in the project's life has been manual/live-device or a disposable throwaway script. Added Vitest (`vitest.config.ts`, `@/*` alias wired) and pulled the three most regression-prone pieces into testable `src/lib` modules, each test file covering a bug that was actually found live this session (see each file's comments for the specific case): `clozeMatch.test.ts`, `studyQueue.test.ts` (200-trial randomized non-adjacency check), `clozeGradeRateLimit.test.ts` (real-DB integration test, disposable users). 23 tests, all passing.
+
+### Environment quirks specific to this session (additive to the lists further down)
+
+- **Never run `prisma migrate dev` non-interactively against a database with any real drift.** It detects the mismatch and offers `migrate reset` (drops the entire schema) - the offer itself is harmless, but there's no way to safely decline an interactive prompt from a non-interactive shell, so the command just aborts. Use `prisma db execute --file` (raw SQL, no drift check) + `prisma migrate resolve --applied` instead for any hand-applied migration.
+- `npx vercel --prod` can silently self-upgrade to a new CLI version mid-session and lose the project link (`.vercel/project.json` goes missing, deploys fail "Not authorized" even though `vercel whoami` looks fine). Fix: `vercel link --yes --project flow-recall --scope flow-recall`, then retry the deploy.
+- `git push` needs the user's own interactive credentials - can't be done non-interactively from this shell. Surface a reminder rather than assuming it happened; check `git status`'s "ahead of origin" line, not just "committed."
+- A Postgres shadow database for `prisma migrate diff` doesn't need a separate DB instance - point `--shadow-database-url` at the same server with a different `?schema=` query param and Prisma manages it automatically. Useful for exactly the drift-investigation work above without provisioning anything new.
+- `node script.mjs` resolves `node_modules` relative to the *script's own path*, not `cwd` - a script written to a scratch/tmp directory can't `import` project dependencies even when run from inside the project directory. Copy it into the project root first (and delete it after).
 
 ---
 
@@ -92,8 +135,9 @@ The user's own words: home page "looks dull." Root causes, all fixed in `src/app
 ### Design philosophy to preserve in any future work on this app
 
 - **"Pure Monochrome"**, documented at the top of `src/app/globals.css`: no color anywhere except contrast (white pops on black, black pops on white, fully inverting between themes via `[data-theme="light"]`).
-- Exactly two deliberate hue exceptions, both blue, both explained by name in `globals.css`'s own comments: `--reader-highlight` (reading highlights, never inverts) and `--pulse-accent` (status dots, inverts to black in light mode).
-- A third, older, pre-existing exception: `StreakCounter`/`StreakModal`'s multi-color flame-tier system (blue/purple/amber/silver). This is confined to deep/opt-in surfaces (Account, Navbar, the streak modal) — **never reuse it on a page meant to hold strict monochrome discipline** (that was the exact mistake caught and fixed this session on the home page).
+- Two original deliberate hue exceptions, both blue, both explained by name in `globals.css`'s own comments: `--reader-highlight` (reading highlights, never inverts) and `--pulse-accent` (status dots, inverts to black in light mode).
+- A third exception added 2026-08-23: `--success`/`--danger`/`--pending`, confined specifically to answer-correctness feedback (correct/incorrect/awaiting-verification) in the study feed - never structural or decorative chrome. Formalizes colors that were already in use as hardcoded, undocumented Tailwind classes before that session.
+- A fourth, older, pre-existing exception: `StreakCounter`/`StreakModal`'s multi-color flame-tier system (blue/purple/amber/silver). This is confined to deep/opt-in surfaces (Account, Navbar, the streak modal) — **never reuse it on a page meant to hold strict monochrome discipline** (that was the exact mistake caught and fixed on the home page in the 2026-08-22 session below).
 - Motion: keep one-shot and interaction-driven animation (entrance springs, `whileInView` scroll-reveal, hover transitions, cursor-parallax). Avoid perpetual/infinite looping motion in the background — it reads as attention-seeking, not premium.
 
 ### Environment quirks worth knowing (this sandbox specifically)

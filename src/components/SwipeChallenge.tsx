@@ -7,7 +7,8 @@ import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
 
 /** Imperative surface a Level-1 swipe card exposes to the study feed's global
  * keyboard listener - Anki-style "reveal, then self-grade". Only Level-1 cards
- * expose this; typing-based levels intentionally leave the keyboard alone. */
+ * expose this; Level-2's typing-based ClozeChallenge intentionally leaves the
+ * keyboard alone. */
 export type SwipeChallengeHandle = {
   /** True once the answer is showing (Space/Enter), or after any grade. */
   isRevealed: () => boolean;
@@ -166,10 +167,10 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className={`mt-6 rounded-2xl border px-4 py-3 text-center text-sm ${
-            outcome ? "border-emerald-500/30 bg-emerald-950/40" : "border-rose-500/30 bg-rose-950/40"
+            outcome ? "border-success/30 bg-success/10" : "border-danger/30 bg-danger/10"
           }`}
         >
-          <p className={`font-medium ${outcome ? "text-emerald-400" : "text-rose-400"}`}>
+          <p className={`font-medium ${outcome ? "text-success" : "text-danger"}`}>
             {outcome ? "Correct!" : "Not quite"}
           </p>
           <p className="mt-1 text-foreground">

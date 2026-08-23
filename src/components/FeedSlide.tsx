@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { ChallengeLevel, ChallengeOutcome, Concept } from "@/lib/types";
 import SwipeChallenge, { type SwipeChallengeHandle } from "./SwipeChallenge";
+import ClozeChallenge from "./ClozeChallenge";
 
 import type { Ref } from "react";
 
@@ -108,7 +109,11 @@ export default function FeedSlide({
           )}
         </div>
 
-        <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
+        {level === 2 ? (
+          <ClozeChallenge concept={concept} onAnswered={handleAnswered} />
+        ) : (
+          <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
+        )}
 
         <p className="mt-8 text-center text-sm text-muted-foreground">
           Scroll down for the next concept ↓

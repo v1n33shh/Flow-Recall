@@ -29,6 +29,9 @@
                           near-black, but as a loud notification badge on
                           near-white, so light mode keeps the quieter
                           monochrome look instead              (#3B82F6 / #050505)
+     success/danger/pending  answer-correctness feedback in the study feed
+                          only (correct / incorrect / awaiting verification) -
+                          a third confined exception, never structural chrome
    ========================================================================== */
 :root {
   --background: 0 0% 2%;
@@ -50,6 +53,18 @@
      blue as reader-highlight in dark mode purely for consistency (one signal
      hue app-wide, not two unrelated blues). */
   --pulse-accent: 217 91% 60%;
+  /* A third, confined exception to "no hue anywhere": answer-correctness
+     feedback in the study feed (SwipeChallenge/ClozeChallenge). Judging
+     whether a recalled answer was right is a real legibility need, unlike
+     decorative color - but it's scoped to exactly that: correct/incorrect/
+     awaiting-verification states in the flashcard feed, never structural
+     chrome (borders, buttons, card backgrounds stay monochrome). Each token
+     is used as a single base hue with Tailwind opacity modifiers at the call
+     site (text-success, border-danger/30, bg-pending/10), the same idiom
+     already used for --accent above. */
+  --success: 158 64% 52%;
+  --danger: 351 95% 71%;
+  --pending: 43 96% 56%;
   /* MobileTabBar.tsx overwrites this with its real measured height on mount
      (ResizeObserver) - this fallback only covers the first paint before that
      effect runs, so it should track the bar's actual rest-state height. */
@@ -76,6 +91,11 @@
   /* Inverts to plain black here, unlike reader-highlight - see this file's
      token-map comment's "pulse-accent" entry for why. */
   --pulse-accent: 0 0% 2%;
+  /* Darker/more saturated than the dark-mode values above - the same
+     lightness would wash out against a near-white background. */
+  --success: 161 94% 30%;
+  --danger: 347 77% 50%;
+  --pending: 32 95% 44%;
 }
 
 @theme inline {
@@ -88,6 +108,9 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-reader-highlight: hsl(var(--reader-highlight));
   --color-pulse-accent: hsl(var(--pulse-accent));
+  --color-success: hsl(var(--success));
+  --color-danger: hsl(var(--danger));
+  --color-pending: hsl(var(--pending));
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

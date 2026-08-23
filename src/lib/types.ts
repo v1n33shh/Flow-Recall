@@ -100,15 +100,22 @@ export type HighlightRecord = {
 export type ChallengeLevel = 1 | 2 | 3;
 export type ChallengeOutcome = "correct" | "incorrect" | "skipped";
 
-/** One card in a study session's live queue - the same concept can appear
- * more than once across a session (D.I.E. requeues a failed concept at an
- * easier level), distinguished by `attempt`. `isNew` is set to true on
- * cards freshly injected by Infinite Recall so they can play a
- * "materialised" entrance animation the first time they enter the viewport. */
+/** One card in a study session's live queue - the same concept appears at
+ * least twice per session on purpose (once as a Level 1 swipe, once as a
+ * Level 2 fill-in-the-blank - two genuinely different questions, not the
+ * same fact shown twice), and can appear again if D.I.E. requeues a failed
+ * card at an easier level, distinguished by `attempt`. `lane` records which
+ * of the two initial questions this item (or its retry chain) descends from,
+ * since both start at `attempt: 1` and would otherwise be indistinguishable
+ * when reconstructing resolved state on resume - see reconstructResolvedKeys
+ * in StudyFeed.tsx. `isNew` is set to true on cards freshly injected by
+ * Infinite Recall so they can play a "materialised" entrance animation the
+ * first time they enter the viewport. */
 export type QueueItem = {
   key: string;
   concept: Concept;
   level: ChallengeLevel;
+  lane: 1 | 2;
   attempt: number;
   isNew?: boolean;
 };
@@ -118,7 +125,15 @@ export type QueueItem = {
  * saveProgress/getProgress in storage.ts. */
 export type StudyProgress = {
   deckId: string;
-  streak: number;
   masteredIds: string[];
   queue: QueueItem[];
+  /** Exact set of already-answered item keys. Optional so progress saved
+   * before this field existed still loads - StudyFeed falls back to
+   * heuristically reconstructing it from queue + masteredIds in that case.
+   * Persisting it directly (rather than only ever reconstructing it) matters
+   * now that a concept has two independent per-lane questions: masteredIds
+   * alone can't tell "the swipe lane is done" apart from "the cloze lane is
+   * done" for the same concept id, so a heuristic keyed only on concept id
+   * would wrongly treat an unanswered lane as already resolved. */
+  resolvedKeys?: string[];
 };

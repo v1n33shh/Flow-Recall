@@ -10,55 +10,95 @@ import { addConceptsToDeck, getProgress, saveProgress } from "@/lib/storage";
 import FeedSlide from "./FeedSlide";
 import type { SwipeChallengeHandle } from "./SwipeChallenge";
 import CompletionSlide from "./CompletionSlide";
-import StreakCounter from "./StreakCounter";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // How many slides ahead a failed/skipped concept gets requeued at an easier level.
 const RETRY_OFFSET = 3;
-
-function getRandomLevel(): ChallengeLevel {
-  // Swipe-only mode for zero-friction study.
-  return 1;
-}
-
-function buildInitialQueue(concepts: Concept[]): QueueItem[] {
-  // Shuffle so the deck isn't studied in chronological order, then hand each
-  // concept a weighted-random level - no two sessions play out the same way.
-  const shuffled = [...concepts].sort(() => Math.random() - 0.5);
-  return shuffled.map((concept) => ({
-    key: `${concept.id}::1`,
-    concept,
-    level: getRandomLevel(),
-    attempt: 1,
-  }));
-}
 
 function nextEasierLevel(level: ChallengeLevel): ChallengeLevel | null {
   if (level === 1) return null;
   return (level - 1) as ChallengeLevel;
 }
 
-/** A queue item counts as already-resolved if its concept is mastered, or a
- * later retry attempt for the same concept already exists in the queue -
- * either way it shouldn't be answerable again if the user scrolls back to
- * it after resuming. There's no separate persisted "resolved" list
- * (StudyProgress doesn't carry one), so this is reconstructed from
- * queue + masteredIds. The one gap: a Level-1 item that already failed
- * (with nowhere easier to retry to) looks identical to a never-attempted
- * one - worst case the student gets an extra redundant rep on something
- * they already struggled with, which is harmless. */
+/** Builds the two genuinely different questions the queue needs per concept -
+ * a Level 1 swipe (recognize the claim as true/false) and a Level 2 fill-in-
+ * the-blank (produce the answer from memory), never the same fact tested
+ * twice on one card. `lane` records which of the two a given item (or its
+ * retry descendants) belongs to - see the QueueItem/StudyProgress comments
+ * in lib/types.ts.
+ *
+ * Provably never places a concept's two questions adjacent (for 2+ concepts)
+ * by construction, not by chance: built as two independent passes ("rounds")
+ * over the concept list, each contributing every concept exactly once, so
+ * neither round can contain an internal duplicate - a round is a permutation
+ * of distinct concepts. The only possible clash is the single seam between
+ * round 1's last item and round 2's first, fixed with one swap. (An earlier
+ * version tried a flat shuffle-then-patch instead; testing caught it failing
+ * on a real 3-concept case - a forward-only repair search missed valid fixes
+ * that required swapping backward. This construction has no such gap.)
+ * Only genuinely unfixable for a 1-concept deck, where adjacency is
+ * unavoidable - not a bug, there's nothing else to put between them. */
+function buildConceptQueueItems(concepts: Concept[], extra?: { isNew?: boolean }): QueueItem[] {
+  const order1 = [...concepts].sort(() => Math.random() - 0.5);
+  const order2 = [...concepts].sort(() => Math.random() - 0.5);
+
+  if (order2.length > 1 && order1[order1.length - 1]?.id === order2[0].id) {
+    // Safe: round 2 is a permutation of distinct concepts, so swapping two of
+    // its own entries can't create a new internal clash - there isn't one to
+    // create when every element in it is already unique.
+    [order2[0], order2[1]] = [order2[1], order2[0]];
+  }
+
+  function makeItem(concept: Concept, lane: 1 | 2): QueueItem {
+    return {
+      key: `${concept.id}::${lane}::1`,
+      concept,
+      level: lane,
+      lane,
+      attempt: 1,
+      ...(extra?.isNew ? { isNew: true } : {}),
+    };
+  }
+
+  const round1 = order1.map((concept) => makeItem(concept, Math.random() < 0.5 ? 1 : 2));
+  const firstLaneByConceptId = new Map(round1.map((item) => [item.concept.id, item.lane]));
+  const round2 = order2.map((concept) =>
+    makeItem(concept, firstLaneByConceptId.get(concept.id) === 1 ? 2 : 1),
+  );
+
+  return [...round1, ...round2];
+}
+
+function buildInitialQueue(concepts: Concept[]): QueueItem[] {
+  return buildConceptQueueItems(concepts);
+}
+
+/** Fallback for progress saved before StudyProgress persisted resolvedKeys
+ * directly (see that field's comment for why a flat concept-id check isn't
+ * enough once a concept has two independent lanes) - reconstructs a
+ * best-effort guess from queue + masteredIds, now scoped per (concept, lane)
+ * instead of per bare concept id. The one remaining gap: a Level-1 item that
+ * already failed (with nowhere easier to retry to) looks identical to a
+ * never-attempted one - worst case the student gets an extra redundant rep
+ * on something they already struggled with, which is harmless. */
 function reconstructResolvedKeys(progress: StudyProgress): Set<string> {
-  const maxAttemptByConceptId = new Map<string, number>();
+  const maxAttemptByLane = new Map<string, number>();
   for (const item of progress.queue) {
-    const current = maxAttemptByConceptId.get(item.concept.id) ?? 0;
-    if (item.attempt > current) maxAttemptByConceptId.set(item.concept.id, item.attempt);
+    const laneKey = `${item.concept.id}::${item.lane}`;
+    const current = maxAttemptByLane.get(laneKey) ?? 0;
+    if (item.attempt > current) maxAttemptByLane.set(laneKey, item.attempt);
   }
 
   const resolved = new Set<string>();
   for (const item of progress.queue) {
+    const laneKey = `${item.concept.id}::${item.lane}`;
+    const isSuperseded = item.attempt < (maxAttemptByLane.get(laneKey) ?? item.attempt);
+    // Safe to check plain concept-id mastery here specifically because this
+    // function only ever runs on pre-dual-lane legacy data (see call site) -
+    // that data never had two lanes per concept, so "mastered" and "this
+    // lane resolved" were always the same fact.
     const isMastered = progress.masteredIds.includes(item.concept.id);
-    const isSuperseded = item.attempt < (maxAttemptByConceptId.get(item.concept.id) ?? item.attempt);
-    if (isMastered || isSuperseded) resolved.add(item.key);
+    if (isSuperseded || isMastered) resolved.add(item.key);
   }
   return resolved;
 }
@@ -87,13 +127,17 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
 
   const [queue, setQueue] = useState<QueueItem[]>(() => savedProgress?.queue ?? buildInitialQueue(concepts));
   const [masteredIds, setMasteredIds] = useState<Set<string>>(() => new Set(savedProgress?.masteredIds ?? []));
-  const [streak, setStreak] = useState(() => savedProgress?.streak ?? 0);
 
   // A queue item can resolve twice (e.g. answered, then later scrolled past) -
   // this guards so only the first resolution counts. On resume, seed it from
   // the restored progress so already-answered cards can't be re-triggered.
+  // Prefer the exact persisted set; only pre-dual-lane saved sessions lack it
+  // and need the heuristic fallback (see StudyProgress.resolvedKeys).
   const resolvedKeys = useRef<Set<string>>(
-    savedProgress ? reconstructResolvedKeys(savedProgress) : new Set(),
+    new Set(
+      savedProgress?.resolvedKeys ??
+        (savedProgress ? reconstructResolvedKeys(savedProgress) : []),
+    ),
   );
   // Tracks roughly where the user is in the feed, so an async grading result
   // (chat challenge) can't requeue a retry behind where they've already scrolled.
@@ -208,13 +252,11 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       // student sees them on the very next swipe — not buried at the end.
       setQueue((prev) => {
         const insertAt = Math.min(currentIndexRef.current + 1, prev.length);
-        const newItems = newConcepts.map((concept) => ({
-          key: `${concept.id}::1`,
-          concept,
-          level: getRandomLevel(),
-          attempt: 1,
-          isNew: true, // triggers materialisation sweep in FeedSlide
-        }));
+        // Same swipe+cloze pairing (and same guaranteed-non-adjacent
+        // construction) as buildInitialQueue, so freshly-generated Infinite
+        // Recall cards get two genuinely different questions per concept
+        // too, not just one. isNew triggers FeedSlide's materialisation sweep.
+        const newItems: QueueItem[] = buildConceptQueueItems(newConcepts, { isNew: true });
         return [
           ...prev.slice(0, insertAt),
           ...newItems,
@@ -251,7 +293,6 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     }
 
     if (outcome === "correct") {
-      setStreak((s) => s + 1);
       setMasteredIds((prev) => new Set(prev).add(item.concept.id));
       return;
     }
@@ -259,8 +300,6 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     // Skipping counts the same as answering wrong here - the user didn't
     // demonstrate recall either way, and D.I.E.'s retry logic already
     // treats them identically below.
-    setStreak(0);
-
     const easierLevel = nextEasierLevel(item.level);
     if (easierLevel === null) return;
 
@@ -271,9 +310,10 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       const insertAt = Math.min(Math.max(idx + RETRY_OFFSET, currentIndexRef.current + 1), prev.length);
       const nextAttempt = item.attempt + 1;
       const retryItem: QueueItem = {
-        key: `${item.concept.id}::${nextAttempt}`,
+        key: `${item.concept.id}::${easierLevel}::${nextAttempt}`,
         concept: item.concept,
         level: easierLevel,
+        lane: item.lane,
         attempt: nextAttempt,
       };
 
@@ -284,15 +324,20 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   }
 
   // Auto-save on every change so closing the tab mid-session never loses
-  // progress - resuming later restores the exact queue, streak, and mastery.
+  // progress - resuming later restores the exact queue and mastery.
   useEffect(() => {
     saveProgress(deckId, {
       deckId,
-      streak,
       masteredIds: Array.from(masteredIds),
       queue,
+      resolvedKeys: Array.from(resolvedKeys.current),
     });
-  }, [deckId, streak, masteredIds, queue]);
+    // resolvedKeys is a ref (mutated in resolve(), not via setState) so it's
+    // exempt from the deps list - masteredIds/queue change on every
+    // resolve() call too (correct: setMasteredIds; incorrect with a retry:
+    // setQueue), so this still fires right after resolvedKeys itself is
+    // updated in the vast majority of cases.
+  }, [deckId, masteredIds, queue]);
 
   // Anki-style desktop shortcuts. One listener for the whole feed's lifetime,
   // torn down on unmount so it never double-fires. It reads everything it
@@ -363,7 +408,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
 
       {/* Escape hatch back to /ingest - the feed is otherwise a one-way trip
           to the completion slide. z-20 keeps it clickable above the progress
-          bar; sits top-left, clear of the top-right streak flame. */}
+          bar. */}
       <button
         type="button"
         onClick={() => startTransition(() => router.push("/ingest"))}
@@ -383,13 +428,6 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
           <path d="M6 6l12 12M18 6L6 18" />
         </svg>
       </button>
-
-      <div
-        className="pointer-events-none absolute right-4 top-4 z-10"
-        style={{ marginTop: "env(safe-area-inset-top)" }}
-      >
-        <StreakCounter streak={streak} />
-      </div>
 
       <div className="h-dvh w-full snap-y snap-mandatory overflow-y-scroll no-scrollbar">
         {queue.map((item, index) => (

@@ -107,6 +107,11 @@ export async function POST(request: Request) {
 
   const rateLimited = await isOverDailyCap(session.user.id, parseTimezoneOffsetMinutes(timezoneOffsetMinutes));
   if (rateLimited) {
+    // Every other error path here logs server-side - this one should too, so
+    // a legitimate user actually hitting the ceiling (vs. an abuse attempt)
+    // leaves a trace instead of silently degrading to the self-report
+    // fallback with nothing to notice it by.
+    console.warn("Cloze grade daily cap reached", { userId: session.user.id });
     return Response.json({ error: "Daily grading limit reached." }, { status: 429 });
   }
 

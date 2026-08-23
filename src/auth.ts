@@ -6,6 +6,14 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 
+// A precomputed hash of an arbitrary, never-used password. Compared against
+// on the "account doesn't exist / OAuth-only" path below so that path still
+// pays bcrypt's ~50-100ms cost instead of returning almost instantly -
+// otherwise the latency gap itself would let an attacker enumerate which
+// emails have a password-based account, without ever needing to guess a
+// password.
+const DUMMY_HASH = "$2b$10$WitTNvImQN8mUg8BLtsSveaErLJo.JAsIi/TSXqSJP1qT7tzAzH9m";
+
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -43,8 +51,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: { email: parsed.data.email },
         });
         // No password means this account was never set up for credentials
-        // login (or doesn't exist) - treat both the same way.
-        if (!user?.password) return null;
+        // login (or doesn't exist) - treat both the same way. Still runs a
+        // bcrypt compare against a dummy hash (see DUMMY_HASH) so this path
+        // isn't measurably faster than the real wrong-password path below.
+        if (!user?.password) {
+          await bcrypt.compare(parsed.data.password, DUMMY_HASH);
+          return null;
+        }
 
         const passwordMatches = await bcrypt.compare(parsed.data.password, user.password);
         if (!passwordMatches) return null;

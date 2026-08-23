@@ -5,29 +5,12 @@ import { motion } from "motion/react";
 import type { Concept } from "@/lib/types";
 import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
+import { normalizeForCompare } from "@/lib/clozeMatch";
 
 type ClozeChallengeProps = {
   concept: Concept;
   onAnswered: (correct: boolean) => void;
 };
-
-/** A typed answer that's conceptually identical to the reference answer
- * shouldn't fail on a leading article, trailing punctuation, extra
- * whitespace, or a singular/plural or verb-conjugation "s" on any word (a
- * multi-word answer can carry that mismatch on a word other than the last,
- * e.g. "excite electrons..." vs "excites electrons...") - none of that
- * changes whether the student actually recalled the right fact, so grading
- * on raw string equality would mark genuinely correct recall as wrong. */
-function normalizeForCompare(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/^(a|an|the)\s+/, "")
-    .replace(/[.,!?;:'"]+$/, "")
-    .split(/\s+/)
-    .map((word) => word.replace(/s$/, ""))
-    .join(" ");
-}
 
 /** Level 2 - a genuinely different question from Level 1's swipe, not the
  * same fact bolted onto the back of it. Swipe only asks the student to

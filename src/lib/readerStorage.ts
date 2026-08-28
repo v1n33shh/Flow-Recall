@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import type { BookMeta, HighlightRecord } from "./types";
 
 const DB_NAME = "flowrecall-reader";
-// v2 adds the highlights store - bumping this is what makes onupgradeneeded
-// actually fire for students who already have a v1 database on disk.
-const DB_VERSION = 2;
+// v2 added the highlights store; v3 adds the PDF text cache. Bumping this is
+// what makes onupgradeneeded actually fire for students who already have an
+// older database on disk.
+const DB_VERSION = 3;
 const BOOKS_STORE = "books";
 const FILES_STORE = "bookFiles";
 const HIGHLIGHTS_STORE = "highlights";
 const HIGHLIGHTS_BOOK_INDEX = "bookId";
+const PDF_TEXT_STORE = "pdfText";
 
 // Same problem useSyncExternalStore solves for storage.ts's localStorage
 // reads: same-tab writers need to hear about each other's changes. IndexedDB
@@ -38,6 +40,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(HIGHLIGHTS_STORE)) {
         const store = db.createObjectStore(HIGHLIGHTS_STORE, { keyPath: "id" });
         store.createIndex(HIGHLIGHTS_BOOK_INDEX, "bookId");
+      }
+      if (!db.objectStoreNames.contains(PDF_TEXT_STORE)) {
+        db.createObjectStore(PDF_TEXT_STORE, { keyPath: "bookId" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -243,9 +248,10 @@ export async function updateReadingPosition(id: string, position: string, progre
 export async function deleteBook(id: string): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction([BOOKS_STORE, FILES_STORE, HIGHLIGHTS_STORE], "readwrite");
+    const tx = db.transaction([BOOKS_STORE, FILES_STORE, HIGHLIGHTS_STORE, PDF_TEXT_STORE], "readwrite");
     tx.objectStore(BOOKS_STORE).delete(id);
     tx.objectStore(FILES_STORE).delete(id);
+    tx.objectStore(PDF_TEXT_STORE).delete(id);
     // Orphaned highlights for a deleted book are meaningless - clean them up
     // via the bookId index rather than leaking them in IndexedDB forever.
     const highlightsStore = tx.objectStore(HIGHLIGHTS_STORE);
@@ -364,4 +370,49 @@ export function useBooks(): { books: BookMeta[]; loading: boolean } {
   }, []);
 
   return { books, loading };
+}
+
+/** A PDF's reflowed text, cached so the one-time extraction cost is paid once
+ * per book ever rather than on every open.
+ *
+ * Extraction is the single most expensive thing either reader does - a 444-page
+ * book takes ~4s of pdf.js text extraction on a laptop and over a minute on a
+ * mid-range phone - and its output is a pure function of the file plus the
+ * extractor's own heuristics. So it is cached under `version`: change the
+ * paragraph reconstruction or the cipher-shift resolution, bump
+ * PDF_EXTRACT_VERSION, and every stale cache is ignored rather than serving
+ * text the current code would never have produced. */
+export type PdfTextRecord = {
+  bookId: string;
+  version: number;
+  paragraphs: string[];
+  /** 1-based PDF page number -> index of the first paragraph on that page.
+   * Serialized as a plain object because IndexedDB's structured clone handles
+   * Map fine but JSON-shaped records stay easier to inspect and migrate. */
+  pageToParagraphIndex: Record<number, number>;
+  /** Undefined until the background TOC pass finishes and re-saves the record. */
+  toc?: unknown[];
+  createdAt: number;
+};
+
+export async function getPdfText(bookId: string, version: number): Promise<PdfTextRecord | null> {
+  const db = await openDb();
+  const tx = db.transaction(PDF_TEXT_STORE, "readonly");
+  const record = await requestToPromise<PdfTextRecord | undefined>(
+    tx.objectStore(PDF_TEXT_STORE).get(bookId),
+  );
+  // A record from an older extractor is worse than no record: it would pin the
+  // reader to text the current heuristics have already improved on.
+  if (!record || record.version !== version) return null;
+  return record;
+}
+
+export async function savePdfText(record: PdfTextRecord): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PDF_TEXT_STORE, "readwrite");
+    tx.objectStore(PDF_TEXT_STORE).put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }

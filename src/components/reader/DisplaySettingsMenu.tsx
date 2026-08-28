@@ -4,15 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { FONT_FAMILY_CSS, FONT_FAMILY_LABELS, type FontFamilyId } from "@/lib/readerPreferences";
 
-// PERFORMANCE CONTRACT (matches ReaderChrome/DefinitionPopover): every
-// animation here touches transform + opacity only. backdrop-blur is static.
-
 export type ZoomControl = {
   percent: number;
   min: number;
   max: number;
   step: number;
   onChange: (percent: number) => void;
+};
+
+export type ViewModeControl = {
+  mode: "original" | "reflow";
+  onModeChange: (mode: "original" | "reflow") => void;
 };
 
 export type TypographyControl = {
@@ -25,10 +27,6 @@ export type TypographyControl = {
   onFontFamilyChange: (family: FontFamilyId) => void;
 };
 
-/** EPUB-only: lets the reader pick paginated (tap/swipe through discrete
- * pages) vs. a continuous vertical scroll. Omitted entirely by PDF (fixed
- * page images, pagination is inherent to the format) and by TextReaderView
- * (already pure continuous scroll with no alternative to offer). */
 export type LayoutControl = {
   mode: "paginated" | "scrolling";
   onModeChange: (mode: "paginated" | "scrolling") => void;
@@ -85,84 +83,31 @@ function StepperRow({
   );
 }
 
-function SliderRow({
-  label,
-  valueLabel,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  valueLabel: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (next: number) => void;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-        <span>{label}</span>
-        <span className="tabular-nums text-foreground">{valueLabel}</span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 w-full accent-accent"
-      />
-    </div>
-  );
-}
-
-/** The "Aa" display-settings trigger + glassmorphic popover, shared by all
- * three reader views. Content is driven entirely by which optional control
- * group is passed - PDF supplies `zoom` (canvas-rendered text can't be
- * restyled, so font controls would be meaningless there), EPUB/Text supply
- * `typography` (a fixed-layout PDF page has no reflowable font to size). */
 export default function DisplaySettingsMenu({
   zoom,
   typography,
   layout,
+  viewMode,
 }: {
   zoom?: ZoomControl;
   typography?: TypographyControl;
   layout?: LayoutControl;
+  viewMode?: ViewModeControl;
 }) {
   const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-
-    function handlePointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
-      setOpen(false);
-    }
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
     }
-
-    document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => document.removeEventListener("keydown", handleKeyDown);
   }, [open]);
 
   return (
     <div className="relative">
       <button
-        ref={triggerRef}
         type="button"
         aria-label="Display settings"
         onClick={() => setOpen((v) => !v)}
@@ -178,94 +123,134 @@ export default function DisplaySettingsMenu({
 
       <AnimatePresence>
         {open && (
-          <motion.div
-            ref={panelRef}
-            initial={{ opacity: 0, y: -6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-border bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
-          >
-            <div className="flex flex-col gap-4">
-              {zoom && (
-                <SliderRow
-                  label="Zoom"
-                  valueLabel={`${Math.round(zoom.percent)}%`}
-                  value={zoom.percent}
-                  min={zoom.min}
-                  max={zoom.max}
-                  step={zoom.step}
-                  onChange={zoom.onChange}
-                />
-              )}
+          <>
+            <div
+              className="fixed inset-0 z-40 bg-transparent"
+              onClick={() => setOpen(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.97 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-border bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+            >
+              <div className="flex flex-col gap-4">
+                {viewMode && (
+                  <div className="flex items-center gap-1 rounded-full border border-border bg-foreground/5 p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        viewMode.onModeChange("original");
+                        setOpen(false);
+                      }}
+                      className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
+                        viewMode.mode === "original"
+                          ? "bg-foreground/10 text-foreground"
+                          : "text-muted-foreground hover:bg-foreground/5"
+                      }`}
+                    >
+                      Original Layout
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        viewMode.onModeChange("reflow");
+                        setOpen(false);
+                      }}
+                      className={`flex-1 rounded-full py-1.5 text-xs font-medium transition-colors ${
+                        viewMode.mode === "reflow"
+                          ? "bg-foreground/10 text-foreground"
+                          : "text-muted-foreground hover:bg-foreground/5"
+                      }`}
+                    >
+                      Reflow Text
+                    </button>
+                  </div>
+                )}
 
-              {typography && (
-                <>
+                {zoom && (
                   <StepperRow
-                    label="Font Size"
-                    value={typography.fontPercent}
-                    min={typography.fontMin}
-                    max={typography.fontMax}
-                    step={typography.fontStep}
-                    onChange={typography.onFontPercentChange}
+                    label="Zoom"
+                    value={zoom.percent}
+                    min={zoom.min}
+                    max={zoom.max}
+                    step={zoom.step}
+                    onChange={zoom.onChange}
                   />
+                )}
 
-                  <div className={zoom ? "border-t border-border pt-4" : ""}>
-                    <p className="text-xs font-medium text-muted-foreground">Font</p>
-                    <div className="mt-2 grid grid-cols-3 gap-1.5">
-                      {FONT_FAMILY_IDS.map((id) => {
-                        const selected = typography.fontFamily === id;
+                {typography && (
+                  <>
+                    <StepperRow
+                      label="Font Size"
+                      value={typography.fontPercent}
+                      min={typography.fontMin}
+                      max={typography.fontMax}
+                      step={typography.fontStep}
+                      onChange={typography.onFontPercentChange}
+                    />
+
+                    <div className={zoom ? "border-t border-border pt-4" : ""}>
+                      <p className="text-xs font-medium text-muted-foreground">Font</p>
+                      <div className="mt-2 grid grid-cols-3 gap-1.5">
+                        {FONT_FAMILY_IDS.map((id) => {
+                          const selected = typography.fontFamily === id;
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => typography.onFontFamilyChange(id)}
+                              aria-pressed={selected}
+                              className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 transition-colors ${
+                                selected
+                                  ? "border-accent/50 bg-accent/10 text-accent"
+                                  : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
+                              }`}
+                            >
+                              <span style={{ fontFamily: FONT_FAMILY_CSS[id] }} className="text-base leading-none">
+                                Aa
+                              </span>
+                              <span className="text-[10px] font-medium">{FONT_FAMILY_LABELS[id]}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {layout && (
+                  <div className="border-t border-border pt-4">
+                    <p className="text-xs font-medium text-muted-foreground">Layout</p>
+                    <div className="mt-2 grid grid-cols-2 gap-1.5">
+                      {LAYOUT_MODES.map(({ id, label }) => {
+                        const selected = layout.mode === id;
                         return (
                           <button
                             key={id}
                             type="button"
-                            onClick={() => typography.onFontFamilyChange(id)}
+                            onClick={() => {
+                              layout.onModeChange(id);
+                              setOpen(false);
+                            }}
                             aria-pressed={selected}
-                            className={`flex flex-col items-center gap-1 rounded-xl border px-2 py-2.5 transition-colors ${
+                            className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors ${
                               selected
                                 ? "border-accent/50 bg-accent/10 text-accent"
                                 : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
                             }`}
                           >
-                            <span style={{ fontFamily: FONT_FAMILY_CSS[id] }} className="text-base leading-none">
-                              Aa
-                            </span>
-                            <span className="text-[10px] font-medium">{FONT_FAMILY_LABELS[id]}</span>
+                            {label}
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                </>
-              )}
-
-              {layout && (
-                <div className="border-t border-border pt-4">
-                  <p className="text-xs font-medium text-muted-foreground">Layout</p>
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    {LAYOUT_MODES.map(({ id, label }) => {
-                      const selected = layout.mode === id;
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => layout.onModeChange(id)}
-                          aria-pressed={selected}
-                          className={`rounded-xl border px-2 py-2.5 text-xs font-medium transition-colors ${
-                            selected
-                              ? "border-accent/50 bg-accent/10 text-accent"
-                              : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </motion.div>
+                )}
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

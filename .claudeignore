@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+.turbo/
+
+# Lock files (huge token cost!)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Logs & cache
+*.log
+.cache/
+.DS_Store
+
+# Git
+.git/

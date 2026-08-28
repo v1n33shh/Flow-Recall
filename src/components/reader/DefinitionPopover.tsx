@@ -24,6 +24,60 @@ const CARD_WIDTH = 300;
 const VIEWPORT_MARGIN = 12;
 const NOTE_MAX_LENGTH = 2000;
 
+// How long the AI lookup gets before we stop waiting on it and answer from the
+// free dictionary instead. Measured on-device: the request DOES complete, but
+// it can take the better part of a minute (cold serverless function plus the
+// native HTTP bridge), and a minute of "Thinking..." is indistinguishable from
+// a broken feature. A definition in seconds beats a better definition later.
+const LOOKUP_TIMEOUT_MS = 8000;
+const FALLBACK_TIMEOUT_MS = 5000;
+
+// When the AI lookup passes this, say so in the sheet rather than leaving the
+// spinner to imply nothing is happening.
+const SLOW_NOTICE_MS = 4000;
+
+/** Bounds a promise by wall-clock time.
+ *
+ * Not AbortSignal: capacitor.config.ts enables CapacitorHttp, which replaces
+ * window.fetch with a native bridge that never reads init.signal - the string
+ * "signal" does not appear anywhere in @capacitor/android's native-bridge.js -
+ * so AbortSignal.timeout() is silently ignored for the credentialed POST that
+ * has to go through that bridge. Racing a timer is what actually bounds it: the
+ * native request carries on, but the UI stops waiting on it. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/** The unpatched window.fetch, which Capacitor's bridge stashes aside before
+ * installing its own (native-bridge.js: `win.CapacitorWebFetch = window.fetch`).
+ *
+ * Used for the public dictionary lookup only. That request carries no cookies,
+ * so it has nothing to gain from the native path - and going direct both
+ * honours AbortSignal and skips the `_capacitor_http_interceptor_?u=` rewrite
+ * the shim applies to every GET, one less hop that can stall. Falls back to
+ * plain fetch on the web, where the bridge was never installed. */
+function directFetch(input: string, init?: RequestInit): Promise<Response> {
+  const scope = globalThis as typeof globalThis & { CapacitorWebFetch?: typeof fetch };
+  const unpatched = scope.CapacitorWebFetch ?? fetch;
+  return unpatched(input, init);
+}
+
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(ms) : undefined;
+}
+
 function formatDefinitionAsNote(data: DefinitionResponse): string {
   return [data.definition, "", "Examples:", ...data.examples.map((example, i) => `${i + 1}. ${example}`)].join("\n");
 }
@@ -59,29 +113,135 @@ function GlassIconButton({
 function useDefinitionStage(phrase: string, context: string, initialNote: string | undefined) {
   const [stage, setStage] = useState<Stage>(initialNote ? { kind: "note-view", note: initialNote } : { kind: "actions" });
   const [copied, setCopied] = useState(false);
+  const [slow, setSlow] = useState(false);
+  // Bumped per lookup, so a response that arrives after the reader hit Cancel
+  // (or long-pressed a different word) can't land on top of whatever they're
+  // looking at now - the request itself is unabortable through the native
+  // bridge, so orphaning its result is the only way to cancel it.
+  const lookupGeneration = useRef(0);
+
+  function handleCancel() {
+    lookupGeneration.current += 1;
+    setSlow(false);
+    setStage(initialNote ? { kind: "note-view", note: initialNote } : { kind: "actions" });
+  }
 
   async function handleDefine() {
+    const generation = ++lookupGeneration.current;
+    const isCurrent = () => lookupGeneration.current === generation;
+
+    setSlow(false);
     setStage({ kind: "loading" });
+
+    const slowTimer = setTimeout(() => {
+      if (isCurrent()) setSlow(true);
+    }, SLOW_NOTICE_MS);
+
+    const commit = (next: Stage) => {
+      clearTimeout(slowTimer);
+      if (!isCurrent()) return;
+      setSlow(false);
+      setStage(next);
+    };
+
+    // Why the primary lookup fell over, kept for the error stage so a failure
+    // says something actionable instead of blaming the reader's connection.
+    let primaryFailure = "Couldn't reach FlowRecall's AI definitions.";
+
     try {
-      const res = await fetch(apiUrl("/api/define"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phrase, context }),
-        credentials: API_FETCH_CREDENTIALS,
-      });
+      const res = await withTimeout(
+        fetch(apiUrl("/api/define"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phrase, context }),
+          credentials: API_FETCH_CREDENTIALS,
+        }),
+        LOOKUP_TIMEOUT_MS,
+      );
       const data = await res.json().catch(() => null);
+
       if (res.status === 403 && data?.error === "LIMIT_REACHED") {
-        setStage({ kind: "limit-reached" });
+        commit({ kind: "limit-reached" });
         return;
       }
-      if (!res.ok || !data) {
-        setStage({ kind: "error", message: data?.error ?? "Couldn't fetch a definition. Try again." });
+      if (res.ok && data && data.definition && Array.isArray(data.examples)) {
+        commit({ kind: "result", data });
         return;
       }
-      setStage({ kind: "result", data });
-    } catch {
-      setStage({ kind: "error", message: "Couldn't reach FlowRecall. Check your connection." });
+
+      primaryFailure =
+        res.status === 401
+          ? "You need to be signed in for AI definitions."
+          : `FlowRecall's AI definitions answered ${res.status}.`;
+    } catch (error) {
+      primaryFailure =
+        (error as Error | undefined)?.message === "timeout"
+          ? `The AI definition took longer than ${Math.round(LOOKUP_TIMEOUT_MS / 1000)}s.`
+          : "Couldn't reach FlowRecall's AI definitions.";
     }
+
+    if (!isCurrent()) {
+      clearTimeout(slowTimer);
+      return;
+    }
+
+    // Free dictionary fallback - bounded the same way, and sent through the
+    // unpatched fetch since it needs no session (see directFetch).
+    try {
+      const cleanWord = phrase.trim().replace(/^[^\w]+|[^\w]+$/g, "").toLowerCase();
+      if (cleanWord) {
+        const dictRes = await withTimeout(
+          directFetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(cleanWord)}`, {
+            signal: timeoutSignal(FALLBACK_TIMEOUT_MS),
+          }),
+          FALLBACK_TIMEOUT_MS,
+        );
+        if (dictRes.ok) {
+          const dictData = await dictRes.json();
+          if (Array.isArray(dictData) && dictData.length > 0) {
+            const entry = dictData[0];
+            let foundDef = "";
+            const foundExamples: string[] = [];
+
+            for (const meaning of entry.meanings || []) {
+              for (const def of meaning.definitions || []) {
+                if (!foundDef && def.definition) {
+                  foundDef = `${meaning.partOfSpeech ? `(${meaning.partOfSpeech}) ` : ""}${def.definition}`;
+                }
+                if (def.example && foundExamples.length < 2) {
+                  foundExamples.push(def.example);
+                }
+              }
+            }
+
+            if (foundDef) {
+              if (foundExamples.length === 0 && context) {
+                foundExamples.push(`"${phrase}" as used in context: "${context.slice(0, 120)}..."`);
+              }
+              if (foundExamples.length < 2) {
+                foundExamples.push(`Understanding "${phrase}" enhances retention and comprehension during reading.`);
+              }
+
+              commit({
+                kind: "result",
+                data: {
+                  definition: foundDef,
+                  examples: foundExamples.slice(0, 2),
+                },
+              });
+              return;
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback failed
+    }
+
+    commit({
+      kind: "error",
+      message: `${primaryFailure} The offline dictionary didn't have it either.`,
+    });
   }
 
   function handleCopy(text: string) {
@@ -98,7 +258,7 @@ function useDefinitionStage(phrase: string, context: string, initialNote: string
       });
   }
 
-  return { stage, setStage, copied, handleDefine, handleCopy };
+  return { stage, setStage, copied, slow, handleDefine, handleCancel, handleCopy };
 }
 
 /** The shared inner body (phrase header + stage-dependent content), rendered
@@ -109,7 +269,9 @@ function DefinitionContent({
   stage,
   setStage,
   copied,
+  slow,
   onDefine,
+  onCancel,
   onCopy,
   onClose,
   onHighlight,
@@ -123,7 +285,11 @@ function DefinitionContent({
   stage: Stage;
   setStage: (stage: Stage) => void;
   copied: boolean;
+  /** The AI lookup has passed SLOW_NOTICE_MS - tells the reader the wait is
+   * known about and bounded, rather than leaving a bare spinner to imply it. */
+  slow: boolean;
   onDefine: () => void;
+  onCancel: () => void;
   onCopy: (text: string) => void;
   onClose: () => void;
   onHighlight: () => void | Promise<void>;
@@ -289,13 +455,32 @@ function DefinitionContent({
           ))}
 
         {stage.kind === "loading" && (
-          <div className="flex items-center gap-2.5 py-1.5">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
-              className="h-4 w-4 rounded-full border-2 border-border border-t-accent"
-            />
-            <p className="text-[13px] text-muted-foreground">Thinking...</p>
+          <div className="flex flex-col gap-2 py-1.5">
+            <div className="flex items-center gap-2.5">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                className="h-4 w-4 rounded-full border-2 border-border border-t-accent"
+              />
+              <p className="text-[13px] text-muted-foreground">Thinking...</p>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="ml-auto rounded-lg px-2 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-[0.97]"
+              >
+                Cancel
+              </button>
+            </div>
+            {slow && (
+              <motion.p
+                initial={{ opacity: 0, y: 3 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.18 }}
+                className="text-xs leading-relaxed text-muted-foreground/80"
+              >
+                Taking longer than usual - falling back to a dictionary definition in a moment.
+              </motion.p>
+            )}
           </div>
         )}
 
@@ -444,7 +629,10 @@ function FloatingCard({
   onSaveNote: (note: string) => void | Promise<void>;
   note: string | undefined;
   isHighlighted: boolean;
-} & Pick<ReturnType<typeof useDefinitionStage>, "stage" | "setStage" | "copied" | "handleDefine" | "handleCopy">) {
+} & Pick<
+  ReturnType<typeof useDefinitionStage>,
+  "stage" | "setStage" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
+>) {
   const cardRef = useRef<HTMLDivElement>(null);
 
   // Centered-then-clamped `left`, computed directly in px (not via CSS
@@ -489,7 +677,9 @@ function FloatingCard({
         <DefinitionContent
           phrase={phrase}
           onDefine={stageProps.handleDefine}
+          onCancel={stageProps.handleCancel}
           onCopy={stageProps.handleCopy}
+          slow={stageProps.slow}
           onClose={onClose}
           onHighlight={onHighlight}
           onRemoveHighlight={onRemoveHighlight}
@@ -530,7 +720,10 @@ function BottomSheet({
   onSaveNote: (note: string) => void | Promise<void>;
   note: string | undefined;
   isHighlighted: boolean;
-} & Pick<ReturnType<typeof useDefinitionStage>, "stage" | "setStage" | "copied" | "handleDefine" | "handleCopy">) {
+} & Pick<
+  ReturnType<typeof useDefinitionStage>,
+  "stage" | "setStage" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
+>) {
   // The tap that OPENS this sheet is followed, a beat later, by the
   // browser's synthetic compatibility "click" (mobile browsers replay
   // touchstart+touchend as mousedown/mouseup/click for legacy mouse-only
@@ -584,7 +777,9 @@ function BottomSheet({
           <DefinitionContent
             phrase={phrase}
             onDefine={stageProps.handleDefine}
+            onCancel={stageProps.handleCancel}
             onCopy={stageProps.handleCopy}
+            slow={stageProps.slow}
             onClose={onClose}
             onHighlight={onHighlight}
             onRemoveHighlight={onRemoveHighlight}
@@ -631,7 +826,11 @@ export default function DefinitionPopover({
   isHighlighted?: boolean;
 }) {
   const isTouch = useIsTouchDevice();
-  const { stage, setStage, copied, handleDefine, handleCopy } = useDefinitionStage(phrase, context, note);
+  const { stage, setStage, copied, slow, handleDefine, handleCancel, handleCopy } = useDefinitionStage(
+    phrase,
+    context,
+    note,
+  );
   const noopRemove = () => {};
   const noopSaveNote = () => {};
 
@@ -648,7 +847,9 @@ export default function DefinitionPopover({
         stage={stage}
         setStage={setStage}
         copied={copied}
+        slow={slow}
         handleDefine={handleDefine}
+        handleCancel={handleCancel}
         handleCopy={handleCopy}
       />
     );
@@ -667,7 +868,9 @@ export default function DefinitionPopover({
       stage={stage}
       setStage={setStage}
       copied={copied}
+      slow={slow}
       handleDefine={handleDefine}
+      handleCancel={handleCancel}
       handleCopy={handleCopy}
     />
   );

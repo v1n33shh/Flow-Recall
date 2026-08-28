@@ -20,6 +20,7 @@ import {
   attachLongPressToDefine,
   getBlockContext,
   isCoarsePointer,
+  LONG_PRESS_COMMIT_MS,
   type PendingSelection,
   type SelectionAnchor,
 } from "./selection";
@@ -78,6 +79,83 @@ function ensureNoNativeSelection(doc: Document) {
     }
   `;
   doc.head.appendChild(style);
+}
+
+/** Tap-to-turn zones, attached INSIDE a chapter's iframe document.
+ *
+ * The .reader-page-turn overlays at the bottom of this file are the desktop
+ * affordance; globals.css drops them under (pointer: coarse) because, sitting
+ * on top of the iframe, they swallowed long-press-to-define across the outer
+ * 15% of every page - a touch landing on one never reached the iframe
+ * document, so selection.ts never saw the press at all. This puts the same
+ * zones back in the only place that can't block anything: the document that
+ * actually receives the touch.
+ *
+ * Splits tap from long-press on selection.ts's own LONG_PRESS_COMMIT_MS, so a
+ * press resolves to exactly one of the two - never both, never neither. */
+function attachTapToTurn(
+  doc: Document,
+  frameEl: HTMLElement | null,
+  onPrev: () => void,
+  onNext: () => void,
+): void {
+  const TAP_ZONE_FRACTION = 0.15;
+  const TAP_MAX_MOVE_PX = 10;
+
+  let startX = 0;
+  let startY = 0;
+  let startedAt = 0;
+  let tracking = false;
+
+  function onTouchStart(e: Event) {
+    const touches = (e as TouchEvent).touches;
+    // A second finger is a pinch, not a page turn.
+    if (touches.length !== 1) {
+      tracking = false;
+      return;
+    }
+    startX = touches[0].clientX;
+    startY = touches[0].clientY;
+    startedAt = Date.now();
+    tracking = true;
+  }
+
+  function onTouchEnd(e: Event) {
+    if (!tracking) return;
+    tracking = false;
+
+    const touch = (e as TouchEvent).changedTouches[0];
+    if (!touch) return;
+    if (Date.now() - startedAt >= LONG_PRESS_COMMIT_MS) return;
+    if (Math.abs(touch.clientX - startX) > TAP_MAX_MOVE_PX) return;
+    if (Math.abs(touch.clientY - startY) > TAP_MAX_MOVE_PX) return;
+
+    // Touch coordinates inside an iframe are relative to that iframe's own
+    // viewport, so its visible box is the right reference. Measured fresh per
+    // tap rather than captured at attach time: a rotation in between would
+    // otherwise put the zones at the wrong fraction of the screen.
+    const bounds = frameEl?.getBoundingClientRect();
+    const width = bounds?.width || doc.documentElement.clientWidth;
+    const height = bounds?.height || doc.documentElement.clientHeight;
+    if (width <= 0 || height <= 0) return;
+
+    const relY = touch.clientY / height;
+    // Same vertical band the desktop overlays cover (inset-y-[15%]), so both
+    // input paths turn pages from the same places.
+    if (relY < 0.15 || relY > 0.85) return;
+
+    const relX = touch.clientX / width;
+    if (relX <= TAP_ZONE_FRACTION) onPrev();
+    else if (relX >= 1 - TAP_ZONE_FRACTION) onNext();
+  }
+
+  function onTouchCancel() {
+    tracking = false;
+  }
+
+  doc.addEventListener("touchstart", onTouchStart, { passive: true });
+  doc.addEventListener("touchend", onTouchEnd, { passive: true });
+  doc.addEventListener("touchcancel", onTouchCancel, { passive: true });
 }
 
 type LoadState = "loading" | "ready" | "error";
@@ -180,6 +258,14 @@ function ChaptersMenu({ toc, onSelect }: { toc: NavItem[]; onSelect: (href: stri
   );
 }
 
+/** Reads --reader-highlight's raw "H S% L%" components off the host
+ * document at call time. Falls back to the token's known globals.css value
+ * only if the custom property is ever missing (e.g. a detached iframe). */
+function getReaderHighlightHsl(): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue("--reader-highlight").trim();
+  return raw || "217 91% 60%";
+}
+
 function registerObsidianTheme(rendition: Rendition) {
   // Matches the app's "Pure Monochrome" tokens, but swaps to a serif reading
   // face - established typography practice for long-form body text, and
@@ -198,9 +284,11 @@ function registerObsidianTheme(rendition: Rendition) {
     },
     p: { "margin-bottom": "1.1em !important" },
     a: { color: "#FFFFFF !important" },
-    // Literal --reader-highlight blue (epub.js's iframe can't see our :root
-    // custom properties) - keep in sync with SelectionHighlight.tsx/globals.css.
-    "::selection": { background: "rgba(59,130,246,0.35)" },
+    // epub.js's iframe can't see our :root custom properties, so this reads
+    // --reader-highlight's raw "H S% L%" components at call time and rebuilds
+    // them as a CSS Color 4 hsl() string - no second hardcoded literal to
+    // drift out of sync with globals.css/SelectionHighlight.tsx.
+    "::selection": { background: `hsl(${getReaderHighlightHsl()} / 0.35)` },
   });
   rendition.themes.select("obsidian");
 }
@@ -235,6 +323,12 @@ export default function EpubReaderView({
   // finishes) - epub.js's annotations API has no "already exists" check of
   // its own, so calling .underline() twice for the same record renders it twice.
   const appliedHighlightIds = useRef(new Set<string>());
+  // epub.js fires "rendered" again for a document it has already rendered
+  // into (a font-size change, or returning to a section still loaded in the
+  // iframe), and listeners added to a document outlive that re-render. Without
+  // this guard the long-press handler stacks up, and one press then fires N
+  // haptic buzzes and N setPopover calls.
+  const wiredDocuments = useRef(new WeakSet<Document>());
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -369,6 +463,10 @@ export default function EpubReaderView({
         // already open - epub.js has no "unselected" event of its own.
         rendition.on("rendered", (_section: unknown, contents: Contents) => {
           ensureReaderFontsLoaded(contents.document);
+
+          if (wiredDocuments.current.has(contents.document)) return;
+          wiredDocuments.current.add(contents.document);
+
           contents.document.addEventListener("touchstart", clearPopover);
           // Desktop only - browsers replay a SYNTHETIC "mousedown" right
           // after a real mouseup/click (for legacy mouse-oriented code),
@@ -385,6 +483,12 @@ export default function EpubReaderView({
 
             const frameEl = contents.window.frameElement as HTMLElement | null;
             const frameRect = frameEl?.getBoundingClientRect();
+
+            // Paginated flow only - scrolled-doc has no page to turn, and
+            // native scrolling owns the gesture there.
+            if (scrollMode === "paginated") {
+              attachTapToTurn(contents.document, frameEl, goToPrevPage, goToNextPage);
+            }
 
             attachLongPressToDefine({
               target: contents.document,
@@ -598,24 +702,28 @@ export default function EpubReaderView({
         </>
       }
     >
-      {/* Tap zones for page turns - narrow edge bands, inset from the top and
-          bottom so a stray tap near either edge of the content pane can't
-          accidentally flip a page; the wide center column stays free for
-          native text selection either way. Only meaningful in paginated flow
-          - scrolled-doc has no "page" to turn, native scroll takes over. */}
+      {/* Click-to-turn bands for mouse-driven devices - narrow, and inset from
+          the top and bottom so a stray click near either edge of the content
+          pane can't accidentally flip a page. globals.css drops them entirely
+          under (pointer: coarse): stacked on top of the chapter iframe they
+          swallowed long-press-to-define across the outer 15% of every page,
+          since a touch on an overlay never reaches the iframe document that
+          selection.ts is listening to. Touch gets the same zones from
+          attachTapToTurn instead, inside that document. Only meaningful in
+          paginated flow - scrolled-doc has no "page" to turn. */}
       {scrollMode === "paginated" && (
         <>
           <button
             type="button"
             aria-label="Previous page"
             onClick={goToPrevPage}
-            className="absolute inset-y-[15%] left-0 z-10 w-[15%] cursor-w-resize"
+            className="reader-page-turn absolute inset-y-[15%] left-0 z-10 w-[15%] cursor-w-resize"
           />
           <button
             type="button"
             aria-label="Next page"
             onClick={goToNextPage}
-            className="absolute inset-y-[15%] right-0 z-10 w-[15%] cursor-e-resize"
+            className="reader-page-turn absolute inset-y-[15%] right-0 z-10 w-[15%] cursor-e-resize"
           />
         </>
       )}

@@ -209,6 +209,10 @@ body {
    Desktop selection (EpubReaderView's "selected" listener, TextReaderView/
    PdfReaderView's selectionchange path) is untouched either way. */
 @media (pointer: coarse) {
+  .textLayer,
+  .textLayer *,
+  .reader-longpress-text,
+  .reader-longpress-text *,
   .native-app .textLayer,
   .native-app .textLayer *,
   .native-app .reader-longpress-text,
@@ -216,6 +220,16 @@ body {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+  }
+
+  /* TextReaderCore's click-to-turn overlays are a desktop affordance only.
+     Left in the tree on a touch device they sit ON TOP of the outer fifth of
+     the prose, where they swallow the long-press before selection.ts ever sees
+     it and mask the text from elementFromPoint/caretRangeFromPoint. display:
+     none takes them out of hit-testing outright; touch turns pages from the
+     tap zones in TextReaderCore's own touchend handler instead. */
+  .reader-page-turn {
+    display: none;
   }
 }
 

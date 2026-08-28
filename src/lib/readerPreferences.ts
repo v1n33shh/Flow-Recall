@@ -1,10 +1,19 @@
 export type FontFamilyId = "serif" | "sans" | "legible";
 export type EpubScrollMode = "paginated" | "scrolling";
 
+/** Same "paginated" | "scrolling" shape as EpubScrollMode, kept as its own
+ * named type since it's independently toggleable for the plain-text reader. */
+export type TextLayoutMode = "paginated" | "scrolling";
+export type PdfViewMode = "original" | "reflow";
+export type PdfReflowLayoutMode = "paginated" | "scrolling";
+
 export type ReaderPreferences = {
   fontPercent: number;
   fontFamily: FontFamilyId;
   epubScrollMode: EpubScrollMode;
+  textLayoutMode: TextLayoutMode;
+  pdfViewMode: PdfViewMode;
+  pdfReflowLayoutMode: PdfReflowLayoutMode;
 };
 
 const STORAGE_KEY = "flowrecall:reader-prefs";
@@ -18,7 +27,17 @@ export const FONT_PERCENT_STEP = 2;
 // Matches the reading experience every existing user already has (Georgia
 // serif at 112%, paginated) - upgrading to this preference store causes zero
 // visual change until someone actually opens the new Display Settings menu.
-const DEFAULTS: ReaderPreferences = { fontPercent: 112, fontFamily: "serif", epubScrollMode: "paginated" };
+// textLayoutMode defaults to "scrolling" (not "paginated" like EPUB) since
+// every pasted note that already exists was written to plain vertical scroll -
+// flipping the default would silently change how existing notes read.
+const DEFAULTS: ReaderPreferences = {
+  fontPercent: 112,
+  fontFamily: "serif",
+  epubScrollMode: "paginated",
+  textLayoutMode: "scrolling",
+  pdfViewMode: "original",
+  pdfReflowLayoutMode: "paginated",
+};
 
 // EPUB content renders inside epub.js's own sandboxed iframe documents,
 // which do NOT inherit the parent document's CSS custom properties or
@@ -55,6 +74,18 @@ function isEpubScrollMode(value: unknown): value is EpubScrollMode {
   return value === "paginated" || value === "scrolling";
 }
 
+function isTextLayoutMode(value: unknown): value is TextLayoutMode {
+  return value === "paginated" || value === "scrolling";
+}
+
+function isPdfViewMode(value: unknown): value is PdfViewMode {
+  return value === "original" || value === "reflow";
+}
+
+function isPdfReflowLayoutMode(value: unknown): value is PdfReflowLayoutMode {
+  return value === "paginated" || value === "scrolling";
+}
+
 /** Global, cross-book reading preference - deliberately NOT stored per-book
  * in IndexedDB (see readerStorage.ts) since typography taste is personal and
  * expected to carry across every book, unlike PDF zoom which stays per-book
@@ -70,6 +101,9 @@ export function getReaderPreferences(): ReaderPreferences {
       fontPercent: typeof parsed.fontPercent === "number" ? parsed.fontPercent : DEFAULTS.fontPercent,
       fontFamily: isFontFamilyId(parsed.fontFamily) ? parsed.fontFamily : DEFAULTS.fontFamily,
       epubScrollMode: isEpubScrollMode(parsed.epubScrollMode) ? parsed.epubScrollMode : DEFAULTS.epubScrollMode,
+      textLayoutMode: isTextLayoutMode(parsed.textLayoutMode) ? parsed.textLayoutMode : DEFAULTS.textLayoutMode,
+      pdfViewMode: isPdfViewMode(parsed.pdfViewMode) ? parsed.pdfViewMode : DEFAULTS.pdfViewMode,
+      pdfReflowLayoutMode: isPdfReflowLayoutMode(parsed.pdfReflowLayoutMode) ? parsed.pdfReflowLayoutMode : DEFAULTS.pdfReflowLayoutMode,
     };
   } catch {
     return DEFAULTS;

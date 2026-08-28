@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   attachLongPressToDefine,
   captureSelectionFromRange,
@@ -14,39 +14,49 @@ import {
 const SELECTION_DEBOUNCE_MS = 250;
 
 /** Shared selection-to-popover wiring for reader views that render into the
- * main document (PDF's text layer, raw text) rather than epub.js's sandboxed
- * iframes. Ignores selections outside `containerRef` so highlighting the
- * chrome (title, buttons) never triggers a definition popover.
+ * main document (PDF text, raw text) rather than epub.js's sandboxed iframes.
+ * Takes the reading container as an ELEMENT rather than a ref so the listeners
+ * re-attach on the render where it first exists (both views hand it over via
+ * TextReaderCore's imperative getScrollContainer()). Selections outside it are
+ * ignored, so dragging across the chrome never opens a definition popover.
  *
  * `derivePosition` computes the opaque, type-dependent position string a
  * selection would be saved under if the user hits "Highlight" - PdfReaderView
- * and TextReaderView each supply their own (page-fraction rects vs. paragraph
- * offsets), so this hook stays agnostic of either.
+ * and TextReaderView each supply their own, so this hook stays agnostic.
  *
  * Desktop and touch get genuinely different interaction models here - see
- * selection.ts's attachLongPressToDefine doc comment for why touch can't
- * just reuse the debounced selectionchange path: native selection (and the
- * OS callout menu tied to it) is disabled entirely on touch via CSS, so a
- * long-press has to resolve the word directly from the pointer's
- * coordinates instead of ever reading a browser Selection. */
-export function useNativeSelection(containerRef: RefObject<HTMLElement | null>, derivePosition: DerivePosition) {
+ * selection.ts's attachLongPressToDefine doc comment for why touch can't just
+ * reuse the debounced selectionchange path: native selection (and the OS
+ * callout menu tied to it) is disabled entirely on coarse pointers via CSS, so
+ * a long-press has to resolve the word from the touch's own coordinates
+ * instead of ever reading a browser Selection. */
+export function useNativeSelection(containerEl: HTMLElement | null, derivePosition: DerivePosition) {
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  const clear = useCallback(() => setSelection(null), []);
+  const clearSelection = useCallback(() => {
+    setSelection(null);
+    // Only desktop has a real browser selection to drop - on touch there is
+    // never one to begin with, and calling into Selection there would just
+    // churn selectionchange events for nothing.
+    if (!isCoarsePointer() && typeof window !== "undefined") {
+      window.getSelection()?.removeAllRanges();
+    }
+  }, []);
 
+  // Desktop: drag-to-select, debounced so the popover appears once the drag
+  // settles rather than flickering on every intermediate range.
   useEffect(() => {
-    if (isCoarsePointer()) return;
+    if (!containerEl || isCoarsePointer()) return;
 
     function handleSelectionChange() {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        const container = containerRef.current;
         const domSelection = window.getSelection();
-        if (!container || !domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) return;
+        if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) return;
 
         const range = domSelection.getRangeAt(0);
-        if (!container.contains(range.commonAncestorContainer)) return;
+        if (!containerEl?.contains(range.commonAncestorContainer)) return;
 
         const captured = captureSelectionFromRange(range, false, derivePosition);
         if (captured) setSelection(captured);
@@ -58,38 +68,42 @@ export function useNativeSelection(containerRef: RefObject<HTMLElement | null>, 
       clearTimeout(timeoutRef.current);
       document.removeEventListener("selectionchange", handleSelectionChange);
     };
-  }, [containerRef, derivePosition]);
+  }, [containerEl, derivePosition]);
 
+  // Touch: long-press-to-define.
   useEffect(() => {
-    if (!isCoarsePointer()) return;
-    const container = containerRef.current;
-    if (!container) return;
+    if (!containerEl || !isCoarsePointer()) return;
 
     return attachLongPressToDefine({
-      target: container,
+      target: containerEl,
       doc: document,
       derivePosition,
-      onLongPress: setSelection,
+      onLongPress: (captured) => {
+        // The press has no visual of its own until React commits the sheet, so
+        // the tap is the confirmation that the word registered - same feedback
+        // EpubReaderView gives for the identical gesture. Absent on the web,
+        // hence the double catch rather than a hard dependency.
+        import("@capacitor/haptics")
+          .then(({ Haptics, ImpactStyle }) => {
+            Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+          })
+          .catch(() => {});
+        setSelection(captured);
+      },
     });
-  }, [containerRef, derivePosition]);
+  }, [containerEl, derivePosition]);
 
-  // A fresh tap/click starting inside the reading container dismisses
-  // whatever popover is already open - mirrors epub.js's contents-mousedown
-  // handling in EpubReaderView, so both feel identical. Desktop only for
-  // mousedown: browsers replay it as a SYNTHETIC compatibility event right
-  // after a real touchend, which would otherwise immediately wipe out the
-  // selection the touchend handler above just captured. touchstart alone
-  // already covers "clear on new touch interaction" correctly.
+  // Desktop: a fresh mousedown in the reading area dismisses whatever popover
+  // is open. Touch deliberately gets no container-level equivalent -
+  // DefinitionPopover's bottom sheet owns dismissal through its own
+  // full-screen scrim, whereas a click/touchstart listener here would race the
+  // synthetic click that mobile browsers replay right after the touchend
+  // ending a long-press, and self-dismiss the sheet it just opened.
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    if (!isCoarsePointer()) container.addEventListener("mousedown", clear);
-    container.addEventListener("touchstart", clear);
-    return () => {
-      if (!isCoarsePointer()) container.removeEventListener("mousedown", clear);
-      container.removeEventListener("touchstart", clear);
-    };
-  }, [containerRef, clear]);
+    if (!containerEl || isCoarsePointer()) return;
+    containerEl.addEventListener("mousedown", clearSelection);
+    return () => containerEl.removeEventListener("mousedown", clearSelection);
+  }, [containerEl, clearSelection]);
 
-  return { selection, clear };
+  return { selection, clearSelection };
 }

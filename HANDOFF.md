@@ -1,10 +1,128 @@
 # FlowRecall — Handoff
 
-**Read this top section first.** It supersedes everything below it (including the "🔴 START HERE — 2026-08-22, later session" block immediately following, which was itself once this file's current-state summary and is now historical). Everything in this top section reflects the repo as of **2026-08-23**, committed through `0511e8e` and fully pushed to `origin/main` - confirm with `git status` before assuming otherwise, since that's changed mid-session before.
+**Read the first section only, then stop.** Everything after it is a reverse-chronological log: each `START HERE`
+block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
+as instructions. The first block is the only one describing the repo as it stands.
+
+State as of **2026-08-29, end of session**: the last **code** commit is **`d19bbbb`**, which is pushed to
+`origin/main` and **deployed to production**. The commit that added this section is documentation only and may
+still be unpushed - run `git status -sb` first and push it if it says `ahead 1`. Trust `git status` over this
+line either way; it has gone stale mid-session before.
 
 ---
 
-## 🔴 START HERE — 2026-08-30 (build): the release APK was shipping copies of itself
+## 🔴 START HERE — 2026-08-29 (last): where a new session picks up
+
+Everything built this session is committed, pushed and live. Nothing is half-done and nothing is broken. What is
+left is a small number of **decisions** and **out-of-codebase steps**, all listed below with the data needed to
+act on them.
+
+### Where the artifacts are
+
+| | |
+|---|---|
+| repo | last code commit `d19bbbb`, pushed; a documentation-only commit for this section may sit unpushed on top |
+| production web | deployed and verified: the reader chunk carries `inset-x-0 bottom-0 z-30` / `calc(8rem` / `This can't be undone`, `https://www.flowrecall.app/pdfExtract.worker.js` is **md5-identical** to `public/pdfExtract.worker.js`, and `/flowrecall-release.apk` serves 6,309,672 bytes. `flowrecall.app` 308-redirects to `www.` |
+| the user's phone | release APK from 19:19, `webContentsDebuggingEnabled: false`, signed `CN=FlowRecall`, 6.3 MB. **Not** a devtools build - re-flash one to inspect again (see below) |
+| Play Store artifact | **fresh AAB built 19:28**: `android/app/build/outputs/bundle/release/app-release.aab`, 6,159,908 bytes, `jar verified`, `CN=FlowRecall`, devtools false, no nested APK. A build output, not committed. `versionCode 1` / `versionName "1.0"` - must increment on every upload after the first |
+
+### What shipped, in one line each (details in the blocks below)
+
+- `03c0053` - PDF extraction moved into a real worker; blank paragraphs dropped; window slides stopped skipping
+  text; "Page X of Y" derived from the PDF's own page map; guard rails for scans, locked and near-textless PDFs;
+  and the cipher decoder stopped leaving paragraphs in cipher.
+- `0c401dd` - the reader library can be tidied: selection-mode multi-delete and Recent/Title/Progress sorting.
+- `f6cc11f` - that selection bar anchored to the viewport instead of `main`'s content box.
+- `d19bbbb` - the release APK stopped bundling a copy of itself (23.7 MB → 6.3 MB).
+
+### Decisions waiting on the user, not on code
+
+1. **`PDF_EXTRACT_VERSION` is still 2, so books already cached keep their old text.** A *fresh* extraction now
+   rescues **1809 paragraphs** of the chess book from cipher, its table of contents included. Bumping to 3 would
+   fix existing copies in one open (~16 s for the Osho book, longer for chess) but must carry the single existing
+   highlight: `{paragraphIndex: 104, start: 1389, end: 1393}`, phrase `"have"`, on book
+   `11da49a7-0c9f-4ac5-8513-40aafc673ef6`. The Osho book's text changes by **whitespace only** (23412 characters
+   of intra-paragraph runs collapse), so a two-pointer walk from old text to new maps those offsets exactly.
+   Paragraph *counts* are unchanged in both books (443/443, 9006/9006), so saved reading positions need nothing,
+   and the chess book's 1809 changed paragraphs carry no highlights at all.
+2. **Screenshots must be recaptured before any Store upload.** `play-store-assets/screenshots/` is dated
+   **Aug 22** - before the Aug 23 redesign and two reader sessions out of date. `_check.png` in that folder is a
+   stray, not an asset. The user was offered a recapture and the session ended before answering.
+3. **`assetlinks.json` needs Play App Signing's SHA-256**, obtainable only after the first Console upload. Until
+   then the App Link for `/auth-callback` will not verify on Play-installed builds; it degrades rather than
+   breaks, because `src/app/auth-callback/page.tsx` forwards to the `flowrecall://` scheme.
+4. **The Play Developer account ($25) is still blocked on the user's card.** Unchanged for a week.
+
+### Known limitations that will ship with it
+
+None are rejection risks, and payment-policy compliance was verified in the 2026-08-23 session (no in-app
+purchase flow exists on Android at all). But be honest about these if asked "is it ready":
+
+- **Two-column PDFs interleave their columns** - the chess book's move columns merge into single lines.
+- Figures, tables and equations are dropped from extraction entirely.
+- No OCR for scanned PDFs. Now *honestly reported* ("No text in this PDF") rather than a blank reader.
+- **Non-English PDFs are verified only against synthetic text** - eight languages, a mixed-language document and
+  English edge cases all pass `pdfLanguageSafety.test.ts`, and the guard that protects them is real, but no
+  actual non-English book has ever been through the pipeline.
+- Pinch-zoom is off app-wide (`userScalable: false`), a deliberate trade for the swipe feed, with a real
+  accessibility cost.
+- pdf.js wants a `wasmUrl` that is not shipped - blocks JBIG2/JPX image decoding, harmless while the reader is
+  text-only.
+- Legacy `{"page":N,"scale":S}` reading positions resume at the start. Only affects records on the user's own
+  device.
+
+### One thing to check with the user
+
+**Their library went from 7 books to 5 during the session: two of the three duplicate Osho PDF copies are gone.**
+That was not this session's scripts - the only deletion performed here was of two disposable books injected over
+CDP for exactly that purpose (verified 9 → 7 with a census before and after, all seven real books present). The
+most likely explanation is that the user cleared the duplicates themselves while testing the new feature, which
+is also how they noticed the bar geometry bug. The surviving Osho PDF is `11da49a7…`, which holds the only
+highlight, and that highlight is intact; cached texts went 5 → 3 with the deleted copies. **If the user says it
+was not them, treat it as a real defect in `deleteBooks` and investigate before shipping.**
+
+Current library, for reference: `01f07e69` flowrecall-test-sample (pdf), `11da49a7` The Book of Wisdom (pdf, has
+the highlight), `77e54bbc` Chess: 5334 Problems (pdf), `9409ceca` Osho (text), `aae884e8` How to Win Friends
+(epub). Cached extractions exist for the three PDFs.
+
+### Environment notes learned this session (additive to the older lists further down)
+
+- **`out/` is written only by `npm run build:apk`, never by `npm run build`**, and stale chunks from earlier
+  exports survive in it. A headless check against `out/` after `npm run build` measures *old code* - that cost a
+  wrong measurement here. `build-capacitor.mjs` now clears `out/` first; still worth confirming the chunk
+  `out/reader.html` actually references contains your change.
+- To check layout across device sizes: `(cd out && python3 -m http.server 8899)` and load
+  **`http://localhost:8899/reader.html`** - this export writes `reader.html`, not `reader/index.html`, so
+  `/reader/` serves a directory listing. Direct navigation to `/reader` inside the app also falls back to the
+  home page; get there by clicking `a[href="/reader"]` instead.
+- **Inspecting a release build on-device**: `DEVTOOLS=1 npm run build:apk` → `cd android && ./gradlew
+  assembleRelease` → `adb install -r` → find the socket (`adb shell cat /proc/net/unix | grep
+  webview_devtools_remote`, the PID changes on every launch) → `adb forward tcp:9222 localabstract:<socket>` →
+  `chromium.connectOverCDP`. Always rebuild *without* `DEVTOOLS` afterwards and reinstall, so the phone is left
+  on a shippable build.
+- **`apksigner` cannot verify an AAB** ("Missing AndroidManifest.xml"). Use `jarsigner -verify -verbose:summary
+  -certs` for bundles and `apksigner` for APKs. The bundle's "invalid certificate chain" warning is normal for a
+  self-signed upload key.
+- Seeding or reading library data over CDP: wait until the app itself has created the database, then
+  `indexedDB.open("flowrecall-reader")` with **no version number**, `put` records, and dispatch
+  `new Event("reader-library-update")` - `useBooks` listens for exactly that. Deleting through the UI afterwards
+  leaves no trace.
+- Measuring the reader during a route transition reads a **doubled DOM** (both the old and new route are briefly
+  mounted). Wait for `document.querySelectorAll("div.grid").length === 1` before believing any count.
+- Bash's cwd resets to `$HOME` after a call that ends with `cd android` - use absolute paths for anything that
+  follows. `adb` is at `~/Android/Sdk/platform-tools/adb`, `apksigner` at `~/Android/Sdk/build-tools/35.0.0/`.
+- The first `adb exec-out screencap` after a launch is black; poll until the PNG exceeds ~120 KB.
+
+### Verification standard this session held to, worth keeping
+
+Nothing was called done on unit tests alone. Every reader claim was measured in the real WebView on the physical
+device against the user's own books, reading from their stored files and **writing nothing back**; the only
+deletions were of books injected for the purpose and removed again. 58 tests pass (`npm test`), `tsc --noEmit` is
+clean, and lint is at 0 errors with 46 pre-existing warnings.
+
+---
+
+## 🔴 START HERE — 2026-08-29 (build): the release APK was shipping copies of itself
 
 Found while checking what a `git push` would carry: `public/flowrecall-release.apk` had grown **6MB -> 12MB ->
 17MB -> 23.7MB** across four builds, each one carrying its ancestors.
@@ -23,7 +141,7 @@ itself. Installed and launched on the device. Worth re-checking after any change
 
 ---
 
-## 🔴 START HERE — 2026-08-30 (last): the selection bar was 64px off the bottom of the screen
+## 🔴 START HERE — 2026-08-29 (bar geometry): the selection bar was 64px off the bottom of the screen
 
 User-reported, on their own phone: the delete panel "exceeds the screen". It did, and the cause is worth
 remembering because nothing about it is visible in a browser at desktop size.
@@ -61,7 +179,7 @@ actually contains your change.
 
 ---
 
-## 🔴 START HERE — 2026-08-30 (library): delete and sort
+## 🔴 START HERE — 2026-08-29 (library): delete and sort
 
 The user could not delete a book from the reader library on their own device, and the reason was not a missing
 feature. `BookCard` had a remove button all along - `opacity-0 ... group-hover:opacity-100`. A phone has no

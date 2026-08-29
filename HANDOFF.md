@@ -55,13 +55,35 @@ Two evidence problems had to be solved for that fall-through to work at all, and
   both fixes, which is the point. Nothing in a normal PDF's path changed.
 - `public/pdfExtract.worker.js` rebuilt from the changed source (it is a build output - see the note below).
 
-### Not verified, and it should be
+### Verified on the device, against the user's own books
 
-None of this has been on the device or against the user's own Osho/chess books this session - the fixes are
-covered by the synthetic sweep and one real non-Type3 book. The Osho book is the one that actually exercises the
-Type3 path, and the numbers to reproduce are in the session below: **443 paragraphs, 1254141 characters, 444
-pages, 0 blanks**. `public/flowrecall-release.apk` is **still stale**, and the release APK under
-`android/app/build/outputs/apk/release/` predates these fixes - rebuild before any upload.
+Rebuilt as a **release** APK (`DEVTOOLS=1` for the measurements, then again without it), installed over the
+existing app - library intact afterwards at 7 books, 1 highlight, 5 cached texts. Every number below is from the
+real WebView on the OPPO CPH2001 over CDP, extracting through the app's own worker from the books' own stored
+File blobs, writing nothing to the user's data.
+
+| book | result |
+|---|---|
+| Osho, 444pp | 443 paragraphs, 0 blanks, cold extract 16.2s (first batch 1.2s). Text **identical** to the pre-fix cache once whitespace is normalized - letters and digits byte-for-byte, 0 of 443 prose paragraphs changed |
+| Chess, 1180pp | 9006 paragraphs both. **1809 paragraphs newly rescued from cipher**, including the table of contents: `JIO@ION` -> `Contents`, `(<O@ DI /RJ` -> `2 Mate in Two 62`, and page after page of move notation (`` `vQI ON iO `` -> `BXc3+ 10 Kf1 Bf6`). Of 98 paragraphs that already read as prose, 91 are untouched and the other 7 were cipher that merely *looked* like prose to the check - all 7 improved |
+| reader, warm open | Osho: 633ms tap to text, resumes at "Page 392 of 444"; 8 real `adb` taps advance 392 -> 393 -> 394, total constant. Chess: opens at "Page 83 of 1180" with a legible running header |
+
+The Osho book shed 23412 characters of *intra-paragraph whitespace* (runs like `wisdom             OSHO`),
+because `finishParagraph` now collapses after decoding what `decryptText` turns into spaces. No words changed.
+
+`public/flowrecall-release.apk` is now this build - `webContentsDebuggingEnabled: false` confirmed inside the
+APK, signed `CN=FlowRecall`, no `DEBUGGABLE` flag, and no devtools socket on the device after launch.
+
+### The one thing this does NOT reach: caches that already exist
+
+A cached record is only re-extracted when `PDF_EXTRACT_VERSION` changes, and it is still **2**. So the 1809
+rescued chess paragraphs are what a *fresh* extraction produces - the user's own on-device copy keeps its
+ciphered TOC until the book is re-added or the version is bumped. Bumping to 3 would fix it in one open (~16s
+Osho, longer for chess) but has to carry the one existing highlight with it: it stores
+`{paragraphIndex:104, start:1389, end:1393}` with phrase `"have"`, and collapsing whitespace earlier in that
+paragraph moves those offsets. Since the change there is purely whitespace, a two-pointer walk from old text to
+new maps the offsets exactly - the paragraph *count* is unchanged in both books, so saved reading positions need
+nothing. Deliberately left undone pending that call.
 
 ---
 

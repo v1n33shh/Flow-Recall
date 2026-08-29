@@ -5,6 +5,11 @@ export type EpubScrollMode = "paginated" | "scrolling";
  * named type since it's independently toggleable for the plain-text reader. */
 export type TextLayoutMode = "paginated" | "scrolling";
 export type PdfViewMode = "original" | "reflow";
+
+/** How the library grid orders its books. Not a reading preference as such,
+ * but it lives here for the same reason the others do: it is one global choice
+ * the user makes once and expects to still be there tomorrow. */
+export type LibrarySort = "recent" | "title" | "progress";
 export type PdfReflowLayoutMode = "paginated" | "scrolling";
 
 export type ReaderPreferences = {
@@ -14,6 +19,7 @@ export type ReaderPreferences = {
   textLayoutMode: TextLayoutMode;
   pdfViewMode: PdfViewMode;
   pdfReflowLayoutMode: PdfReflowLayoutMode;
+  librarySort: LibrarySort;
 };
 
 const STORAGE_KEY = "flowrecall:reader-prefs";
@@ -37,6 +43,10 @@ const DEFAULTS: ReaderPreferences = {
   textLayoutMode: "scrolling",
   pdfViewMode: "original",
   pdfReflowLayoutMode: "paginated",
+  // Recently read first, which is where a reader almost always wants to
+  // continue. It also replaces what the grid did before this preference
+  // existed: IndexedDB's own key order, which is random UUID order.
+  librarySort: "recent",
 };
 
 // EPUB content renders inside epub.js's own sandboxed iframe documents,
@@ -78,6 +88,10 @@ function isTextLayoutMode(value: unknown): value is TextLayoutMode {
   return value === "paginated" || value === "scrolling";
 }
 
+function isLibrarySort(value: unknown): value is LibrarySort {
+  return value === "recent" || value === "title" || value === "progress";
+}
+
 function isPdfViewMode(value: unknown): value is PdfViewMode {
   return value === "original" || value === "reflow";
 }
@@ -104,6 +118,7 @@ export function getReaderPreferences(): ReaderPreferences {
       textLayoutMode: isTextLayoutMode(parsed.textLayoutMode) ? parsed.textLayoutMode : DEFAULTS.textLayoutMode,
       pdfViewMode: isPdfViewMode(parsed.pdfViewMode) ? parsed.pdfViewMode : DEFAULTS.pdfViewMode,
       pdfReflowLayoutMode: isPdfReflowLayoutMode(parsed.pdfReflowLayoutMode) ? parsed.pdfReflowLayoutMode : DEFAULTS.pdfReflowLayoutMode,
+      librarySort: isLibrarySort(parsed.librarySort) ? parsed.librarySort : DEFAULTS.librarySort,
     };
   } catch {
     return DEFAULTS;

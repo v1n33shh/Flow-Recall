@@ -4,7 +4,47 @@
 
 ---
 
-## 🔴 START HERE — 2026-08-29 (last): the cipher decoder no longer leaves paragraphs in cipher
+## 🔴 START HERE — 2026-08-30 (last): the library can be tidied on a phone
+
+The user could not delete a book from the reader library on their own device, and the reason was not a missing
+feature. `BookCard` had a remove button all along - `opacity-0 ... group-hover:opacity-100`. A phone has no
+hover, so it was **unreachable on the only platform this app ships on**, which is why three copies of the same
+Osho PDF had been sitting in the grid for weeks. Worth remembering as a class of bug: a hover-revealed control is
+invisible on touch, and nothing in typecheck, lint or a desktop browser will ever say so.
+
+Replaced with two things the user chose from options:
+
+- **Selection mode.** "Edit" turns every cover into a checkbox (`aria-pressed`, dim scrim, filled tick when on),
+  a sticky bar counts what is picked, and deleting is two taps: `Delete (2)` then `Delete 2 books? This can't be
+  undone.` It is an in-page bar rather than `window.confirm`, which on Android renders a system dialog titled
+  with the app's own `localhost` origin. `deleteBooks(ids)` (new, in `readerStorage.ts`) removes the books, their
+  files, cached PDF text and highlights in **one** transaction and fires one library-update event, so a
+  multi-delete is all-or-nothing and repaints once. `deleteBook` now delegates to it.
+- **Sort presets** - Recent / Title / Progress, in `librarySort.ts`, persisted as `librarySort` in reader
+  preferences. This also fixes something nobody had named: the grid was showing IndexedDB's own key order, which
+  for `crypto.randomUUID()` keys is *random*. "Recent" (last opened, else added) is the new default and Title is
+  what makes duplicates findable - it puts them adjacent, oldest copy first, so deleting the extras does not move
+  the one being read. Every order ends in an id tiebreak, so no re-render can reshuffle equal keys while
+  someone is ticking boxes.
+
+The delete affordance is now only in selection mode - there is deliberately no always-visible per-card ×, which
+would be one mis-tap from removing a book.
+
+### Verified on the device
+
+Release APK, installed over the existing app. Sorting checked against the real 7-book library (Title groups the
+three Osho copies adjacently; Progress puts the 88%-read Osho first and the untouched EPUB last; the choice
+survives a relaunch). The delete path was exercised end-to-end on **two disposable books injected over CDP**, not
+on the user's own: 9 books -> 7, 9 files -> 7, cached texts unchanged at 5, **the real highlight still there**,
+selection mode exited on its own. Screenshots confirm the tick and the bar render correctly, and the bar carries
+`env(safe-area-inset-bottom)` so Delete does not sit under Android's gesture bar.
+
+58 tests pass (8 new in `librarySort.test.ts`), `tsc` clean, lint unchanged. `public/flowrecall-release.apk` is
+this build, `webContentsDebuggingEnabled: false`, no devtools socket after launch.
+
+---
+
+## 🔴 START HERE — 2026-08-29 (decoder): no paragraphs left in cipher
 
 The session below wrote `pdfLanguageSafety.test.ts` to find out whether the Type3 cipher decoder corrupts
 non-English books. Answer: **it does not** - all eight languages (German, Spanish, French, Italian, Portuguese,

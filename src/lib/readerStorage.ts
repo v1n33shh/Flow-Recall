@@ -247,24 +247,35 @@ export async function updateReadingPosition(id: string, position: string, progre
 }
 
 export async function deleteBook(id: string): Promise<void> {
+  return deleteBooks([id]);
+}
+
+/** Removes books and everything belonging to them - file, cached PDF text and
+ * highlights - in a single transaction, so a multi-select delete either takes
+ * every book the user ticked or leaves the library exactly as it was. One
+ * library-update event at the end, so the grid repaints once rather than
+ * flickering down one card at a time. */
+export async function deleteBooks(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction([BOOKS_STORE, FILES_STORE, HIGHLIGHTS_STORE, PDF_TEXT_STORE], "readwrite");
-    tx.objectStore(BOOKS_STORE).delete(id);
-    tx.objectStore(FILES_STORE).delete(id);
-    tx.objectStore(PDF_TEXT_STORE).delete(id);
-    // Orphaned highlights for a deleted book are meaningless - clean them up
-    // via the bookId index rather than leaking them in IndexedDB forever.
-    const highlightsStore = tx.objectStore(HIGHLIGHTS_STORE);
-    const index = highlightsStore.index(HIGHLIGHTS_BOOK_INDEX);
-    const cursorRequest = index.openCursor(IDBKeyRange.only(id));
-    cursorRequest.onsuccess = () => {
-      const cursor = cursorRequest.result;
-      if (cursor) {
-        cursor.delete();
-        cursor.continue();
-      }
-    };
+    const highlightsIndex = tx.objectStore(HIGHLIGHTS_STORE).index(HIGHLIGHTS_BOOK_INDEX);
+    for (const id of ids) {
+      tx.objectStore(BOOKS_STORE).delete(id);
+      tx.objectStore(FILES_STORE).delete(id);
+      tx.objectStore(PDF_TEXT_STORE).delete(id);
+      // Orphaned highlights for a deleted book are meaningless - clean them up
+      // via the bookId index rather than leaking them in IndexedDB forever.
+      const cursorRequest = highlightsIndex.openCursor(IDBKeyRange.only(id));
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+    }
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });

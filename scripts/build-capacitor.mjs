@@ -1,4 +1,4 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, renameSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -12,6 +12,13 @@ import { spawnSync } from "node:child_process";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const apiDir = `${root}/src/app/api`;
 const apiBackup = `${root}/.capacitor-api-backup`;
+const outDir = `${root}/out`;
+// The release APK lives in /public so the website can offer it as a direct
+// download. /public is copied wholesale into the static export, and the export
+// is what gets bundled into the APK - so left alone, every build packs the
+// PREVIOUS APK inside the new one. It compounded unnoticed across four builds
+// this way: 6MB, 12MB, 17MB, 23.7MB, each one carrying its ancestors.
+const bundledApk = "flowrecall-release.apk";
 
 if (existsSync(apiBackup)) {
   throw new Error(
@@ -43,6 +50,10 @@ try {
   });
   if (assets.status !== 0) throw new Error("Failed to prepare PDF assets");
 
+  // next build does not clear the export directory, so chunks from earlier
+  // builds survive in it and can still be referenced. Start from nothing.
+  rmSync(outDir, { recursive: true, force: true });
+
   const build = spawnSync("npx", ["next", "build"], {
     stdio: "inherit",
     env: { ...process.env, BUILD_TARGET: "capacitor" },
@@ -53,6 +64,16 @@ try {
 }
 
 if (exitCode !== 0) process.exit(exitCode);
+
+// Drop the previous release APK before cap sync copies the export into the
+// Android project. The web deploy still serves it from /public; only the phone
+// has no use for a copy of the app inside the app.
+const exportedApk = `${outDir}/${bundledApk}`;
+if (existsSync(exportedApk)) {
+  const megabytes = (statSync(exportedApk).size / 1024 / 1024).toFixed(1);
+  rmSync(exportedApk);
+  console.log(`Excluded ${bundledApk} (${megabytes} MB) from the Android bundle`);
+}
 
 const sync = spawnSync("npx", ["cap", "sync", "android"], { stdio: "inherit" });
 process.exit(sync.status ?? 0);

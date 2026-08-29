@@ -4,6 +4,25 @@
 
 ---
 
+## 🔴 START HERE — 2026-08-30 (build): the release APK was shipping copies of itself
+
+Found while checking what a `git push` would carry: `public/flowrecall-release.apk` had grown **6MB -> 12MB ->
+17MB -> 23.7MB** across four builds, each one carrying its ancestors.
+
+The cause is a loop nobody noticed. The APK lives in `/public` so the website can offer it as a direct download.
+`/public` is copied wholesale into the static export, and **the export is what gets bundled into the APK** - so
+every build packed the previous APK inside the new one, and the next build packed that.
+
+`scripts/build-capacitor.mjs` now deletes `out/flowrecall-release.apk` after the export and before `cap sync`,
+printing what it excluded, and clears `out/` before the export (next build does not, so chunks from earlier
+builds were surviving in it - that also produced a wrong measurement earlier this session). The web deploy still
+serves the download from `/public`; only the phone has no use for a copy of the app inside the app.
+
+**Result: 23.7 MB -> 6.3 MB**, Android assets 25 MB -> 7.5 MB, and `unzip -l` finds zero copies of the APK inside
+itself. Installed and launched on the device. Worth re-checking after any change to what lives in `/public`.
+
+---
+
 ## 🔴 START HERE — 2026-08-30 (last): the selection bar was 64px off the bottom of the screen
 
 User-reported, on their own phone: the delete panel "exceeds the screen". It did, and the cause is worth

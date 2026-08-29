@@ -8,6 +8,7 @@ import {
   getBookMeta,
   getPdfText,
   listHighlights,
+  remapHighlightParagraphs,
   savePdfText,
   updateHighlightNote,
   updateReadingPosition,
@@ -17,7 +18,7 @@ import { anchorFromRect, type SelectionAnchor } from "./selection";
 import { useNativeSelection } from "./useNativeSelection";
 import DefinitionPopover from "./DefinitionPopover";
 import SelectionHighlight from "./SelectionHighlight";
-import ReaderChrome, { ReaderErrorState } from "./ReaderChrome";
+import ReaderChrome, { ReaderErrorState, type ReaderStateIcon } from "./ReaderChrome";
 import DisplaySettingsMenu from "./DisplaySettingsMenu";
 import {
   type TextReadingAnchor,
@@ -35,14 +36,40 @@ import {
 } from "@/lib/readerPreferences";
 import { TextReaderCore, type TextReaderCoreRef } from "./TextReaderCore";
 import {
-  extractPdfParagraphsStreaming,
-  extractPdfToc,
+  assessPdfText,
+  blankFilterRemap,
+  isBlankParagraph,
   PDF_EXTRACT_VERSION,
   type PdfTocEntry,
+  type TextlessPdf,
 } from "@/lib/pdfTextExtract";
-import type { PDFDocumentLoadingTask } from "pdfjs-dist";
+import { startPdfExtraction } from "@/lib/pdfExtractClient";
+import type { PdfExtractFailure } from "@/lib/pdfTextExtract";
+import type { PdfTextRecord } from "@/lib/readerStorage";
 
 type LoadState = "loading" | "ready" | "error";
+
+/** Copy for every way opening a PDF can fail. Each one names what happened and,
+ * where there is one, what the reader can do about it. */
+const FAILURE_COPY: Record<PdfExtractFailure["reason"], { title: string; message: string; icon: ReaderStateIcon }> = {
+  password: {
+    title: "This PDF is locked",
+    message:
+      "It is password-protected, so its text can't be read. Remove the password in any PDF tool and add it to your library again.",
+    icon: "lock",
+  },
+  invalid: {
+    title: "This file is damaged",
+    message:
+      "The PDF's internal structure is broken, so there is nothing to read. Re-downloading it usually fixes this.",
+    icon: "file",
+  },
+  unknown: {
+    title: "Couldn't open this PDF",
+    message: "Something went wrong reading the file, so its text couldn't be extracted.",
+    icon: "file",
+  },
+};
 
 function PdfChaptersMenu({
   items,
@@ -138,10 +165,19 @@ function PdfChaptersMenu({
 
 export default function PdfReaderView({ bookId, onExit }: { bookId: string; onExit: () => void }) {
   const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [errorMessage, setErrorMessage] = useState("");
+  const [failure, setFailure] = useState<{ title: string; message: string; icon: ReaderStateIcon } | null>(null);
+  // Set once extraction has finished and produced too little to read. The
+  // override is the reader taking the "open anyway" escape hatch.
+  const [textless, setTextless] = useState<TextlessPdf | null>(null);
+  const [openedAnyway, setOpenedAnyway] = useState(false);
   const [title, setTitle] = useState("");
   
   const [paragraphs, setParagraphs] = useState<string[]>([]);
+  // 1-based PDF page -> first paragraph on it. Drives the reader's page counter
+  // and progress, so both describe the book rather than the columns of whatever
+  // slice of it is currently in the DOM.
+  const [pageMap, setPageMap] = useState<Record<number, number>>({});
+  const [pageCount, setPageCount] = useState<number | undefined>(undefined);
   const [tocItems, setTocItems] = useState<PdfTocEntry[]>([]);
 
   const [highlights, setHighlights] = useState<HighlightRecord[]>([]);
@@ -184,9 +220,13 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
   // the file and PDF_EXTRACT_VERSION, so it only ever has to happen once per
   // book. Before this, a 444-page PDF re-read every page on every single open -
   // over a minute of blank spinner, every time.
+  //
+  // Tiers 2 and 3 run entirely inside a worker (see lib/pdfExtractClient), so
+  // even that once-per-book cost never lands on the UI thread: this component
+  // only ever receives finished paragraphs.
   useEffect(() => {
     let cancelled = false;
-    let loadingTask: PDFDocumentLoadingTask | null = null;
+    let cancelExtraction: (() => void) | null = null;
 
     async function setup() {
       const [file, meta, savedHighlights] = await Promise.all([
@@ -196,7 +236,12 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
       ]);
       if (cancelled) return;
       if (!file) {
-        setErrorMessage("This document is missing from your library - it may have been removed.");
+        setFailure({
+          title: "This document is missing",
+          message:
+            "It is no longer in your library — it may have been removed from this device. Add the file again to keep reading.",
+          icon: "file",
+        });
         setLoadState("error");
         return;
       }
@@ -207,14 +252,12 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
 
         // Parse the saved position first: it decides how much of the book has
         // to exist before opening is useful (see resumeParagraphIndex below).
-        let resumeParagraphIndex = 0;
+        let resumeParagraphIndex: number | null = null;
         if (meta?.lastPosition) {
           try {
             const parsed = JSON.parse(meta.lastPosition);
             if (typeof parsed.paragraphIndex === "number") {
               resumeParagraphIndex = parsed.paragraphIndex;
-              setInitialAnchor({ paragraphIndex: parsed.paragraphIndex });
-              setInitialFraction(0);
             }
           } catch {
             const parsedPosition = parseTextReadingPosition(meta.lastPosition);
@@ -222,81 +265,131 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
           }
         }
 
-        const cached = await getPdfText(bookId, PDF_EXTRACT_VERSION);
+        let record = await getPdfText(bookId);
         if (cancelled) return;
-        if (cached) {
-          setParagraphs(cached.paragraphs);
-          setTocItems((cached.toc as PdfTocEntry[] | undefined) ?? []);
+
+        // v2 of the extractor drops paragraphs that decode to nothing but
+        // whitespace. The survivors are byte-identical to what v1 stored, so a v1
+        // record is filtered in place rather than thrown away - re-extracting a
+        // 444-page book costs ~15s on a phone - and every index stored against
+        // the old numbering moves with it.
+        if (record && record.version === 1) {
+          const remap = blankFilterRemap(record.paragraphs);
+          const paragraphs = record.paragraphs.filter((p) => !isBlankParagraph(p));
+          const pageToParagraphIndex: Record<number, number> = {};
+          for (const [page, index] of Object.entries(record.pageToParagraphIndex)) {
+            const moved = remap(index);
+            if (moved < paragraphs.length) pageToParagraphIndex[Number(page)] = moved;
+          }
+          const toc = (record.toc as PdfTocEntry[] | undefined)?.map((entry) => ({
+            ...entry,
+            paragraphIndex: remap(entry.paragraphIndex),
+          }));
+
+          record = { ...record, version: PDF_EXTRACT_VERSION, paragraphs, pageToParagraphIndex, toc };
+          await savePdfText(record);
+          if (resumeParagraphIndex !== null) {
+            resumeParagraphIndex = remap(resumeParagraphIndex);
+            // Persisted, not just used for this open: the stored position is in
+            // v1 numbering, and once the record is v2 nothing would remap it
+            // again - so a reader who backs out without turning a page would
+            // come back to an index three times too deep. Progress is a fraction
+            // of the book and so survives renumbering untouched.
+            await updateReadingPosition(
+              bookId,
+              JSON.stringify({ paragraphIndex: resumeParagraphIndex } satisfies TextReadingAnchor),
+              meta?.progress ?? 0,
+            );
+          }
+          const movedHighlights = await remapHighlightParagraphs(bookId, remap);
+          if (cancelled) return;
+          setHighlights(movedHighlights);
+        }
+
+        if (resumeParagraphIndex !== null) {
+          setInitialAnchor({ paragraphIndex: resumeParagraphIndex });
+          setInitialFraction(0);
+        }
+
+        if (record && record.version === PDF_EXTRACT_VERSION) {
+          setParagraphs(record.paragraphs);
+          setPageMap(record.pageToParagraphIndex);
+          setPageCount(record.pageCount);
+          setTocItems((record.toc as PdfTocEntry[] | undefined) ?? []);
+          // A scan caches as an empty record rather than re-running a fruitless
+          // 15-second extraction on every open, so this verdict is reached from
+          // the cache too.
+          setTextless(assessPdfText(record.paragraphs, record.pageCount));
           setLoadState("ready");
           return;
         }
 
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-
-        const buffer = await file.arrayBuffer();
-        if (cancelled) return;
-
-        loadingTask = pdfjs.getDocument({
-          data: buffer,
-          // Both directories ship to /public alongside the worker (see
-          // scripts/copy-pdf-worker.mjs). Without them, CID-keyed and
-          // non-embedded-font PDFs extract as mojibake, which is what a
-          // long-press would then hand to /api/define.
-          cMapUrl: "/cmaps/",
-          cMapPacked: true,
-          standardFontDataUrl: "/standard_fonts/",
-        });
-        const docProxy = await loadingTask.promise;
-        if (cancelled) return;
-
+        // Accumulated separately from React state because the cache entry needs
+        // the whole book in one piece, and a state updater can't be read back.
+        const allParagraphs: string[] = [];
+        const allPageIndex: Record<number, number> = {};
+        let cacheRecord: PdfTextRecord | null = null;
         let opened = false;
-        let extracted = 0;
+        const resumeAt = resumeParagraphIndex ?? 0;
 
-        const result = await extractPdfParagraphsStreaming(docProxy, (batch) => {
-          if (cancelled) return;
-          extracted += batch.paragraphs.length;
-          setParagraphs((prev) => [...prev, ...batch.paragraphs]);
-          setExtractProgress(batch.done ? null : { pagesDone: batch.pagesDone, totalPages: batch.totalPages });
-
-          // Open as soon as there is something worth showing. With a saved
-          // position that means waiting until the paragraph they left off at
-          // actually exists - opening earlier would land them on a blank
-          // virtualization window. A book with no saved position (every
-          // first-ever open) shows the first batch immediately.
-          if (!opened && (batch.done || extracted > resumeParagraphIndex)) {
-            opened = true;
-            setLoadState("ready");
-          }
-        });
-        if (cancelled) return;
-
-        // Written once the whole book is in hand, so a cache entry is never a
-        // partial book - a cancelled open (reader backs out mid-extraction)
-        // simply leaves no cache and re-streams next time.
-        const record = {
-          bookId,
-          version: PDF_EXTRACT_VERSION,
-          paragraphs: result.paragraphs,
-          pageToParagraphIndex: result.pageToParagraphIndex,
-          createdAt: Date.now(),
-        };
-        await savePdfText(record);
-
-        // Chapters are a nicety, not a prerequisite for reading - extract them
-        // after the text is up, then fold them into the same cache entry so the
-        // next open has them without re-scanning.
-        extractPdfToc(docProxy, result.pageToParagraphIndex)
-          .then(async (realToc) => {
+        cancelExtraction = startPdfExtraction(file, {
+          onBatch: (batch) => {
             if (cancelled) return;
-            setTocItems(realToc);
-            await savePdfText({ ...record, toc: realToc });
-          })
-          .catch((err) => console.warn("Background TOC extract warning:", err));
+            allParagraphs.push(...batch.paragraphs);
+            Object.assign(allPageIndex, batch.pageToParagraphIndex);
+            setParagraphs([...allParagraphs]);
+            setPageMap({ ...allPageIndex });
+            setPageCount(batch.totalPages);
+            setExtractProgress(batch.done ? null : { pagesDone: batch.pagesDone, totalPages: batch.totalPages });
+
+            // Open as soon as there is something worth showing. With a saved
+            // position that means waiting until the paragraph they left off at
+            // actually exists - opening earlier would land them on a blank
+            // virtualization window. A book with no saved position (every
+            // first-ever open) shows the first batch immediately.
+            if (!opened && (batch.done || allParagraphs.length > resumeAt)) {
+              opened = true;
+              setLoadState("ready");
+            }
+
+            // Written once the whole book is in hand, so a cache entry is never
+            // a partial book - a cancelled open (reader backs out
+            // mid-extraction) simply leaves no cache and re-extracts next time.
+            if (batch.done) {
+              setTextless(assessPdfText(allParagraphs, batch.totalPages));
+              cacheRecord = {
+                bookId,
+                version: PDF_EXTRACT_VERSION,
+                paragraphs: allParagraphs,
+                pageToParagraphIndex: allPageIndex,
+                pageCount: batch.totalPages,
+                createdAt: Date.now(),
+              };
+              void savePdfText(cacheRecord);
+            }
+          },
+          // Chapters arrive behind the text and fold into the same cache entry,
+          // so the next open has them without re-scanning.
+          onToc: (toc) => {
+            if (cancelled) return;
+            setTocItems(toc);
+            if (cacheRecord) void savePdfText({ ...cacheRecord, toc });
+          },
+          onError: (extractFailure) => {
+            console.error("Failed to extract PDF text", extractFailure);
+            if (cancelled) return;
+            // Whatever pages made it are still readable; just stop claiming
+            // more are coming.
+            setExtractProgress(null);
+            if (opened) return;
+            setFailure(FAILURE_COPY[extractFailure.reason]);
+            setLoadState("error");
+          },
+        });
       } catch (err) {
         console.error("Failed to open PDF", err);
         if (!cancelled) {
-          setErrorMessage("Couldn't open that document - the file may be corrupted.");
+          setFailure(FAILURE_COPY.unknown);
           setLoadState("error");
         }
       }
@@ -305,9 +398,7 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     setup();
     return () => {
       cancelled = true;
-      if (loadingTask) {
-        loadingTask.destroy();
-      }
+      cancelExtraction?.();
     };
   }, [bookId]);
 
@@ -395,8 +486,43 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     void updateReadingPosition(bookId, anchorStr, fraction);
   }, [bookId]);
 
-  if (loadState === "error") {
-    return <ReaderErrorState message={errorMessage} onExit={onExit} />;
+  if (loadState === "error" && failure) {
+    return (
+      <ReaderErrorState
+        title={failure.title}
+        message={failure.message}
+        icon={failure.icon}
+        context={title || undefined}
+        onExit={onExit}
+      />
+    );
+  }
+
+  // Extraction succeeded and there is nothing worth reading in the result. Said
+  // plainly, because the alternative - what this used to do - is an empty reader
+  // with a back button, which reads as the app being broken.
+  if (textless && !openedAnyway) {
+    if (textless.kind === "none") {
+      return (
+        <ReaderErrorState
+          title="No text in this PDF"
+          message="Every page is an image — a scan, or a photographed book — so there are no words to reflow, highlight or define. A PDF exported from a word processor or an ebook tool will work."
+          icon="scan"
+          context={title || undefined}
+          onExit={onExit}
+        />
+      );
+    }
+    return (
+      <ReaderErrorState
+        title="Almost no readable text"
+        message={`Only about ${textless.words.toLocaleString()} ${textless.words === 1 ? "word" : "words"} came out of ${textless.pages.toLocaleString()} pages, so most of this PDF is probably images rather than text. You can still open what was found.`}
+        icon="scan"
+        context={title || undefined}
+        onExit={onExit}
+        action={{ label: "Open anyway", onClick: () => setOpenedAnyway(true) }}
+      />
+    );
   }
 
   return (
@@ -465,6 +591,8 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
           ref={coreRef}
           paragraphs={paragraphs}
           highlights={highlights}
+          pageMap={pageMap}
+          pageCount={pageCount}
           fontPercent={fontPercent}
           fontFamily={fontFamily}
           layoutMode={layoutMode}

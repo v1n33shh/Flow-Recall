@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { BookMeta, HighlightRecord } from "./types";
+import type { TextHighlightPosition } from "./textReaderUtils";
 
 const DB_NAME = "flowrecall-reader";
 // v2 added the highlights store; v3 adds the PDF text cache. Bumping this is
@@ -341,6 +342,45 @@ export async function updateHighlightNote(id: string, note: string): Promise<Hig
   return updated;
 }
 
+/** Rewrites every highlight in a book through `remapParagraphIndex`, for when
+ * the paragraph array a highlight was saved against is renumbered underneath it
+ * (the v1 -> v2 blank-paragraph filter). Returns the updated records so the
+ * caller can paint them without a refetch. Character offsets are untouched: the
+ * surviving paragraphs' text is unchanged, only their positions moved. */
+export async function remapHighlightParagraphs(
+  bookId: string,
+  remapParagraphIndex: (index: number) => number,
+): Promise<HighlightRecord[]> {
+  const existing = await listHighlights(bookId);
+  const updated: HighlightRecord[] = existing.map((record) => {
+    let position: TextHighlightPosition | null = null;
+    try {
+      const parsed = JSON.parse(record.position);
+      if (typeof parsed?.paragraphIndex === "number") position = parsed;
+    } catch {
+      // An EPUB CFI or some other opaque position - nothing to renumber.
+    }
+    if (!position) return record;
+    return {
+      ...record,
+      position: JSON.stringify({ ...position, paragraphIndex: remapParagraphIndex(position.paragraphIndex) }),
+    };
+  });
+
+  const changed = updated.filter((record, i) => record.position !== existing[i].position);
+  if (changed.length === 0) return existing;
+
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(HIGHLIGHTS_STORE, "readwrite");
+    const store = tx.objectStore(HIGHLIGHTS_STORE);
+    for (const record of changed) store.put(record);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  return updated;
+}
+
 /** Reactive book list for the library grid. Unlike storage.ts's
  * useSyncExternalStore hooks (localStorage reads are synchronous),
  * IndexedDB is inherently async, so this is a plain effect-driven
@@ -390,21 +430,26 @@ export type PdfTextRecord = {
    * Serialized as a plain object because IndexedDB's structured clone handles
    * Map fine but JSON-shaped records stay easier to inspect and migrate. */
   pageToParagraphIndex: Record<number, number>;
+  /** The document's real page count, which the map above can't imply: a page
+   * whose text is empty (or entirely blank after decoding) gets no entry. Absent
+   * on records written before it was stored. */
+  pageCount?: number;
   /** Undefined until the background TOC pass finishes and re-saves the record. */
   toc?: unknown[];
   createdAt: number;
 };
 
-export async function getPdfText(bookId: string, version: number): Promise<PdfTextRecord | null> {
+/** Returns whatever is cached for this book, at whatever version it was written.
+ * The caller decides what to do with an older record - a v1 record can be
+ * upgraded in place rather than thrown away (see PdfReaderView), which is worth
+ * doing: re-extracting a 444-page book costs ~15s on a phone. */
+export async function getPdfText(bookId: string): Promise<PdfTextRecord | null> {
   const db = await openDb();
   const tx = db.transaction(PDF_TEXT_STORE, "readonly");
   const record = await requestToPromise<PdfTextRecord | undefined>(
     tx.objectStore(PDF_TEXT_STORE).get(bookId),
   );
-  // A record from an older extractor is worse than no record: it would pin the
-  // reader to text the current heuristics have already improved on.
-  if (!record || record.version !== version) return null;
-  return record;
+  return record ?? null;
 }
 
 export async function savePdfText(record: PdfTextRecord): Promise<void> {

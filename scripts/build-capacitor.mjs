@@ -34,6 +34,15 @@ process.on("SIGINT", () => {
 // called explicitly on every exit path rather than relied on via try/finally.
 let exitCode = 0;
 try {
+  // `npm run build` does this before `next build`; this script bypasses that
+  // script (it needs BUILD_TARGET set), so it has to do the same itself - the
+  // PDF extraction worker in /public is a build input, not a build output.
+  const assets = spawnSync("node", ["scripts/copy-pdf-worker.mjs"], {
+    stdio: "inherit",
+    cwd: root,
+  });
+  if (assets.status !== 0) throw new Error("Failed to prepare PDF assets");
+
   const build = spawnSync("npx", ["next", "build"], {
     stdio: "inherit",
     env: { ...process.env, BUILD_TARGET: "capacitor" },

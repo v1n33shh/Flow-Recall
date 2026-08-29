@@ -40,15 +40,30 @@ export function findTopVisibleAnchor(container: HTMLElement, mode: "paginated" |
   return null;
 }
 
+/** Which column-page the given paragraph starts on.
+ *
+ * Deliberately measured from layout (`offsetLeft`) rather than
+ * getBoundingClientRect: paginated mode moves the content with a 300ms animated
+ * `transform`, and rects report wherever the animation currently is - so a rect
+ * read during a page turn resolves to the page being left behind. offsetLeft is
+ * a layout metric, so it is stable mid-animation and unaffected by any stray
+ * horizontal scroll of the container. */
 export function locateAnchorPage(anchor: TextReadingAnchor | null, container: HTMLElement, width: number, gap: number): number {
   if (!anchor || width <= 0) return 0;
   const el = container.querySelector<HTMLElement>(`[${PARAGRAPH_INDEX_ATTR}="${anchor.paragraphIndex}"]`);
-  if (!el) return 0;
-  const containerRect = container.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-  const absoluteLeft = container.scrollLeft + (elRect.left - containerRect.left);
+  const content = el?.parentElement;
+  if (!el || !content) return 0;
+  return paragraphColumnPage(el, content, width, gap);
+}
+
+/** Column-page of one already-located paragraph element, relative to the
+ * multi-column content element it lives in. See locateAnchorPage on why this is
+ * offset-based. */
+export function paragraphColumnPage(el: HTMLElement, content: HTMLElement, width: number, gap: number): number {
   const stride = width + gap;
-  return Math.max(0, Math.round(absoluteLeft / stride));
+  if (stride <= 0) return 0;
+  // Sub-pixel column positions round the wrong way without the epsilon.
+  return Math.max(0, Math.floor((el.offsetLeft - content.offsetLeft + 1) / stride));
 }
 
 export type TextHighlightPosition = { paragraphIndex: number; start: number; end: number };

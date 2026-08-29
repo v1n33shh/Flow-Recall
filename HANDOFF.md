@@ -4,6 +4,274 @@
 
 ---
 
+## 🔴 START HERE — 2026-08-29 (last): the cipher decoder no longer leaves paragraphs in cipher
+
+The session below wrote `pdfLanguageSafety.test.ts` to find out whether the Type3 cipher decoder corrupts
+non-English books. Answer: **it does not** - all eight languages (German, Spanish, French, Italian, Portuguese,
+Dutch, Polish, Turkish), a mixed-language document, and English headings/number tables/formulas all come back
+untouched. The `judgeShift` vowel gate written that session is what holds that line, and it still does.
+
+What the sweep did catch was two bugs in the other direction - a *ciphered* paragraph left un-rescued among
+legible ones, which on a real book reads as a page of garbage mid-chapter. Both are fixed, and the sweep now
+recovers the plaintext at **all 40 shifts** (it was 38, and before these fixes, 25).
+
+### 1. A letter was destroyed before the decoder could see it (`pageParagraphs`)
+
+`current.join(" ").replace(/\s+/g, " ")` ran *before* decoding, and JavaScript's `\s` includes Unicode spaces.
+A cipher shift can land a letter exactly on one: at shift 39 every `y` becomes U+00A0, so `only` collapsed to
+`onl `, irreversibly, and the paragraph came out as neither plaintext nor cipher - the one outcome the test calls
+"a third thing". Pre-decode normalization is now ASCII blanks only (`collapseAsciiBlanks`); everything else is
+collapsed by `finishParagraph` after the shift is resolved, so legible text with a non-breaking space still ends
+up exactly as it did before.
+
+### 2. A rejected guess ended the matter (`decodeBatch`)
+
+When `detectCipherShift` guessed wrong, `judgeShift` rejected the guess and the paragraph was returned raw - even
+in a book whose real shift was already known by majority vote. At shift 16 that left paragraphs 0 and 2 of the
+sweep sitting in cipher. A rejected own-shift now falls through to the document's voted shift, which has to earn
+the paragraph on its own evidence, so a genuinely legible paragraph (the other reason a shift gets rejected)
+still stays untouched.
+
+Two evidence problems had to be solved for that fall-through to work at all, and they are the interesting part:
+
+- **The vowel test can be satisfied by accident.** At shift 16 the English vowels map onto `u` and `y`, which
+  `VOWEL` counts as vowels - so ciphered prose scored *more* legible than its own plaintext. Control characters
+  settle it instead: `decryptText` strips them, no legible text in any language contains them, and a Type3 cipher
+  produces them the moment a shift pushes a letter past 127. `CONTROL_CHARS` in the raw now means "nothing
+  legible here to protect", whatever the vowel ratio says.
+- **At small shifts there are no control characters either.** Shift-1 English (`"uif nbtufs tbje"`) keeps a vowel
+  in nearly every word, so the vowel test reads it as fine prose. `letterProfileScore` decides those: mean letter
+  frequency against a Latin-script table, which a shift wrecks by construction (every `e` becomes an `f`).
+  Undoing a real shift gains 1.5-3 points; shifting legible prose loses ground. This is leaned on **only** when
+  `state.carried` is non-zero - i.e. a majority of paragraphs were already demonstrably rescued by that shift,
+  which a legible book of any language never manages, so it cannot become a back door into the language guard.
+
+### Verified
+
+- **50 tests pass** (12 in `pdfLanguageSafety.test.ts`, 15 in `pdfTextExtract.test.ts`). `tsc --noEmit` clean,
+  lint unchanged at 0 errors / 46 pre-existing warnings.
+- **A real 476-page book off disk** (`~/Downloads/The 48 Laws Of Power`, normal fonts): 1867 paragraphs,
+  1373391 characters, 26.8% common English words, zero control characters - and **identical** before and after
+  both fixes, which is the point. Nothing in a normal PDF's path changed.
+- `public/pdfExtract.worker.js` rebuilt from the changed source (it is a build output - see the note below).
+
+### Not verified, and it should be
+
+None of this has been on the device or against the user's own Osho/chess books this session - the fixes are
+covered by the synthetic sweep and one real non-Type3 book. The Osho book is the one that actually exercises the
+Type3 path, and the numbers to reproduce are in the session below: **443 paragraphs, 1254141 characters, 444
+pages, 0 blanks**. `public/flowrecall-release.apk` is **still stale**, and the release APK under
+`android/app/build/outputs/apk/release/` predates these fixes - rebuild before any upload.
+
+---
+
+## 🔴 START HERE — 2026-08-29 (guard rails): PDFs the reader can't read
+
+Not new capability - the point is that a PDF the reader *can't* handle must never look like a broken app. Before
+this, a scan opened as reader chrome with a blank page and no message, and a password-protected file was
+reported as "corrupted", which sends someone off deleting a good book.
+
+- `ReaderErrorState` (in `ReaderChrome.tsx`) is now a designed full-bleed state - `fixed inset-0` like the reader
+  it replaces, since it used to strand itself mid-layout in the library page. Optional icon (three monochrome
+  glyphs: `scan`/`lock`/`file`), a `context` line naming the book, a title, the explanation, and an optional
+  secondary `action`. When there is no action, "Back to library" is the filled primary rather than a footnote.
+  The other three callers (EPUB, text, missing-book) pass `message` only and inherit the new shell for free.
+- `classifyPdfError` in `pdfTextExtract.ts` turns pdf.js's named exceptions into a `reason`
+  (`password`/`invalid`/`unknown`) that survives the worker boundary, and `FAILURE_COPY` in `PdfReaderView` maps
+  each to copy that says what happened and what to do about it.
+- `assessPdfText` decides whether an extraction is worth reading: **none** (no paragraphs at all - a scan) or
+  **sparse** (text exists but under `SPARSE_CHARS_PER_PAGE = 100` characters a page, over at least 5 pages).
+  Sparse is a heuristic, so it is never a dead end: it offers **"Open anyway"**. The threshold has a wide margin
+  - the sparsest real book on hand (the chess collection, nearly all move notation) runs at ~860 chars/page, 8.6x
+  above the line. An empty extraction is still cached, so a 400-page scan reaches the verdict instantly on
+  reopen instead of re-running a fruitless 15-second extraction.
+- While verifying: `paragraphAtColumnPage` was naming the *last* paragraph starting on a column, so a screen
+  showing several book pages at once reported the bottom one ("Page 6 of 6" on opening a 6-page document). It now
+  takes the first paragraph that starts on the page, falling back to one spilling in from earlier. Reads
+  "Page 1 of 6" now, and the Osho/chess counters are unchanged.
+
+### Verified on the device, with fixtures built for it
+
+`convert` (image-only, 6 pages) for a scan, `gs -sUserPassword=` for a locked PDF, and a 6-page Ghostscript text
+PDF carrying one page number per page for the sparse case. Injected straight into IndexedDB over CDP (the native
+file picker is not scriptable), then **deleted again** - library back to its original 7 books, 1 highlight, 5
+cached texts.
+
+| fixture | result |
+|---|---|
+| image-only PDF | "No text in this PDF", scan icon, book title above it, single primary action |
+| password-protected | "This PDF is locked" + how to fix it - not "corrupted" |
+| ~5 words over 6 pages | "Almost no readable text", **Open anyway** works and opens at "Page 1 of 6" |
+| Osho (443pp) | unaffected: Page 393 of 444, bar 0.8849 = 392/443, no blanks |
+| Chess (1180pp) | unaffected: Page 80 of 1180, bar 0.0670 = 79/1179 |
+
+38 tests pass (15 in `pdfTextExtract.test.ts`, covering `assessPdfText` thresholds and `classifyPdfError`).
+
+### What this does NOT fix - read before shipping
+
+Still true, and all of it silent to the user: **two-column PDFs interleave their columns** (verified: the chess
+book's `"1463 1...QXa2+1489 1.Re6"` is two separate columns merged), figures/tables/equations are dropped
+entirely, and **non-English PDFs are an untested corruption risk** - `detectCipherShift` short-circuits on a high
+letter ratio *plus* English function words, so a German or Hindi PDF falls through to trigram matching against
+English targets and could apply a shift to text that was already fine. That is the one failure mode that makes
+good input worse; it needs a real non-English PDF before anyone claims otherwise. Coverage so far is two real
+books plus three fixtures, on one device (Android 11, WebView 150), one screen size.
+
+---
+
+## 🔴 START HERE — 2026-08-29 (later): the three post-extraction reader bugs, fixed and measured
+
+Follows directly from the defect list in the session below. All three are fixed, plus two problems the fixes
+themselves exposed. Every number here is from the physical device (OPPO CPH2001) against the user's own books.
+
+### 1. Blank paragraphs are gone (`pdfTextExtract.ts`)
+
+`extractPdfParagraphsStreaming` now drops paragraphs that are whitespace-only *after* decoding, and rebuilds
+`pageToParagraphIndex` against the filtered array (a page whose own first paragraph was dropped points at the
+next surviving one; a page that survived nothing gets no entry at all). The Osho book went **1328 paragraphs ->
+443, 885 blanks -> 0**, with 8 unit tests in `pdfTextExtract.test.ts` covering the index arithmetic.
+
+`PDF_EXTRACT_VERSION` is 2. A v1 record is **not** re-extracted: the surviving paragraphs are byte-identical, so
+`PdfReaderView` filters the cached array in place, remaps `pageToParagraphIndex` and the TOC anchors through
+`blankFilterRemap`, and moves the saved reading position and every highlight with it - then persists the moved
+position, because nothing would remap it on a later open. Verified on the user's real highlight: paragraph
+**312 -> 104**, character offsets untouched, same words. Cross-checked by then cold-extracting a different copy
+of the same PDF: 443 paragraphs / 1254141 chars, **identical** to the upgraded record.
+
+### 2. Window slides no longer skip text (`TextReaderCore.tsx`)
+
+`goToNextPage`/`goToPrevPage` used to just move `activeFocusIndex` by 15, leaving the re-pagination effect to
+fall back to the *old* window's page index - which is different content once `windowStart` has moved.
+`shiftWindow` now captures the paragraph the reader is looking at, re-centres the window on it (so it is
+guaranteed to still be rendered), and carries a `pendingPageDeltaRef` of +/-1 so the turn that caused the slide
+advances exactly one page in the new window's coordinates. The slide also renumbers every column, so the
+`transform` transition is dropped for that one frame (`instantJump`) - otherwise the reader whooshes through
+dozens of pages. Measured across a slide: page 392 -> 393 with the same paragraph still at the top.
+
+### 3. The page counter is the book's own, and the bar agrees (`TextReaderCore.tsx`, `textReaderUtils.tsx`)
+
+- New optional `pageMap` / `pageCount` props (PDFs pass `pageToParagraphIndex` and the real page count, now
+  stored on the cache record). A binary search over the page table turns the current paragraph into a real page
+  number; `progressFor` derives the bar from that same page, so the two cannot disagree - measured exact at
+  every sample, e.g. page 384/444 -> bar 0.8646 = 383/443.
+- `getPageInfo` measures the **content element's** `scrollWidth`, not the scroll container's. Paging translates
+  that element, and a transform shrinks the container's scrollable overflow - which is what made the total count
+  *down* ("Page 1 of 34" ... "Page 18 of 18"). This fixes the plain-text reader's counter too, which had the
+  same bug with no page map to lean on.
+- `locateAnchorPage` is now layout-based (`offsetLeft`) rather than rect-based. Rects report wherever the 300ms
+  page-turn animation currently is, so a read during a turn resolved to the page being left behind.
+- Reporting is centralised in `reportPosition`, so the counter, the bar and the saved position all come from one
+  paragraph index.
+
+Measured: **"Page 384 of 444"**, constant total, monotonic across 34 consecutive turns and across a window
+slide. Chess PDF: "Page 63 of 1180", also stable. A pasted note with a single paragraph has no paragraph-level
+progress, so the bar falls back to the column fraction (0 -> 1 across its 3 pages).
+
+### The regression fix 1 caused, and the window budget
+
+Removing the blanks **tripled the text in every virtualization window** (they were two thirds of it), so CSS
+multi-column had 154k characters and 227 columns to fragment: a **3.9 second** main-thread stall on warm open.
+The window is now sized by characters, not paragraph count (`WINDOW_TARGET_CHARS = 45000`, capped at 50
+paragraphs), because paragraph size varies ~50x between these two books:
+
+| | window | stall on warm open |
+|---|---|---|
+| Osho, 50-paragraph window | 154k chars, 227 cols | 3863 ms |
+| Osho, character-budgeted | 45.6k chars, 67 cols (15 paragraphs) | **378 ms** |
+| Chess (unchanged by the budget) | 14.2k chars, 34 cols | 56 ms |
+
+Warm open of the Osho book is **84-131 ms** tap to text (was 113 ms, on 3x less data). Cold extraction is
+unchanged: first paragraphs 1.97 s, whole 444-page book ~15 s in the worker, worst stall 300 ms.
+
+### Still open from the list below
+
+Legacy `{"page":11,"scale":0.85}` positions from the old canvas reader (two Osho copies still resume at the
+start), TOC coverage/garbled titles, the missing `wasmUrl`, and two-column PDFs interleaving. `public/flowrecall-release.apk` is still stale.
+
+---
+
+## 🔴 START HERE — 2026-08-29: PDF extraction moved off the UI thread, then measured on the real device
+
+The three cheaper PDF performance fixes (IndexedDB text cache, deferred TOC, gating paginated paint on
+`containerWidth > 0`) landed in `ecb246d`. This session closed the last one: **extraction no longer runs on the
+UI thread at all.**
+
+### What changed
+
+- `src/workers/pdfExtract.worker.ts` (new) owns the whole document - `getDocument`, streaming extraction, then
+  the TOC scan - and posts finished paragraphs back. `src/lib/pdfExtractClient.ts` (new) spawns it, adapts its
+  messages to callbacks, and falls back to main-thread extraction if a module worker can't be created.
+- `PdfReaderView.tsx` drives that client instead of pdf.js directly. Extraction heuristics
+  (`detectCipherShift`, `pageParagraphs`, `decodeBatch`) are untouched - they just execute elsewhere.
+- **Turbopack does not bundle workers.** `new Worker(new URL("./x.ts", import.meta.url))` is emitted as a raw
+  `.ts` static asset, which the browser can't parse - it silently fell back to the main thread. So
+  `scripts/copy-pdf-worker.mjs` now esbuild-bundles the worker to `public/pdfExtract.worker.js` (wired into
+  `dev`, `build`, `build:apk`, `postinstall`; `esbuild` pinned in devDependencies). Treat that file as a build
+  output.
+- pdf.js, running inside our worker, cannot spawn its *own* nested worker ("Setting up fake worker") and also
+  installs its own `self.onmessage` and greets the page in its own protocol. Hence `addEventListener` in the
+  worker and "ignore unknown message types" in the client - without the latter, that stray message tore down
+  extraction on page one.
+- `capacitor.config.ts` gained `android.webContentsDebuggingEnabled: process.env.DEVTOOLS === '1'` (default
+  **off**). `DEVTOOLS=1 npm run build:apk` makes a *release* build inspectable on-device, which is the only way
+  to see console output or run timings in the real WebView without installing a debug build (that would wipe
+  the user's library). Everything below was measured that way: `adb forward tcp:9222
+  localabstract:webview_devtools_remote_<pid>` then Playwright's `chromium.connectOverCDP`.
+
+### Measured on the physical device (OPPO CPH2001, Android 11, WebView 150)
+
+| | before | now |
+|---|---|---|
+| warm open (cached text, 443pp) | - | **113 ms** touch → first paragraphs painted |
+| cold open, first paragraphs | ~1 min blank | **1.9 s** (12-page first batch) |
+| cold open, whole 444-page book | 60 s+, UI frozen | **~15 s**, in the worker |
+| worst main-thread stall during extraction | seconds | **84 ms** |
+
+`workers seen: ["https://localhost/pdfExtract.worker.js"]` - the worker path is real on-device, not the
+fallback. Re-extracting the Osho book produced a cache record **identical** to the pre-worker one (1328
+paragraphs, 1255026 chars, 443 pages), so relocating the pipeline changed no output.
+
+### Extraction-quality defects found on the user's real books (NOT yet fixed)
+
+These are the next thing to work on. All measured from the on-device cache, not inferred.
+
+1. **66.6% of the Osho book's paragraphs are blank** - 885 of 1328 contain nothing but a single space, and they
+   render as real `<p class="mb-6">` nodes (26 of 40 in the window, ~1430px of dead space). Root cause is
+   visible in the console: dozens of `Type3 font resource "G4F" is not available` warnings. Those glyphs decode
+   to nothing, and `decodeBatch` never drops a paragraph that is blank *after* decoding. Fix is a filter on
+   decoded output - no change to `detectCipherShift` needed.
+2. **Paragraph splitting under-detects on the same book** - the real paragraphs come out at 2600-3000 chars
+   (one per page, 633px tall). `pageParagraphs` splits on a vertical gap > 1.5x line height, and with Type3
+   metrics missing the heights are wrong, so a whole page merges. Combined with (1): 26 tap-to-turns advanced
+   the reader from paragraph 0 to 19. The book is ~1700 taps long.
+3. **"Page X of Y" is doubly wrong.** `getPageInfo()` measures `scrollWidth` of the ~50-paragraph virtual
+   window, so the total is window-local; and because paging uses `transform: translate3d` (not `scrollLeft`),
+   `scrollWidth` *shrinks* as you advance. Observed live: "Page 1 of 34" → "Page 3 of 33" → ... → "Page 18 of
+   18", then "Page 18 of 37" when the window grew. The real page map (`pageToParagraphIndex`) is cached and
+   used only for TOC anchors - invert it and derive a truthful page number from the paragraph index.
+4. **TOC coverage is ~12%** - 4 entries for a 443-page book with 16+ chapters, and 2 of the 4 are body-text
+   lines, not chapters ("part of the court mannerism, that ..."). The text scan's regex can't match ciphered
+   lines because `decodeBatch`'s voted document shift is never shared with `extractPdfToc`; short bookmark
+   titles fail `detectCipherShift` on their own (the chess book's TOC contains a literal `JIO@ION`).
+5. **Two Osho copies carry legacy `{"page":11,"scale":0.85}` positions** from the old canvas reader.
+   `parseTextReadingPosition` finds no `paragraphIndex`, `parseScrollFraction` gets NaN → 0, so those books
+   silently resume at the start. `pageToParagraphIndex` could migrate them.
+6. **pdf.js wants a `wasmUrl` we don't ship** - `#instantiateWasm: Ensure that the wasmUrl API parameter is
+   provided` and `Failed to resolve module specifier 'nulljbig2_nowasm_fallback.js'`. Harmless for text today;
+   it blocks JBIG2/JPX image decoding, which matters the moment figures get rendered. Copy `pdfjs-dist/wasm/`
+   in the same script and pass `wasmUrl`.
+7. **The chess book's diagrams are figurine-font text**, not images - paragraph 1 is
+   `"rmblkans opopopop 0Z0Z0Z0Z ..."`. And its move columns interleave (`"1463 1...QXa2+1489 1.Re6"` is two
+   separate columns) because `pageParagraphs` merges anything sharing a baseline within 2pt. Any 2-column PDF
+   has this problem.
+
+Verified working on-device this session: warm/cold open, tap-to-turn, TOC jump (`jumpToAnchor` lands exactly on
+the entry's paragraph), long-press → selection → Define/Highlight/Copy popover.
+
+`public/flowrecall-release.apk` is **stale** - it predates the worker work. Rebuild before any upload.
+
+---
+
 ## 🔴 START HERE — 2026-08-23: Level 2 cloze rebuilt, full audit, Play Store release-ready
 
 Long single session driven entirely by live user feedback on the Level 2 "fill in the blank" cloze challenge, each round found via the user actually using the feature and reporting what felt wrong - not pre-planned. Ended up touching grading correctness, a color-system gap, dead code, database migration history, and (for the first time) automated tests. Everything below was type-checked, linted, built, and verified live (on the physical Android device for anything UI-visible, against the real production database for anything DB-related) before committing.
@@ -329,11 +597,16 @@ src/lib/
   conceptSchema.ts          zod schema describing the concept-generation output, shared by the ingest route
 
 scripts/
-  copy-pdf-worker.mjs       postinstall: copies pdfjs-dist's worker build into public/, version-matched automatically
+  copy-pdf-worker.mjs       postinstall/predev/prebuild: copies pdfjs-dist's worker build into public/, version-matched
+                            automatically, and esbuild-bundles src/workers/pdfExtract.worker.ts to public/ as well
+                            (Turbopack emits `new Worker(new URL("./x.ts", ...))` as a raw .ts asset, so Next can't
+                            build that worker itself)
 
 public/
   pdf.worker.min.mjs        vendored pdf.js worker (regenerated by the postinstall script, don't hand-edit; excluded
                             from eslint in eslint.config.mjs since it's a minified third-party file, not app code)
+  pdfExtract.worker.js      our PDF text-extraction worker, built from src/workers/pdfExtract.worker.ts by the same
+                            script - a build output, don't hand-edit
 ```
 
 ## Groq backend (`src/lib/ai.ts` + the two API routes)

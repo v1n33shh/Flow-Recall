@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useImperativeHandle } from "react";
+import React, { useEffect, useMemo, useRef, useState, useImperativeHandle } from "react";
 import {
   COLUMN_GAP_PX,
   PARAGRAPH_INDEX_ATTR,
@@ -8,6 +8,7 @@ import {
   parseTextHighlightPosition,
   findTopVisibleAnchor,
   locateAnchorPage,
+  paragraphColumnPage,
   renderParagraphWithHighlights,
 } from "@/lib/textReaderUtils";
 import type { HighlightRecord } from "@/lib/types";
@@ -26,6 +27,16 @@ export type TextReaderCoreProps = {
   onPaginationChange: (currentPage: number, totalPages: number) => void;
   initialAnchor: TextReadingAnchor | null;
   initialFraction: number;
+  /** 1-based source page number -> index of the first paragraph on that page.
+   * When present (PDFs), the reported page number and progress are the book's
+   * real pages instead of columns of the virtualization window - see
+   * pageNumbersFor. Text and EPUB content has no such map and keeps reporting
+   * columns. */
+  pageMap?: Record<number, number>;
+  /** The document's real page count. Pages with no text get no entry in
+   * `pageMap`, and during a first-ever extraction the map only covers the pages
+   * read so far, so the denominator comes from here when it is known. */
+  pageCount?: number;
   header?: React.ReactNode;
   footer?: React.ReactNode;
 };
@@ -38,9 +49,18 @@ export type TextReaderCoreRef = {
   capturePendingAnchor: () => void;
 };
 
-// Window size for DOM virtualization: renders 50 paragraphs around active anchor
-// (Keeps DOM element count under ~50 nodes, preventing CSS multi-column WebKit thrashing)
-const VIRTUAL_WINDOW_HALF = 25;
+// DOM virtualization window, sized by characters rather than by paragraph count.
+//
+// CSS multi-column layout cost tracks the text in the window, and paragraph
+// sizes differ enormously between books: one paragraph is ~60 characters in the
+// chess PDF and ~2800 in the Osho PDF, where every paragraph is a whole page of
+// prose. Measured on the test device, a 50-paragraph window of the latter is
+// 154k characters over 227 columns and blocks the main thread for 3.9s on open;
+// 14k characters over 34 columns costs 67ms. So the budget is characters, with
+// the paragraph count only as a cap on DOM nodes.
+const WINDOW_TARGET_CHARS = 45000;
+const WINDOW_MIN_PARAGRAPHS = 6;
+const WINDOW_MAX_PARAGRAPHS = 50;
 
 export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCoreProps>(
   (
@@ -56,6 +76,8 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
       onPaginationChange,
       initialAnchor,
       initialFraction,
+      pageMap,
+      pageCount,
       header,
       footer,
     },
@@ -66,6 +88,10 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
     const [containerWidth, setContainerWidth] = useState(0);
 
     const pendingAnchorRef = useRef<TextReadingAnchor | null>(initialAnchor);
+    // Applied to the page the pending anchor resolves to. Only shiftWindow uses
+    // it: sliding the window changes what page N means, so the turn that caused
+    // the slide has to be re-expressed as "one page on from where they were".
+    const pendingPageDeltaRef = useRef(0);
     const savedFractionRef = useRef(initialFraction);
     const hasRestoredScroll = useRef(false);
     const scrollPersistTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -73,16 +99,33 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
     // Active paragraph window focus index
     const [activeFocusIndex, setActiveFocusIndex] = useState(() => initialAnchor?.paragraphIndex ?? 0);
 
-    // Compute virtualized window range [startIndex, endIndex]
+    // Compute virtualized window range [windowStart, windowEnd), grown outward
+    // from the focused paragraph until the character budget above is spent.
+    // Growth alternates so there is always something behind the reader to turn
+    // back to, and prefers forward when the two sides are even.
     const totalParagraphs = paragraphs.length;
-    let windowStart = Math.max(0, activeFocusIndex - VIRTUAL_WINDOW_HALF);
-    let windowEnd = Math.min(totalParagraphs, activeFocusIndex + VIRTUAL_WINDOW_HALF);
+    const { windowStart, windowEnd } = useMemo(() => {
+      if (totalParagraphs === 0) return { windowStart: 0, windowEnd: 0 };
+      const focus = Math.min(Math.max(activeFocusIndex, 0), totalParagraphs - 1);
+      let start = focus;
+      let end = focus + 1;
+      let chars = paragraphs[focus].length;
 
-    // For smaller documents (< 80 paragraphs), render everything directly
-    if (totalParagraphs <= 80) {
-      windowStart = 0;
-      windowEnd = totalParagraphs;
-    }
+      while (end - start < WINDOW_MAX_PARAGRAPHS) {
+        if (chars >= WINDOW_TARGET_CHARS && end - start >= WINDOW_MIN_PARAGRAPHS) break;
+        const canGrowForward = end < totalParagraphs;
+        const canGrowBack = start > 0;
+        if (!canGrowForward && !canGrowBack) break;
+        if (canGrowForward && (!canGrowBack || end - focus <= focus - start)) {
+          chars += paragraphs[end].length;
+          end++;
+        } else {
+          start--;
+          chars += paragraphs[start].length;
+        }
+      }
+      return { windowStart: start, windowEnd: end };
+    }, [paragraphs, totalParagraphs, activeFocusIndex]);
 
     const visibleParagraphs = paragraphs.slice(windowStart, windowEnd);
 
@@ -97,6 +140,11 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
     const currentPageRef = useRef(0);
     const totalPagesRef = useRef(1);
     const [currentPage, setCurrentPage] = useState(0);
+    // Sliding the window renumbers every column, so the transform has to jump by
+    // however many columns the removed paragraphs occupied. Animating that jump
+    // sends the reader whooshing through dozens of pages of text on what was a
+    // single page turn; this drops the transition for exactly that one frame.
+    const [instantJump, setInstantJump] = useState(false);
 
     // Touch swipe / tap-to-turn tracking
     const touchStartX = useRef(0);
@@ -106,16 +154,117 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
 
     const isPaginated = layoutMode === "paginated";
 
+    // The book's real pages, sorted by where they start. pageToParagraphIndex
+    // arrives keyed by page number and grows batch by batch during a first-ever
+    // extraction, so this is rebuilt whenever it changes.
+    const pageTable = useMemo(() => {
+      if (!pageMap) return null;
+      const entries = Object.entries(pageMap)
+        .map(([page, firstParagraph]) => ({ page: Number(page), firstParagraph }))
+        .sort((a, b) => a.page - b.page);
+      if (entries.length === 0) return null;
+      // The highest page number, not the number of entries: pages whose text was
+      // empty or entirely blank get no entry, and a counter whose denominator
+      // undercounts them would read "Page 200 of 190" further into the book.
+      // pageCount, when the caller knows it, is truer still - it also covers
+      // trailing pages with no text at all, and holds steady while a first-ever
+      // extraction is still filling the map in.
+      const lastPage = Math.max(pageCount ?? 0, entries[entries.length - 1].page);
+      return { entries, lastPage };
+    }, [pageMap, pageCount]);
+
+    /** The book page a paragraph sits on: the last page that starts at or before
+     * it. */
+    function pageForParagraph(paragraphIndex: number): number | null {
+      if (!pageTable) return null;
+      const { entries } = pageTable;
+      let lo = 0;
+      let hi = entries.length - 1;
+      let found = entries[0].page;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (entries[mid].firstParagraph <= paragraphIndex) {
+          found = entries[mid].page;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return found;
+    }
+
+    /** What the chrome should display. With a page map this is the book's own
+     * page numbering; without one it stays the column count it always was.
+     * `page` is 0-based - the caller renders `page + 1`. */
+    function pageNumbersFor(paragraphIndex: number, columnPage: number, columnTotal: number) {
+      const bookPage = pageForParagraph(paragraphIndex);
+      if (bookPage === null || !pageTable) return { page: columnPage, total: columnTotal };
+      return { page: bookPage - 1, total: pageTable.lastPage };
+    }
+
+    /** Progress derived from the same paragraph the page number came from, so
+     * the bar and the counter can never disagree. */
+    function progressFor(paragraphIndex: number, columnPage?: number, columnTotal?: number): number {
+      const bookPage = pageForParagraph(paragraphIndex);
+      if (bookPage !== null && pageTable && pageTable.lastPage > 1) {
+        return Math.min(1, Math.max(0, (bookPage - 1) / (pageTable.lastPage - 1)));
+      }
+      if (totalParagraphs > 1) {
+        return Math.min(1, Math.max(0, paragraphIndex / (totalParagraphs - 1)));
+      }
+      // A document with no second paragraph to move between - a pasted note -
+      // has no paragraph-level progress to report, so fall back to how far
+      // across the columns the reader has got.
+      if (columnPage !== undefined && columnTotal !== undefined && columnTotal > 1) {
+        return Math.min(1, Math.max(0, columnPage / (columnTotal - 1)));
+      }
+      return 0;
+    }
+
+    function reportPosition(paragraphIndex: number, columnPage: number, columnTotal: number) {
+      const view = pageNumbersFor(paragraphIndex, columnPage, columnTotal);
+      onPaginationChangeRef.current(view.page, view.total);
+      onProgressChangeRef.current(progressFor(paragraphIndex, columnPage, columnTotal));
+    }
+
     // Helper: compute stride and total from DOM
     function getPageInfo() {
       const container = scrollRef.current;
-      if (!container) return null;
+      const content = contentRef.current;
+      if (!container || !content) return null;
       const w = containerWidth > 0 ? containerWidth : container.clientWidth;
       if (w <= 0) return null;
       const stride = w + COLUMN_GAP_PX;
-      const scrollW = Math.max(container.scrollWidth, container.clientWidth);
-      const total = Math.max(1, Math.ceil(scrollW / stride));
-      return { container, w, stride, total };
+      // The content element's own scrollWidth, never the scroll container's:
+      // paging translates this element, and a transform shrinks the container's
+      // scrollable overflow - which is what made the page total count *down* as
+      // the reader advanced ("Page 1 of 34" ... "Page 18 of 18"). The content
+      // element's scrollWidth is pure layout, so it holds still.
+      const laidOut = Math.max(content.scrollWidth, w);
+      const total = Math.max(1, Math.ceil(laidOut / stride));
+      return { container, content, w, stride, total };
+    }
+
+    /** Which paragraph the reader sees first on a given column-page: the first one
+     * that starts there, or - when a long paragraph spills across several columns
+     * and none starts here - the one still running through it.
+     *
+     * Layout-based (see paragraphColumnPage), so it stays correct mid page-turn
+     * animation. Taking the *first* rather than the last matters wherever several
+     * paragraphs share one column: naming the bottom one would report a page the
+     * reader has not got to yet. */
+    function paragraphAtColumnPage(columnPage: number): number | null {
+      const info = getPageInfo();
+      if (!info) return null;
+      let spilledFrom: number | null = null;
+      for (const el of info.content.querySelectorAll<HTMLElement>(`[${PARAGRAPH_INDEX_ATTR}]`)) {
+        const column = paragraphColumnPage(el, info.content, info.w, COLUMN_GAP_PX);
+        const index = Number(el.getAttribute(PARAGRAPH_INDEX_ATTR));
+        if (column === columnPage) return index;
+        if (column < columnPage) spilledFrom = index;
+        else break;
+      }
+      return spilledFrom;
     }
 
     function navigateToPage(targetPage: number) {
@@ -128,32 +277,49 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
       totalPagesRef.current = total;
       setCurrentPage(clamped);
 
-      onPaginationChangeRef.current(clamped, total);
-      const fraction = total > 1 ? clamped / (total - 1) : 0;
-
-      const globalProgress = totalParagraphs > 0
-        ? Math.min(1, Math.max(0, (windowStart + (clamped / Math.max(1, total - 1)) * (windowEnd - windowStart)) / totalParagraphs))
-        : fraction;
-
-      onProgressChangeRef.current(globalProgress);
+      const paragraphIdx = paragraphAtColumnPage(clamped) ?? windowStart + clamped;
+      reportPosition(paragraphIdx, clamped, total);
 
       clearTimeout(scrollPersistTimeout.current);
       scrollPersistTimeout.current = setTimeout(() => {
-        const topAnchor = findTopVisibleAnchor(info.container, "paginated");
-        const paragraphIdx = topAnchor ? topAnchor.paragraphIndex : Math.max(0, windowStart + clamped);
         onScrollPositionChangeRef.current(
           JSON.stringify({ paragraphIndex: paragraphIdx } satisfies TextReadingAnchor),
-          globalProgress,
+          progressFor(paragraphIdx, clamped, total),
         );
       }, 600);
+    }
+
+    /** Slides the virtualization window, keeping the reader's place and then
+     * advancing one page within the *new* window.
+     *
+     * Without the anchor this skipped text: page N of the old window and page N
+     * of the new one are different content (windowStart moved), and the
+     * re-pagination effect fell back to the old page index. Without the delta the
+     * turn would instead do nothing, landing back on the page they were already
+     * reading. */
+    function shiftWindow(direction: 1 | -1) {
+      const container = scrollRef.current;
+      const seen = container ? findTopVisibleAnchor(container, layoutMode) : null;
+      const anchorIndex = seen?.paragraphIndex ?? activeFocusIndex;
+      // Re-centre the window on what they are actually reading rather than
+      // stepping a fixed distance: that guarantees the anchor is inside the new
+      // window (it is its centre) and leaves the most content ahead before the
+      // next slide is needed. A paragraph tall enough to fill the window on its
+      // own leaves the anchor where it already was, so nudge past it.
+      const nextFocus = anchorIndex === activeFocusIndex
+        ? Math.max(0, Math.min(totalParagraphs - 1, activeFocusIndex + direction))
+        : anchorIndex;
+      pendingAnchorRef.current = { paragraphIndex: anchorIndex };
+      pendingPageDeltaRef.current = direction;
+      setInstantJump(true);
+      setActiveFocusIndex(nextFocus);
     }
 
     function goToPrevPage() {
       if (currentPageRef.current > 0) {
         navigateToPage(currentPageRef.current - 1);
       } else if (windowStart > 0) {
-        const newFocus = Math.max(0, activeFocusIndex - 15);
-        setActiveFocusIndex(newFocus);
+        shiftWindow(-1);
       }
     }
 
@@ -163,13 +329,13 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
       if (currentPageRef.current < total - 1) {
         navigateToPage(currentPageRef.current + 1);
       } else if (windowEnd < totalParagraphs) {
-        const newFocus = Math.min(totalParagraphs - 1, activeFocusIndex + 15);
-        setActiveFocusIndex(newFocus);
+        shiftWindow(1);
       }
     }
 
     function jumpToAnchor(anchor: TextReadingAnchor) {
       pendingAnchorRef.current = anchor;
+      pendingPageDeltaRef.current = 0;
       setActiveFocusIndex(anchor.paragraphIndex);
 
       const container = scrollRef.current;
@@ -184,10 +350,7 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
 
         currentPageRef.current = clamped;
         setCurrentPage(clamped);
-        onPaginationChangeRef.current(clamped, total);
-        
-        const globalProgress = totalParagraphs > 0 ? anchor.paragraphIndex / totalParagraphs : 0;
-        onProgressChangeRef.current(globalProgress);
+        reportPosition(anchor.paragraphIndex, clamped, total);
       } else {
         const paragraphEl = container.querySelector<HTMLElement>(
           `[${PARAGRAPH_INDEX_ATTR}="${anchor.paragraphIndex}"]`,
@@ -209,6 +372,7 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
           const anchor = findTopVisibleAnchor(container, layoutMode);
           if (anchor) {
             pendingAnchorRef.current = anchor;
+            pendingPageDeltaRef.current = 0;
             setActiveFocusIndex(anchor.paragraphIndex);
           }
         }
@@ -231,25 +395,24 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
     // Paginated layout & position restoration
     useEffect(() => {
       if (!isPaginated || containerWidth <= 0) return;
-      const container = scrollRef.current;
-      if (!container) return;
+      const info = getPageInfo();
+      if (!info) return;
+      const { container, total } = info;
 
       container.scrollTop = 0;
-
-      const stride = containerWidth + COLUMN_GAP_PX;
-      const scrollW = Math.max(container.scrollWidth, container.clientWidth);
-      const total = Math.max(1, Math.ceil(scrollW / stride));
 
       // Default to leaving the reader on the page they are already on. This
       // effect re-runs on every reflow - font change, resize, and (with
       // streamed PDF extraction) every background batch that extends the
       // window - and jumping back to the resume anchor each time would drag
       // them backwards mid-sentence. The anchor is consumed once, by whoever
-      // set it (initial open, or a layout-mode switch via capturePendingAnchor).
+      // set it (initial open, a layout-mode switch, or a window slide).
       let targetPage = currentPageRef.current;
       if (pendingAnchorRef.current) {
         targetPage = locateAnchorPage(pendingAnchorRef.current, container, containerWidth, COLUMN_GAP_PX);
         pendingAnchorRef.current = null;
+        targetPage += pendingPageDeltaRef.current;
+        pendingPageDeltaRef.current = 0;
       }
       const clamped = Math.max(0, Math.min(targetPage, total - 1));
 
@@ -257,15 +420,18 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
       totalPagesRef.current = total;
       setCurrentPage(clamped);
 
-      onPaginationChangeRef.current(clamped, total);
-      const globalProgress = totalParagraphs > 0
-        ? Math.min(1, Math.max(0, activeFocusIndex / totalParagraphs))
-        : (total > 1 ? clamped / (total - 1) : 0);
-      onProgressChangeRef.current(globalProgress);
+      reportPosition(paragraphAtColumnPage(clamped) ?? activeFocusIndex, clamped, total);
+
+      // Restore the animation once the jumped-to page has been painted.
+      if (instantJump) {
+        const frame = requestAnimationFrame(() => setInstantJump(false));
+        return () => cancelAnimationFrame(frame);
+      }
       // Deliberately keyed on the visible slice rather than `paragraphs` itself:
       // streamed extraction appends past the end of the window constantly, and
-      // re-paginating for content nobody can see is pure jank.
-    }, [isPaginated, fontPercent, fontFamily, containerWidth, activeFocusIndex, windowStart, visibleParagraphs.length, totalParagraphs]);
+      // re-paginating for content nobody can see is pure jank. pageTable is in
+      // here so the counter picks up pages as extraction reveals them.
+    }, [isPaginated, fontPercent, fontFamily, containerWidth, activeFocusIndex, windowStart, visibleParagraphs.length, totalParagraphs, pageTable]);
 
     // Scrolling mode position restoration & window tracking
     useEffect(() => {
@@ -282,37 +448,35 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
           ? paragraphEl.offsetTop
           : savedFractionRef.current * (el.scrollHeight - el.clientHeight);
         pendingAnchorRef.current = null;
+        pendingPageDeltaRef.current = 0;
       } else if (!hasRestoredScroll.current) {
         el.scrollTop = savedFractionRef.current * (el.scrollHeight - el.clientHeight);
       }
       hasRestoredScroll.current = true;
-      const globalProgress = totalParagraphs > 0 ? activeFocusIndex / totalParagraphs : 0;
-      onProgressChangeRef.current(globalProgress);
-    }, [layoutMode, activeFocusIndex, windowStart, visibleParagraphs.length, totalParagraphs]);
+      onProgressChangeRef.current(progressFor(activeFocusIndex));
+    }, [layoutMode, activeFocusIndex, windowStart, visibleParagraphs.length, totalParagraphs, pageTable]);
 
     // Continuous scroll handler (scrolling mode)
     function handleScroll() {
       if (isPaginated) return;
       const el = scrollRef.current;
       if (!el) return;
-      
+
       const topAnchor = findTopVisibleAnchor(el, "scrolling");
       if (topAnchor && Math.abs(topAnchor.paragraphIndex - activeFocusIndex) > 10) {
         setActiveFocusIndex(topAnchor.paragraphIndex);
       }
 
-      const maxScroll = el.scrollHeight - el.clientHeight;
-      const fraction = maxScroll > 0 ? Math.min(1, Math.max(0, el.scrollTop / maxScroll)) : 0;
-      const globalProgress = totalParagraphs > 0
-        ? Math.min(1, Math.max(0, (topAnchor?.paragraphIndex ?? activeFocusIndex) / totalParagraphs))
-        : fraction;
-
+      const paragraphIdx = topAnchor?.paragraphIndex ?? activeFocusIndex;
+      const globalProgress = progressFor(paragraphIdx);
       onProgressChangeRef.current(globalProgress);
 
       clearTimeout(scrollPersistTimeout.current);
       scrollPersistTimeout.current = setTimeout(() => {
-        const anchorToSave = topAnchor ?? { paragraphIndex: activeFocusIndex };
-        onScrollPositionChangeRef.current(JSON.stringify(anchorToSave), globalProgress);
+        onScrollPositionChangeRef.current(
+          JSON.stringify({ paragraphIndex: paragraphIdx } satisfies TextReadingAnchor),
+          globalProgress,
+        );
       }, 500);
     }
 
@@ -448,7 +612,7 @@ export const TextReaderCore = React.forwardRef<TextReaderCoreRef, TextReaderCore
             ref={contentRef}
             className={
               isPaginated
-                ? "reader-longpress-text h-full text-foreground transition-transform duration-300 ease-out"
+                ? `reader-longpress-text h-full text-foreground${instantJump ? "" : " transition-transform duration-300 ease-out"}`
                 : "reader-longpress-text mx-auto max-w-2xl text-foreground"
             }
             style={

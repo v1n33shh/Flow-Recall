@@ -9,6 +9,15 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
   },
+  android: {
+    // Off by default: a shipped release must not expose its WebView to
+    // chrome://inspect. `DEVTOOLS=1 npm run build:apk` turns it on for a local
+    // release build so an actual release (not a debug build, which installs
+    // over the user's library and wipes it) can be inspected on-device - which
+    // is the only way to see console output or run timings inside the real
+    // Android WebView. Re-run the build without DEVTOOLS before shipping.
+    webContentsDebuggingEnabled: process.env.DEVTOOLS === '1',
+  },
   plugins: {
     // Routes fetch()/XHR through native OkHttp instead of the WebView's own
     // networking stack, and gives it a real native cookie jar. This is what

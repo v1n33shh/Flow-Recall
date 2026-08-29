@@ -156,10 +156,17 @@ function SortToggle({ sort, onChange }: { sort: LibrarySort; onChange: (sort: Li
   );
 }
 
-/** Sticks to the bottom of the library while books are selected. Deleting is
+/** Anchored to the bottom of the screen while books are selected. Deleting is
  * two taps on purpose - the second one names how many books and says it cannot
  * be undone - and it is an in-page bar rather than window.confirm, which on
- * Android renders a system dialog titled with the app's own localhost origin. */
+ * Android renders a system dialog titled with the app's own localhost origin.
+ *
+ * `fixed`, not `sticky`. A sticky element cannot leave its containing block, so
+ * inside this page's padded `<main>` it came to rest 64px above the bottom of
+ * the phone (`main`'s own bottom padding plus the flex gap under it), with the
+ * grid showing through the strip below - measured on the device at 360x768.
+ * Content height changes nothing about where this belongs, so it is positioned
+ * against the viewport instead, and the library reserves room for it below. */
 function SelectionBar({
   count,
   confirming,
@@ -175,12 +182,17 @@ function SelectionBar({
 }) {
   return (
     <div
-      className="sticky bottom-0 z-20 -mx-4 mt-6 border-t border-border bg-background/90 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6"
-      // Android's gesture bar and an iPhone's home indicator both sit in this
-      // strip; without the inset the Delete button ends up under them.
-      style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-md"
+      // Same inset-plus-1rem as MobileTabBar, the app's other bottom-anchored
+      // bar: Android's gesture pill and an iPhone's home indicator live in this
+      // strip, and a WebView that is not drawing edge-to-edge reports an inset
+      // of 0 for it (measured on the device), so the constant is what actually
+      // keeps Delete clear of the pill.
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
     >
-      <div className="flex items-center justify-between gap-3">
+      {/* Same column as the library itself, so on a tablet the controls stay
+          with the grid instead of drifting out to the window edges. */}
+      <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <p className="text-xs text-muted-foreground" aria-live="polite">
           {confirming
             ? `Delete ${count} ${count === 1 ? "book" : "books"}? This can't be undone.`
@@ -248,7 +260,15 @@ function ReaderLibrary({ onOpenBook }: { onOpenBook: (id: string) => void }) {
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
+    <main
+      className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16"
+      // The selection bar is fixed to the viewport, so it would otherwise cover
+      // the last row of books for good - no amount of scrolling gets past a
+      // fixed element. This reserves more than the tallest the bar can get
+      // (its text wraps to three lines on a 320px screen), and the extra space
+      // only exists while selecting, hidden underneath the bar anyway.
+      style={selecting ? { paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" } : undefined}
+    >
       {/* Navbar/MobileTabBar are fully hidden on /reader (same treatment as
           /study) so the reading view stays truly full-bleed - this is the
           library's only way back to the rest of the app. */}

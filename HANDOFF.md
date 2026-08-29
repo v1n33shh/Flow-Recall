@@ -4,7 +4,45 @@
 
 ---
 
-## 🔴 START HERE — 2026-08-30 (last): the library can be tidied on a phone
+## 🔴 START HERE — 2026-08-30 (last): the selection bar was 64px off the bottom of the screen
+
+User-reported, on their own phone: the delete panel "exceeds the screen". It did, and the cause is worth
+remembering because nothing about it is visible in a browser at desktop size.
+
+`SelectionBar` was `sticky bottom-0`. **A sticky element cannot leave its containing block**, and its containing
+block here is this page's `<main>`, which carries `py-10 sm:py-16`. So the bar came to rest at the bottom of
+main's *content box* - measured on the device at 360x768, its bottom edge was at y=704 with **64px of library
+still showing underneath it**. It looked like a panel floating in the wrong place. In a tall headless window it
+looked perfect, because there the content was long enough that main's box extended past the viewport and sticky
+had somewhere to stick.
+
+- Now `fixed inset-x-0 bottom-0 z-30`, positioned against the viewport, so content height is irrelevant.
+- Its contents sit in the same `mx-auto max-w-2xl` column as the grid, so on a tablet the controls stay with the
+  books instead of drifting to the window edges.
+- A fixed bar covers the last row of books *permanently* - no amount of scrolling gets past it - so `<main>` gets
+  `paddingBottom: calc(8rem + env(safe-area-inset-bottom))` while selecting. 8rem clears the tallest the bar can
+  get (89px, when the confirm sentence wraps to three lines at 280px wide).
+- Bottom padding is `calc(env(safe-area-inset-bottom) + 1rem)`, matching `MobileTabBar`. The constant is doing the
+  real work: this WebView is not drawing edge-to-edge, so it reports an inset of **0** while Android still draws
+  its gesture pill in that strip.
+
+### Verified at five viewport sizes, then on the device
+
+Headless sweep against the real static export (`out/reader.html`, served over http) at 280x520, 320x568, 360x640,
+393x873, 412x915 and 768x1024, in both the selecting and confirming states, with 12 books selected so the
+sentence is as long as it gets: bar flush to the bottom (`innerHeight - bar.bottom === 0`) at every size, every
+button inside the bar, no horizontal overflow anywhere, smallest touch target 44px, and the last card clears the
+bar by 39-43px when scrolled to the end. On the device: bar bottom **768 of 768** (was 704), last card fully
+visible, no overflow.
+
+⚠️ **`out/` is only written by `npm run build:apk`, not `npm run build`** - and stale chunks from a previous
+export survive in it. A headless check against `out/` right after `npm run build` measures the *old* code; that
+cost a wrong measurement this session. Rebuild with `build:apk` and confirm the chunk `reader.html` references
+actually contains your change.
+
+---
+
+## 🔴 START HERE — 2026-08-30 (library): delete and sort
 
 The user could not delete a book from the reader library on their own device, and the reason was not a missing
 feature. `BookCard` had a remove button all along - `opacity-0 ... group-hover:opacity-100`. A phone has no

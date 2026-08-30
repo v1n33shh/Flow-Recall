@@ -4,14 +4,211 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State as of **2026-08-29, end of session**: the last **code** commit is **`d19bbbb`**, which is pushed to
-`origin/main` and **deployed to production**. The commit that added this section is documentation only and may
-still be unpushed - run `git status -sb` first and push it if it says `ahead 1`. Trust `git status` over this
+State as of **2026-08-30, end of session**: the last **code** commit is **`b9626df`**, which is pushed to
+`origin/main` and **verified live in production**. The commit that added this section is documentation only and
+may still be unpushed - run `git status -sb` first and push it if it says `ahead 1`. Trust `git status` over this
 line either way; it has gone stale mid-session before.
 
 ---
 
-## 🔴 START HERE — 2026-08-29 (last): where a new session picks up
+## 🔴 START HERE — 2026-08-30 (last): where a new session picks up
+
+Three pieces of reader work, all committed, pushed and verified live. Nothing is half-done. What is left is the
+same short list of **out-of-codebase** Play Store steps as yesterday, plus two small judgement calls, all below.
+
+### Where the artifacts are
+
+| | |
+|---|---|
+| repo | last code commit `b9626df`, pushed; `origin/main` and local HEAD matched at end of session. A documentation-only commit for this section may sit unpushed on top |
+| production web | deployed and verified by fetching it: all 15 chunks `/reader` references were pulled, and `Eye Filter`, `Save as Note` and `Add to Note` are all present in the live JS. `/flowrecall-release.apk` serves `content-length: 6311100`, byte-identical to the committed APK |
+| the user's phone | release APK from 14:44, **md5 `5a693bcdcc5cc0e9bf4092791c226046`**, identical to `public/flowrecall-release.apk`. `webContentsDebuggingEnabled: false`, signed `CN=FlowRecall`, no devtools socket after launch, no nested APK. **Not** a devtools build - re-flash one to inspect again |
+| Play Store artifact | **AAB rebuilt 14:58 today**: `android/app/build/outputs/bundle/release/app-release.aab`, 6,161,295 bytes, `jar verified`, `CN=FlowRecall`, devtools false, no nested APK, and confirmed to contain this session's code by grepping its own bundled chunks. Gitignored, so it is a local artifact - `assembleRelease` does **not** build it, see the note below. `versionCode 1` / `versionName "1.0"` |
+
+### What shipped, in one line each (details in the two blocks below)
+
+- `c212530` - a looked-up definition can now be saved and read again later, and the definition panel's hierarchy
+  stopped being flat white.
+- `b9626df` - the reader's Eye Filter: warmth in four steps plus a dim that goes below Android's own minimum.
+
+### The user's library changed again, and it settles yesterday's open question
+
+Yesterday's block asked the user to confirm whether their library going 7 -> 5 was them. It was: it is now **2
+books**, and the missing ones went the same way. Census taken twice today over CDP:
+
+- `11da49a7` The Book of Wisdom (Osho, pdf) - holds the only highlight, `0a4000f3`, phrase `"have"`,
+  `{paragraphIndex:104, start:1389, end:1393}`, `note: null`
+- `aae884e8` How to Win Friends (epub)
+
+Gone since yesterday: `77e54bbc` Chess: 5334 Problems, `01f07e69` flowrecall-test-sample, `9409ceca` Osho (text).
+Treat `deleteBooks` as exonerated - this is the user tidying with the feature built for it.
+
+### Decisions waiting on the user, not on code
+
+1. **`PDF_EXTRACT_VERSION` is still 2, and bumping it is now barely worth it.** Yesterday's case for the bump was
+   1809 ciphered paragraphs in the chess book - **that book is gone**. What remains is the Osho book, whose text
+   changes by *whitespace only*, plus an offset migration for the single `"have"` highlight. Recommendation on
+   file: drop it unless the chess book is ever re-added.
+2. **Screenshots must be recaptured before any Store upload.** `play-store-assets/screenshots/` is still dated
+   **Aug 22** - now three reader sessions stale. `03-reader.png` predates the extraction rewrite entirely, and
+   neither the definition panel nor the Eye Filter appears anywhere in the set. Earlier conventions to preserve if
+   recapturing: status bar cropped, real book text replaced with fictional text, account name/avatar replaced with
+   a placeholder "Alex"/"A". `_check.png` in that folder is a stray, not an asset.
+3. **`assetlinks.json` has 1 of the 2 fingerprints it needs.** Play App Signing's SHA-256 only exists after the
+   first Console upload. Degrades rather than breaks until then (`auth-callback` forwards to `flowrecall://`).
+4. **The Play Developer account ($25) is still blocked on the user's card.** Unchanged for over a week.
+5. Two things offered and not built: an **auto-schedule** for the Eye Filter (warm after sunset), and **light-mode
+   verification** of both this session's blue annotation family and the filter itself. `--reader-highlight`
+   deliberately does not invert, so light mode gets the same blue on a near-white panel - untested. The user has
+   twice said light mode is not a priority.
+
+### Known limitations that will ship with it
+
+Unchanged from yesterday's list, which is still accurate: two-column PDFs interleave their columns; figures,
+tables and equations are dropped; no OCR for scans (honestly reported, not blank); non-English PDFs verified only
+against synthetic text; pinch-zoom off app-wide; pdf.js `wasmUrl` not shipped; legacy `{"page":N,"scale":S}`
+positions resume at the start. Add one: **Amber at full 50% dim puts body text at ~3.5:1, under WCAG AA** - a
+disclosed, one-tap-reversible user choice, asserted by a test so it cannot drift unnoticed.
+
+### Environment notes learned this session (additive to the older lists)
+
+- **`assembleRelease` does not build the AAB.** The APK and the bundle are separate Gradle tasks, so the bundle
+  goes stale silently while the APK is current - it sat a day behind today until the user asked. Run
+  `./gradlew bundleRelease` too, and re-run `npm run build:apk` first so it cannot be built from stale synced
+  assets. To prove a bundle carries your change:
+  `unzip -p app-release.aab 'base/assets/public/_next/static/chunks/*.js' | grep -F "<your string>"`.
+- **`npm run build` is not `npm run build:apk`.** Vercel runs the former; every APK check this project does uses
+  the latter. Run `npm run build` before a deploy - it is the only thing that exercises what production will.
+- **Playwright cannot click a reader highlight over CDP.** `elementHandle.click()` fails with "element is outside
+  of the viewport" on a `<mark>` in any column other than the current page, because paging moves columns with
+  `transform` - it retries for the full 30s timeout and throws. Dispatch it in-page instead:
+  `page.evaluate(() => document.querySelector("mark").dispatchEvent(new MouseEvent("click", {bubbles: true})))`.
+  Reserve real `adb shell input swipe x y x y 800` for long-press-to-define, which needs OS-level touch.
+- **`librarySort` defaults to "recent", so opening a book moves it to grid slot 0.** Indexing library cards by
+  position picks the wrong book on the second open - that cost a wasted EPUB check today. Select by badge text
+  (`textContent.includes("EPUB")`), not by index.
+- The Aa menu's own dismiss scrim (`div.fixed.inset-0.z-40.bg-transparent`) intercepts clicks on the trigger that
+  opened it. Dismiss the menu by clicking the scrim, not the button.
+- **rAF frame-interval sampling over CDP is inflated by idle gaps** - it only fires on paint, so spacing synthetic
+  taps 420ms apart reports ~99ms "frames" that are not the real frame rate. Only A/B comparisons under identical
+  harnesses mean anything; do not quote the absolute numbers.
+- Splitting one file's changes across two commits without interactive staging: write the intermediate version of
+  the file, `git add` it, commit, then restore the full version and commit the rest. Used today to keep each
+  commit carrying only its own `globals.css` documentation.
+
+### Verification standard this session held to, worth keeping
+
+Every claim was measured in the real WebView on the physical device against the user's own books, reading from
+their stored files. The one thing that had to be written - a highlight, to test note storage - was created and
+then **removed via the real Remove button**, with a census before and after proving the user's own highlight
+untouched (`note: null`, same offsets) and both books present. Where a claim was about contrast or colour, the
+number was computed and asserted in a test rather than eyeballed. 76 tests pass (`npm test`), `tsc --noEmit` is
+clean, lint is at 0 errors with 46 pre-existing warnings, and `npm run build` succeeds.
+
+---
+
+## 🔴 START HERE — 2026-08-30 (definitions): a definition you looked up had nowhere to go
+
+User-reported: "we copy the definition after clicking the define button... and we store it as a note, it doesn't
+store the definition when we come back to view it." Reproduced on the device before touching any code, and the
+cause was not a storage bug - **there was no button that stored it.**
+
+From a fresh long-press (the normal way to look a word up) the result panel offered exactly one action, "Copy
+definition". `Save as Note` was gated on `isHighlighted`, so it only appeared for a phrase that already happened
+to be highlighted and reopened by tapping its underline. And Copy sent `data.definition` alone, dropping both
+examples. To store a definition at all you had to close the sheet, re-select, Highlight, tap the underline, and
+spend a **second** AI lookup.
+
+- A note still lives ON a highlight, because that underline is the only route back to it. So saving from a fresh
+  selection now creates the highlight it hangs off - in all three views - rather than having nowhere to be written.
+- `src/lib/definitionNote.ts` (new) backs both Copy and Save as Note from one formatter, so the clipboard and a
+  stored note cannot disagree or hand over half of what is on screen. Saving onto an existing note **appends**;
+  losing the reader's own words is the same class of failure as losing the definition.
+- The panel's stage machine now owns the persisted note instead of re-reading the `note` prop. A note saved onto a
+  brand-new highlight has no prop to come back through, and trusting a stale one is what would have made
+  `Edit Note` open an empty textarea and overwrite what was just saved.
+- **EPUB staleness bug fixed on the way past**: epub.js keeps an annotation's click handler for the life of the
+  annotation, so a handler closing over its record kept serving the version from *before* a note was attached - a
+  note saved in-session was invisible until the book was reopened. The closure carries only the id now.
+
+### Then the aesthetics, asked for separately
+
+The user asked whether Define should be blue. Answer given and implemented: **no.** In the reader, blue already
+means "your mark on this book" (`--reader-highlight`, the underline sitting centimetres above the button), white
+is the highest-contrast thing possible on `#050505`, and a mid-lightness blue would *demote* the primary action.
+
+The real problem was that the panel's hierarchy was written in `--accent`, which **is** white - so `+ Note`,
+`Edit Note`, the note card and the `EXAMPLES` label all collapsed into the same value as the primary button, and
+the only genuine hue left was **red, on Remove**: the destructive action was the loudest element on screen.
+
+- The annotation family (`Highlight`, `+ Note`/`Edit Note`, the note card) now carries `--reader-highlight`. Not a
+  new exception - a note is stored on a highlight, so the button that makes a mark and the mark should not be
+  different colours. `globals.css`'s token comment was updated to say so.
+- `Remove` is an icon-only button on a neutral surface, red confined to the glyph. Kept rather than dropped, since
+  removing a highlight also deletes its note. Measured 44x38, height matching `Edit Note` exactly.
+- `Save as Note` keeps its white fill and takes a blue bloom via `box-shadow`, because a **filled**
+  `--reader-highlight` carries 13px white label text at only **3.68:1**, under AA. The note card's label is
+  full-strength blue for the same reason - at `/70` it measures **2.9:1**, at full strength **4.64:1**.
+- `EXAMPLES` dropped from `text-accent/80` to muted, so the definition prose is the brightest thing in the body.
+
+### Verified on the device
+
+Saved a definition from a fresh long-press against the real Osho PDF; the IndexedDB record carried the definition
+**and** both examples. Force-stopped, cold-relaunched, reopened the book: underline restored, tapping it opened
+straight to note-view, `Edit Note` pre-filled with all 279 characters, `Cancel` discarding without wiping. Every
+colour claim read back from `getComputedStyle`, not eyeballed - the blue measured `rgb(60, 131, 246)`, identical to
+the token. Test highlight removed afterwards; the user's own highlight untouched throughout.
+
+7 new tests in `definitionNote.test.ts`.
+
+---
+
+## 🔴 START HERE — 2026-08-30 (eye filter): warmth and a dim that beats the OS minimum
+
+Requested for "heavy readers, or who read for hours". Two independent controls at the bottom of the `Aa` menu, on
+every reader type: **Warmth** in four named steps (Off / Soft / Warm / Amber) and **Dim** in 5% steps to 50%.
+Off by default - a filter that arrives uninvited reads as a broken screen, not a feature.
+
+### Why one blend layer and not warm colour tokens
+
+The three readers put text through three different renderers, and epub.js's is a **sandboxed iframe**. Measured on
+the device: `--reader-highlight` reads back **empty** inside it, so it inherits none of the parent document's
+custom properties. A token-based warm theme would have needed three implementations that drift and would still
+have missed EPUB content entirely. A lens filters whatever is underneath it by construction.
+
+`mix-blend-mode: multiply` specifically, because that is what a filter over a screen does: it scales each channel
+down, so warm whites go cream and **blacks stay black**. A translucent amber `rgba` layer would instead *raise* the
+black level and leave a near-black page milky grey. Dimming falls out of the same multiply for free, so one
+element and one runtime-computed colour do both jobs, and nothing renders at all while the filter is off.
+
+It deliberately covers the chrome and the definition sheet too (z-50, last child of `ReaderChrome`, above the
+sheet's z-40). A filter that stopped at the prose would leave a bright white popover to stab someone an hour into
+a night session - the exact moment the feature exists for.
+
+### DIM_MAX is a measured floor
+
+Body text is `#FAFAFA` on `#050505`, 19.6:1. Multiplied by 0.5 it lands at **5.0:1**, still past WCAG AA; 55%
+gives 4.1:1 and 60% gives 3.4:1. So 50% is the last step at which the darkest non-amber setting clears AA.
+**Amber at full dim lands ~3.5:1** - disclosed rather than prevented, and asserted by a test, so neither the cap
+nor the exception can drift unnoticed. `clampDim` is applied where the colour is built, not just by the stepper,
+so a hand-edited `localStorage` value cannot black the page out (also tested).
+
+### Verified on the device, against both real books
+
+Colour maths correct on hardware: Warm+25% -> `rgb(191, 159, 133)`, Amber+20% -> `rgb(204, 152, 112)`. The EPUB's
+iframe content is filtered identically to the PDF's. The setting survives a cold relaunch and is applied on the
+reader's **first paint** (no flash of an unfiltered page), and does **not** leak outside the reader - zero
+overlay elements on the home page. `Reset` works and touched none of the user's other preferences.
+
+**No page-turn cost.** Four alternating runs of eight real page turns: median frame interval 99ms with the filter
+on, 99-115ms with it off; worst frame 198-297ms either way, no pattern. See the rAF caveat in the brief above -
+the absolute numbers are an artifact of the harness, the A/B is what holds.
+
+11 new tests in `eyeFilter.test.ts`, including the three contrast assertions above.
+
+---
+
+## 🔴 START HERE — 2026-08-29 (superseded): the state at the end of that session
 
 Everything built this session is committed, pushed and live. Nothing is half-done and nothing is broken. What is
 left is a small number of **decisions** and **out-of-codebase steps**, all listed below with the data needed to

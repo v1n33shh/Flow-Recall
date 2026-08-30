@@ -82,17 +82,23 @@ fired).
 - `pgrep -f "next dev"` matches the shell command containing that string, so it reports a server still running
   after it has stopped. Check the port instead.
 
-### ⚠️ Both release artifacts are now stale
+### Release artifacts: rebuilt, and current with this code
 
-This commit changed app code, so the two binaries no longer match `main`:
+Both were rebuilt after the feature commit and check out:
 
-- `public/flowrecall-release.apk` (md5 `5a693bcd…`, 14:44) - **has no delete button**, and the web deploy serves
-  it as the download. Rebuild and re-commit it before pointing anyone at it.
-- `android/app/build/outputs/bundle/release/app-release.aab` (14:58) - same, and it is what a Play upload would
-  use. Rebuild with `npm run build:apk && ./gradlew bundleRelease` (`assembleRelease` does **not** build the AAB).
+| | |
+|---|---|
+| `public/flowrecall-release.apk` | md5 `3d1ec489…`, 6,315,724 bytes, **committed**. Cert `e1f4352f…bc09`, devtools `false`, carries `Delete Account`, no nested copy of itself |
+| `android/app/build/outputs/bundle/release/app-release.aab` | 6,165,970 bytes, `jar verified`, same cert, devtools `false`, carries the feature. **Gitignored** - a local artifact, so it does not survive a fresh clone |
 
-The phone is currently on a **devtools-enabled release-signed** APK built 19:41 that *does* contain the feature
-(cert `e1f4352f…bc09`, same key, so `adb install -r` upgrades in place and the library survives).
+`versionCode` is still **1**. Fine for a first upload; every upload after it must bump or the Console rejects it.
+
+Rebuild recipe, both tasks, since `assembleRelease` alone does **not** produce the bundle:
+`npm run build:apk && cd android && ./gradlew assembleRelease bundleRelease` - then copy the APK into `public/`.
+Run `build:apk` **without** `DEVTOOLS=1` or you ship a debuggable WebView.
+
+The phone is deliberately **not** on this build: it still has the devtools-enabled release-signed APK from 19:41
+(same cert, so `adb install -r` either way keeps the library). Swap it for this one when device work is done.
 
 ---
 

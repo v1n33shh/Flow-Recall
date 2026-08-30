@@ -43,10 +43,21 @@
   --accent-foreground: 0 0% 2%;
   /* The one deliberate exception to "no hue anywhere": a reading highlight
      painted in pure white/black (the achromatic accent) is unreadable as a
-     highlight - it just looks like emphasis. This azure is scoped to the
-     reader's word/phrase highlights only (selection overlay + saved marks)
-     and, unlike accent, does NOT invert in light mode - the same blue reads
-     fine on both a near-black and a near-white page. */
+     highlight - it just looks like emphasis. Unlike accent, this azure does
+     NOT invert in light mode - the same blue reads fine on both a near-black
+     and a near-white page.
+
+     Scope: everything that IS the reader's own annotation of a book - the
+     selection overlay, saved marks, and (added 2026-08-30) the controls in
+     DefinitionPopover that create or hold one: Highlight, + Note / Edit Note,
+     and the "Your Note" card. Not a widening of the exception so much as the
+     same meaning applied consistently: a note is stored ON a highlight, so
+     the button that makes one and the mark it paints should not be different
+     colors. Primary actions stay achromatic accent - a filled reader-highlight
+     carries white label text at only 3.7:1, under AA, so buttons in this
+     family that need a fill keep the white one and take a blue bloom via
+     box-shadow instead. Structural chrome (panel borders, backgrounds, page
+     text) stays monochrome, exactly as before. */
   --reader-highlight: 217 91% 60%;
   /* Unlike reader-highlight above, THIS one deliberately DOES invert per
      theme - see the token-map comment's "pulse-accent" entry for why. Same

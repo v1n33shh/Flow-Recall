@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "motion/react";
 import type { DefinitionResponse } from "@/lib/definitionSchema";
+import { appendToNote, definitionAsText, NOTE_MAX_LENGTH } from "@/lib/definitionNote";
 import type { SelectionAnchor } from "./selection";
 import { useIsTouchDevice } from "./useIsTouchDevice";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
@@ -17,12 +18,11 @@ type Stage =
   | { kind: "result"; data: DefinitionResponse }
   | { kind: "error"; message: string }
   | { kind: "limit-reached" }
-  | { kind: "note-view"; note: string }
+  | { kind: "note-view" }
   | { kind: "note-edit" };
 
 const CARD_WIDTH = 300;
 const VIEWPORT_MARGIN = 12;
-const NOTE_MAX_LENGTH = 2000;
 
 // How long the AI lookup gets before we stop waiting on it and answer from the
 // free dictionary instead. Measured on-device: the request DOES complete, but
@@ -78,10 +78,6 @@ function timeoutSignal(ms: number): AbortSignal | undefined {
   return typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(ms) : undefined;
 }
 
-function formatDefinitionAsNote(data: DefinitionResponse): string {
-  return [data.definition, "", "Examples:", ...data.examples.map((example, i) => `${i + 1}. ${example}`)].join("\n");
-}
-
 function GlassIconButton({
   label,
   onClick,
@@ -111,7 +107,15 @@ function GlassIconButton({
  * highlight being viewed already has one - the whole point being that
  * re-reading a saved note never touches /api/define (and never spends quota). */
 function useDefinitionStage(phrase: string, context: string, initialNote: string | undefined) {
-  const [stage, setStage] = useState<Stage>(initialNote ? { kind: "note-view", note: initialNote } : { kind: "actions" });
+  // The note as it currently stands in storage. Owned here rather than read
+  // off the `note` prop on every render, because a note saved during this
+  // popover's own lifetime has no prop to come back through: saving a
+  // definition on a phrase that had no highlight yet creates the highlight
+  // underneath it, and the reader view has no way to hand the record back to
+  // an already-mounted popover. Trusting the prop instead is what would make
+  // "Edit Note" open an empty textarea and overwrite what was just saved.
+  const [savedNote, setSavedNote] = useState(initialNote);
+  const [stage, setStage] = useState<Stage>(initialNote ? { kind: "note-view" } : { kind: "actions" });
   const [copied, setCopied] = useState(false);
   const [slow, setSlow] = useState(false);
   // Bumped per lookup, so a response that arrives after the reader hit Cancel
@@ -123,7 +127,7 @@ function useDefinitionStage(phrase: string, context: string, initialNote: string
   function handleCancel() {
     lookupGeneration.current += 1;
     setSlow(false);
-    setStage(initialNote ? { kind: "note-view", note: initialNote } : { kind: "actions" });
+    setStage(savedNote ? { kind: "note-view" } : { kind: "actions" });
   }
 
   async function handleDefine() {
@@ -258,7 +262,7 @@ function useDefinitionStage(phrase: string, context: string, initialNote: string
       });
   }
 
-  return { stage, setStage, copied, slow, handleDefine, handleCancel, handleCopy };
+  return { stage, setStage, savedNote, setSavedNote, copied, slow, handleDefine, handleCancel, handleCopy };
 }
 
 /** The shared inner body (phrase header + stage-dependent content), rendered
@@ -277,7 +281,9 @@ function DefinitionContent({
   onHighlight,
   onRemoveHighlight,
   onSaveNote,
-  note,
+  savedNote,
+  setSavedNote,
+  canSaveNote,
   isHighlighted,
   maxBodyHeight,
 }: {
@@ -295,10 +301,15 @@ function DefinitionContent({
   onHighlight: () => void | Promise<void>;
   onRemoveHighlight: () => void | Promise<void>;
   onSaveNote: (note: string) => void | Promise<void>;
-  /** The highlight's currently-persisted note, if any - used only to decide
-   * where "Cancel" in note-edit reverts to (the local `stage` state is the
-   * source of truth for what's currently rendered). */
-  note: string | undefined;
+  /** The note as currently persisted, and the setter that keeps it in step
+   * after a save - both owned by useDefinitionStage, see there for why this
+   * is not just the `note` prop. */
+  savedNote: string | undefined;
+  setSavedNote: (note: string | undefined) => void;
+  /** Whether this popover has anywhere to put a note. False only if a caller
+   * renders it without onSaveNote; every reader view supplies one, for fresh
+   * selections as well as existing highlights. */
+  canSaveNote: boolean;
   isHighlighted: boolean;
   maxBodyHeight: string;
 }) {
@@ -327,43 +338,55 @@ function DefinitionContent({
   }
 
   function openNoteEditor() {
-    setNoteDraft(note ?? "");
+    setNoteDraft(savedNote ?? "");
     setStage({ kind: "note-edit" });
   }
 
   function cancelNoteEdit() {
     // Reverts to whichever state is actually correct right now - if a note
     // already existed, back to viewing it (unedited); if this was a fresh
-    // "add a note" flow, back to actions. Driven by the persisted `note`
-    // prop, not the in-progress draft, so Cancel truly discards the edit.
-    setStage(note ? { kind: "note-view", note } : { kind: "actions" });
+    // "add a note" flow, back to actions. Driven by the persisted note, not
+    // the in-progress draft, so Cancel truly discards the edit.
+    setStage(savedNote ? { kind: "note-view" } : { kind: "actions" });
   }
 
-  async function saveNoteDraft() {
+  /** One place that commits a note, so every path through this panel leaves
+   * `savedNote`, the stage and storage agreeing with each other. */
+  async function commitNote(text: string) {
     setSavingNote(true);
-    await onSaveNote(noteDraft);
+    await onSaveNote(text);
     setSavingNote(false);
-    const trimmed = noteDraft.trim();
-    setStage(trimmed ? { kind: "note-view", note: trimmed } : { kind: "actions" });
+    // updateHighlightNote trims and treats an empty note as no note at all;
+    // mirror that here rather than rendering a blank "Your Note" card.
+    const trimmed = text.trim();
+    setSavedNote(trimmed || undefined);
+    setStage(trimmed ? { kind: "note-view" } : { kind: "actions" });
   }
 
-  async function saveDefinitionAsNote() {
-    if (stage.kind !== "result") return;
-    const formatted = formatDefinitionAsNote(stage.data);
-    setSavingNote(true);
-    await onSaveNote(formatted);
-    setSavingNote(false);
-    setStage({ kind: "note-view", note: formatted });
+  function saveNoteDraft() {
+    return commitNote(noteDraft);
   }
 
-  // Define + Copy always available when viewing a highlight; the second row
-  // is highlight-management (add/edit the note, remove the highlight
-  // entirely) - visually separated so "read" and "manage" don't blur
-  // together. A plain function returning JSX, not a nested component - a
-  // component declared inside another component's render body gets a fresh
-  // identity every render, forcing React to remount (and reset the state
-  // of) everything inside it.
-  function renderHighlightActionRows() {
+  /** Saves the lookup itself - definition AND examples, the same text Copy
+   * puts on the clipboard. Appends when a note already exists instead of
+   * replacing it: the reader's own words are not this button's to discard,
+   * and "I copied the definition, then lost my note" is exactly the failure
+   * this panel is being fixed for. */
+  function saveDefinitionAsNote() {
+    if (stage.kind !== "result") return Promise.resolve();
+    return commitNote(appendToNote(savedNote, definitionAsText(stage.data)));
+  }
+
+  // Define + Copy on the first row; the second is management (add/edit the
+  // note, remove the highlight entirely) - visually separated so "read" and
+  // "manage" don't blur together. Remove is gated on isHighlighted because a
+  // popover opened from a fresh selection has no highlight to remove until a
+  // note creates one, and the reader views only wire removal for the
+  // tapped-highlight case. A plain function returning JSX, not a nested
+  // component - a component declared inside another component's render body
+  // gets a fresh identity every render, forcing React to remount (and reset
+  // the state of) everything inside it.
+  function renderActionRows() {
     return (
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
@@ -382,32 +405,44 @@ function DefinitionContent({
             {copied ? "Copied" : "Copy"}
           </button>
         </div>
-        <div className="flex items-center gap-2 border-t border-border pt-2">
-          <button
-            type="button"
-            onClick={openNoteEditor}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-accent/30 bg-accent/10 px-2.5 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent/20 active:scale-[0.97]"
-          >
-            <span aria-hidden="true">📝</span> {stage.kind === "note-view" ? "Edit Note" : "+ Note"}
-          </button>
-          <button
-            type="button"
-            onClick={handleRemoveClick}
-            disabled={removing}
-            className="flex items-center justify-center gap-1 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-2 text-[13px] font-medium text-red-400 transition-colors hover:bg-red-500/20 active:scale-[0.97] disabled:opacity-70"
-          >
-            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-              <path
-                d="M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-.8 12.2a2 2 0 0 1-2 1.8H8.8a2 2 0 0 1-2-1.8L6 7"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-            Remove
-          </button>
-        </div>
+        {(canSaveNote || isHighlighted) && (
+          <div className="flex items-stretch gap-2 border-t border-border pt-2">
+            {canSaveNote && (
+              <button
+                type="button"
+                onClick={openNoteEditor}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-reader-highlight/40 bg-reader-highlight/10 px-2.5 py-2 text-[13px] font-medium text-reader-highlight transition-colors hover:bg-reader-highlight/20 active:scale-[0.97]"
+              >
+                <span aria-hidden="true">📝</span> {savedNote ? "Edit Note" : "+ Note"}
+              </button>
+            )}
+            {isHighlighted && (
+              // Icon-only on a neutral surface. A filled red pill with a word in
+              // it was the loudest element in the whole panel, which handed the
+              // visual emphasis to the single destructive action. The warning hue
+              // now covers a glyph instead of a button - kept, not dropped, since
+              // removing a highlight also deletes whatever note is on it - and the
+              // note button gets the full width it deserves.
+              <button
+                type="button"
+                aria-label="Remove highlight"
+                onClick={handleRemoveClick}
+                disabled={removing}
+                className="flex w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-foreground/5 text-red-400/90 transition-colors hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.97] disabled:opacity-70"
+              >
+                <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" aria-hidden="true">
+                  <path
+                    d="M5 7h14M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0-.8 12.2a2 2 0 0 1-2 1.8H8.8a2 2 0 0 1-2-1.8L6 7"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -426,7 +461,7 @@ function DefinitionContent({
       <div className="overflow-y-auto no-scrollbar px-3.5 py-3" style={{ maxHeight: maxBodyHeight }}>
         {stage.kind === "actions" &&
           (isHighlighted ? (
-            renderHighlightActionRows()
+            renderActionRows()
           ) : (
             <div className="flex items-center gap-2">
               <button
@@ -440,7 +475,7 @@ function DefinitionContent({
                 type="button"
                 onClick={handleHighlightClick}
                 disabled={highlighting}
-                className="flex items-center justify-center gap-1 rounded-xl border border-accent/30 bg-accent/10 px-2.5 py-2 text-[13px] font-medium text-accent transition-colors hover:bg-accent/20 active:scale-[0.97] disabled:opacity-70"
+                className="flex items-center justify-center gap-1 rounded-xl border border-reader-highlight/40 bg-reader-highlight/10 px-2.5 py-2 text-[13px] font-medium text-reader-highlight transition-colors hover:bg-reader-highlight/20 active:scale-[0.97] disabled:opacity-70"
               >
                 <span aria-hidden="true">▍</span> {highlighting ? "Highlighted ✓" : "Highlight"}
               </button>
@@ -533,29 +568,36 @@ function DefinitionContent({
           >
             <p className="text-[13.5px] leading-relaxed text-foreground">{stage.data.definition}</p>
             <div className="flex flex-col gap-1.5 border-t border-border pt-2.5">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-accent/80">Examples</p>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Examples</p>
               {stage.data.examples.map((example, i) => (
                 <p key={i} className="text-xs leading-relaxed text-muted-foreground">
                   <span className="text-muted-foreground/70">{i + 1}.</span> {example}
                 </p>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-2">
+            {/* The bar that closes a lookup out. Both actions carry the
+                definition AND its examples - handing over half of what is on
+                screen is the one thing this panel exists not to do. Real
+                buttons rather than the 11px text links these used to be:
+                saving a definition is the whole point of looking one up, and
+                it has to be hittable with a thumb. */}
+            <div className="flex items-center gap-2 border-t border-border pt-2.5">
               <button
                 type="button"
-                onClick={() => onCopy(stage.kind === "result" ? stage.data.definition : "")}
-                className="text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => onCopy(stage.kind === "result" ? definitionAsText(stage.data) : "")}
+                className="flex items-center justify-center rounded-xl border border-border bg-foreground/5 px-3 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:scale-[0.97]"
               >
-                {copied ? "Copied ✓" : "Copy definition"}
+                {copied ? "Copied ✓" : "Copy"}
               </button>
-              {isHighlighted && (
+              {canSaveNote && (
                 <button
                   type="button"
                   onClick={saveDefinitionAsNote}
                   disabled={savingNote}
-                  className="text-[11px] font-medium text-accent transition-colors hover:text-accent/80 disabled:opacity-60"
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45),0_0_30px_-8px_hsl(var(--reader-highlight)/0.7)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97] disabled:opacity-70"
                 >
-                  {savingNote ? "Saving..." : "📝 Save as Note"}
+                  <span aria-hidden="true">📝</span>{" "}
+                  {savingNote ? "Saving..." : savedNote ? "Add to Note" : "Save as Note"}
                 </button>
               )}
             </div>
@@ -564,11 +606,22 @@ function DefinitionContent({
 
         {stage.kind === "note-view" && (
           <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex flex-col gap-3">
-            <div className="rounded-xl border border-accent/20 bg-accent/[0.06] p-3">
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-accent/70">Your Note</p>
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{stage.note}</p>
+            <div className="rounded-xl border border-reader-highlight/25 bg-reader-highlight/[0.07] p-3 shadow-[inset_0_1px_0_hsl(var(--reader-highlight)/0.12)]">
+              <div className="mb-1.5 flex items-start justify-between gap-2">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-reader-highlight">Your Note</p>
+                {/* A saved definition is no use if it can only be read here -
+                    this is what gets it back out into an essay or a deck. */}
+                <button
+                  type="button"
+                  onClick={() => onCopy(savedNote ?? "")}
+                  className="-mt-0.5 shrink-0 rounded-lg px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-95"
+                >
+                  {copied ? "Copied ✓" : "Copy"}
+                </button>
+              </div>
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{savedNote}</p>
             </div>
-            {renderHighlightActionRows()}
+            {renderActionRows()}
           </motion.div>
         )}
 
@@ -581,14 +634,14 @@ function DefinitionContent({
               placeholder="Type your thoughts, or save a definition you want to remember..."
               maxLength={NOTE_MAX_LENGTH}
               rows={4}
-              className="w-full resize-none rounded-xl border border-border bg-foreground/[0.03] p-3 text-[13px] leading-relaxed text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-accent/40"
+              className="w-full resize-none rounded-xl border border-border bg-foreground/[0.03] p-3 text-[13px] leading-relaxed text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-reader-highlight/50"
             />
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={saveNoteDraft}
                 disabled={savingNote}
-                className="flex flex-1 items-center justify-center rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97] disabled:opacity-70"
+                className="flex flex-1 items-center justify-center rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45),0_0_30px_-8px_hsl(var(--reader-highlight)/0.7)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97] disabled:opacity-70"
               >
                 {savingNote ? "Saving..." : "Save"}
               </button>
@@ -617,7 +670,7 @@ function FloatingCard({
   onHighlight,
   onRemoveHighlight,
   onSaveNote,
-  note,
+  canSaveNote,
   isHighlighted,
   ...stageProps
 }: {
@@ -627,11 +680,11 @@ function FloatingCard({
   onHighlight: () => void | Promise<void>;
   onRemoveHighlight: () => void | Promise<void>;
   onSaveNote: (note: string) => void | Promise<void>;
-  note: string | undefined;
+  canSaveNote: boolean;
   isHighlighted: boolean;
 } & Pick<
   ReturnType<typeof useDefinitionStage>,
-  "stage" | "setStage" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
+  "stage" | "setStage" | "savedNote" | "setSavedNote" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
 >) {
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -684,7 +737,9 @@ function FloatingCard({
           onHighlight={onHighlight}
           onRemoveHighlight={onRemoveHighlight}
           onSaveNote={onSaveNote}
-          note={note}
+          savedNote={stageProps.savedNote}
+          setSavedNote={stageProps.setSavedNote}
+          canSaveNote={canSaveNote}
           isHighlighted={isHighlighted}
           stage={stageProps.stage}
           setStage={stageProps.setStage}
@@ -709,7 +764,7 @@ function BottomSheet({
   onHighlight,
   onRemoveHighlight,
   onSaveNote,
-  note,
+  canSaveNote,
   isHighlighted,
   ...stageProps
 }: {
@@ -718,11 +773,11 @@ function BottomSheet({
   onHighlight: () => void | Promise<void>;
   onRemoveHighlight: () => void | Promise<void>;
   onSaveNote: (note: string) => void | Promise<void>;
-  note: string | undefined;
+  canSaveNote: boolean;
   isHighlighted: boolean;
 } & Pick<
   ReturnType<typeof useDefinitionStage>,
-  "stage" | "setStage" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
+  "stage" | "setStage" | "savedNote" | "setSavedNote" | "copied" | "slow" | "handleDefine" | "handleCancel" | "handleCopy"
 >) {
   // The tap that OPENS this sheet is followed, a beat later, by the
   // browser's synthetic compatibility "click" (mobile browsers replay
@@ -784,7 +839,9 @@ function BottomSheet({
             onHighlight={onHighlight}
             onRemoveHighlight={onRemoveHighlight}
             onSaveNote={onSaveNote}
-            note={note}
+            savedNote={stageProps.savedNote}
+            setSavedNote={stageProps.setSavedNote}
+            canSaveNote={canSaveNote}
             isHighlighted={isHighlighted}
             stage={stageProps.stage}
             setStage={stageProps.setStage}
@@ -815,22 +872,25 @@ export default function DefinitionPopover({
   onHighlight: () => void | Promise<void>;
   /** Present + isHighlighted=true when this popover was opened by tapping an
    * EXISTING highlight (see each ReaderView's handleHighlightTap) rather than
-   * a fresh selection - swaps the "Highlight" action for "Remove" and enables
-   * the note UI (notes attach to highlights, not to plain selections). */
+   * a fresh selection - swaps the "Highlight" action for "Remove". */
   onRemoveHighlight?: () => void | Promise<void>;
+  /** Persists a note for whatever this popover is about. A note still lives ON
+   * a highlight in storage (that underline is how the reader finds it again),
+   * but this is deliberately NOT gated on isHighlighted: saving a definition
+   * from a fresh selection is the common case, and the reader view creates the
+   * highlight to hang it off. Every view supplies this for both popovers. */
   onSaveNote?: (note: string) => void | Promise<void>;
   /** The highlight's currently-persisted note, if any - opens the popover
    * straight to note-view instead of actions, so re-reading a saved note
-   * never calls /api/define (and never spends a lookup). */
+   * never calls /api/define (and never spends a lookup). Seeds the stage
+   * machine only; from then on the popover tracks the note itself, since a
+   * note it saves onto a brand-new highlight never comes back through here. */
   note?: string;
   isHighlighted?: boolean;
 }) {
   const isTouch = useIsTouchDevice();
-  const { stage, setStage, copied, slow, handleDefine, handleCancel, handleCopy } = useDefinitionStage(
-    phrase,
-    context,
-    note,
-  );
+  const { stage, setStage, savedNote, setSavedNote, copied, slow, handleDefine, handleCancel, handleCopy } =
+    useDefinitionStage(phrase, context, note);
   const noopRemove = () => {};
   const noopSaveNote = () => {};
 
@@ -842,10 +902,12 @@ export default function DefinitionPopover({
         onHighlight={onHighlight}
         onRemoveHighlight={onRemoveHighlight ?? noopRemove}
         onSaveNote={onSaveNote ?? noopSaveNote}
-        note={note}
+        canSaveNote={Boolean(onSaveNote)}
         isHighlighted={isHighlighted}
         stage={stage}
         setStage={setStage}
+        savedNote={savedNote}
+        setSavedNote={setSavedNote}
         copied={copied}
         slow={slow}
         handleDefine={handleDefine}
@@ -863,10 +925,12 @@ export default function DefinitionPopover({
       onHighlight={onHighlight}
       onRemoveHighlight={onRemoveHighlight ?? noopRemove}
       onSaveNote={onSaveNote ?? noopSaveNote}
-      note={note}
+      canSaveNote={Boolean(onSaveNote)}
       isHighlighted={isHighlighted}
       stage={stage}
       setStage={setStage}
+      savedNote={savedNote}
+      setSavedNote={setSavedNote}
       copied={copied}
       slow={slow}
       handleDefine={handleDefine}

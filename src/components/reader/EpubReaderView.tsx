@@ -323,6 +323,13 @@ export default function EpubReaderView({
   // finishes) - epub.js's annotations API has no "already exists" check of
   // its own, so calling .underline() twice for the same record renders it twice.
   const appliedHighlightIds = useRef(new Set<string>());
+  // The live record behind each drawn underline, keyed by id. epub.js keeps an
+  // annotation's click handler for the whole life of that annotation, so a
+  // handler closing over the record it was CREATED with keeps serving that
+  // snapshot - and a note attached afterwards is invisible to every later tap
+  // until the book is reopened (mount re-reads storage). The closure carries
+  // only the id and reads the record from here.
+  const highlightRecords = useRef(new Map<string, HighlightRecord>());
   // epub.js fires "rendered" again for a document it has already rendered
   // into (a font-size change, or returning to a section still loaded in the
   // iframe), and listeners added to a document outlive that re-render. Without
@@ -365,8 +372,10 @@ export default function EpubReaderView({
   // completely separate path from "capture a new selection" below: no
   // window.getSelection() involved at all, hence no OS-menu risk to worry
   // about, and no geometric hit-testing needed either - the mark IS the hit target.
-  function makeHighlightClickHandler(record: HighlightRecord) {
+  function makeHighlightClickHandler(id: string) {
     return (event: Event) => {
+      const record = highlightRecords.current.get(id);
+      if (!record) return;
       const target = event.currentTarget as HTMLElement | null;
       const rect = target?.getBoundingClientRect();
       setPopover({
@@ -378,12 +387,15 @@ export default function EpubReaderView({
   }
 
   function applyUnderline(rendition: Rendition, record: HighlightRecord) {
+    // Ahead of the already-drawn guard: re-applying a record that gained a
+    // note is exactly how the map gets refreshed.
+    highlightRecords.current.set(record.id, record);
     if (appliedHighlightIds.current.has(record.id)) return;
     appliedHighlightIds.current.add(record.id);
     rendition.annotations.underline(
       record.position,
       {},
-      makeHighlightClickHandler(record),
+      makeHighlightClickHandler(record.id),
       EPUB_HIGHLIGHT_CLASS,
       EPUB_HIGHLIGHT_STYLES,
     );
@@ -613,16 +625,31 @@ export default function EpubReaderView({
     await deleteHighlight(popover.record.id);
     renditionRef.current?.annotations.remove(popover.record.position, "underline");
     appliedHighlightIds.current.delete(popover.record.id);
+    highlightRecords.current.delete(popover.record.id);
   }
 
+  /** A note is stored ON a highlight - that underline is the only way back to
+   * it once the popover closes. So a note saved straight from a fresh
+   * selection (the usual case: long-press, Define, Save as Note) creates the
+   * highlight it hangs off, rather than having nowhere to be written and
+   * silently going nowhere. */
   async function handleSaveNote(note: string) {
-    if (popover?.kind !== "highlight") return;
-    const updated = await updateHighlightNote(popover.record.id, note);
+    let target = popover?.kind === "highlight" ? popover.record : undefined;
+    if (!target) {
+      if (popover?.kind !== "selection") return;
+      target = await addHighlight(bookId, popover.data.phrase, popover.data.rawPosition);
+      if (renditionRef.current) applyUnderline(renditionRef.current, target);
+    }
+    const updated = await updateHighlightNote(target.id, note);
+    if (!updated) return;
+    highlightRecords.current.set(updated.id, updated);
     // Keeps the CURRENTLY OPEN popover's record in sync (e.g. if it's
     // reopened for editing again in this same session) - epub.js's own
     // underline rendering is unaffected, since notes are pure metadata with
     // no visual representation on the page itself.
-    if (updated) setPopover({ kind: "highlight", record: updated, anchor: popover.anchor });
+    if (popover?.kind === "highlight") {
+      setPopover({ kind: "highlight", record: updated, anchor: popover.anchor });
+    }
   }
 
   if (loadState === "error") {

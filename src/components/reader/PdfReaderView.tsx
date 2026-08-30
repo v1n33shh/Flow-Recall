@@ -474,12 +474,25 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
     setTappedHighlight(null);
   }
 
+  /** A note is stored ON a highlight - that underline is the only way back to
+   * it once the popover closes. So a note saved straight from a fresh
+   * selection (the usual case: long-press, Define, Save as Note) creates the
+   * highlight it hangs off, rather than having nowhere to be written and
+   * silently going nowhere. */
   async function handleSaveNote(note: string) {
-    if (!activeTappedHighlight) return;
-    const updated = await updateHighlightNote(activeTappedHighlight.record.id, note);
+    let target = activeTappedHighlight?.record;
+    if (!target) {
+      if (!selection) return;
+      target = await addHighlight(bookId, selection.phrase, selection.rawPosition);
+    }
+    const updated = await updateHighlightNote(target.id, note);
     if (!updated) return;
-    setTappedHighlight((prev) => (prev ? { ...prev, record: updated } : prev));
-    setHighlights((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+    setHighlights((prev) =>
+      prev.some((h) => h.id === updated.id)
+        ? prev.map((h) => (h.id === updated.id ? updated : h))
+        : [...prev, updated],
+    );
+    setTappedHighlight((prev) => (prev && prev.record.id === updated.id ? { ...prev, record: updated } : prev));
   }
 
   const handleScrollPositionChange = useCallback((anchorStr: string, fraction: number) => {
@@ -617,6 +630,7 @@ export default function PdfReaderView({ bookId, onExit }: { bookId: string; onEx
           anchor={selection.anchor}
           onClose={closePopover}
           onHighlight={handleHighlight}
+          onSaveNote={handleSaveNote}
         />
       )}
       {activeTappedHighlight && (

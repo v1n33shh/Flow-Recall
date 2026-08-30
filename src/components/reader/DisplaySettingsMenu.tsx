@@ -3,6 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { FONT_FAMILY_CSS, FONT_FAMILY_LABELS, type FontFamilyId } from "@/lib/readerPreferences";
+import {
+  DIM_MAX,
+  DIM_MIN,
+  DIM_STEP,
+  eyeFilterColor,
+  isEyeFilterActive,
+  useEyeFilter,
+  WARMTH_IDS,
+  WARMTH_LABELS,
+} from "@/lib/eyeFilter";
 
 export type ZoomControl = {
   percent: number;
@@ -95,6 +105,11 @@ export default function DisplaySettingsMenu({
   viewMode?: ViewModeControl;
 }) {
   const [open, setOpen] = useState(false);
+  // Not a prop: the filter applies to every reader type identically, so there is
+  // nothing for a view to configure. Both this menu and ReaderChrome's overlay
+  // read the same store - see eyeFilter.ts.
+  const [eyeFilter, setEyeFilter] = useEyeFilter();
+  const filterOn = isEyeFilterActive(eyeFilter);
 
   useEffect(() => {
     if (!open) return;
@@ -111,7 +126,7 @@ export default function DisplaySettingsMenu({
         type="button"
         aria-label="Display settings"
         onClick={() => setOpen((v) => !v)}
-        className={`flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-foreground transition-colors active:scale-90 ${
+        className={`relative flex h-8 min-w-8 items-center justify-center rounded-full px-1.5 text-foreground transition-colors active:scale-90 ${
           open ? "bg-foreground/15" : "hover:bg-foreground/10"
         }`}
       >
@@ -119,6 +134,17 @@ export default function DisplaySettingsMenu({
           <span className="text-sm">A</span>
           <span className="text-[11px]">a</span>
         </span>
+        {/* Without this, a warm screen has no explanation on it anywhere - the
+            filter is a global setting adjusted behind a menu, so someone
+            returning to the app tomorrow would just find their reader tinted.
+            The dot is under the overlay like everything else, so it wears the
+            filter's own colour, which is the point. */}
+        {filterOn && (
+          <span
+            aria-hidden="true"
+            className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-accent ring-2 ring-surface"
+          />
+        )}
       </button>
 
       <AnimatePresence>
@@ -133,7 +159,7 @@ export default function DisplaySettingsMenu({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.97 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
-              className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-72 rounded-2xl border border-border bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+              className="no-scrollbar absolute right-0 top-[calc(100%+0.5rem)] z-50 max-h-[calc(100vh-8rem)] w-72 overflow-y-auto rounded-2xl border border-border bg-surface/90 p-4 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_20px_60px_-12px_rgba(0,0,0,0.8)] backdrop-blur-xl"
             >
               <div className="flex flex-col gap-4">
                 {viewMode && (
@@ -248,6 +274,68 @@ export default function DisplaySettingsMenu({
                     </div>
                   </div>
                 )}
+
+                {/* Eye Filter, last: it is the only setting here about the room
+                    rather than the book, and it is the one that changes every
+                    other control's appearance while you use it. Present on
+                    every reader type - unlike the sections above it takes no
+                    props, because there is nothing type-specific to configure. */}
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted-foreground">Eye Filter</p>
+                    {filterOn && (
+                      <button
+                        type="button"
+                        onClick={() => setEyeFilter({ warmth: "off", dim: DIM_MIN })}
+                        className="-my-0.5 rounded-lg px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground active:scale-95"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Each swatch is painted in the exact colour that step
+                      multiplies the screen by, so the choice is shown rather
+                      than described. They sit under the overlay like everything
+                      else, so once a filter is on they all warm together - the
+                      difference BETWEEN them is what stays readable. */}
+                  <div className="mt-2 grid grid-cols-4 gap-1.5">
+                    {WARMTH_IDS.map((id) => {
+                      const selected = eyeFilter.warmth === id;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setEyeFilter({ warmth: id })}
+                          aria-pressed={selected}
+                          className={`flex flex-col items-center gap-1.5 rounded-xl border px-1 py-2 transition-colors ${
+                            selected
+                              ? "border-accent/50 bg-accent/10 text-accent"
+                              : "border-border bg-foreground/5 text-muted-foreground hover:bg-foreground/10"
+                          }`}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className="h-1.5 w-full rounded-full"
+                            style={{ backgroundColor: eyeFilterColor({ warmth: id, dim: DIM_MIN }) ?? "rgb(255, 255, 255)" }}
+                          />
+                          <span className="text-[10px] font-medium leading-none">{WARMTH_LABELS[id]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-3">
+                    <StepperRow
+                      label="Dim"
+                      value={eyeFilter.dim}
+                      min={DIM_MIN}
+                      max={DIM_MAX}
+                      step={DIM_STEP}
+                      onChange={(next) => setEyeFilter({ dim: next })}
+                    />
+                  </div>
+                </div>
               </div>
             </motion.div>
           </>

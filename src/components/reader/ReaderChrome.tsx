@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
+import EyeFilterOverlay from "./EyeFilterOverlay";
 
 // PERFORMANCE CONTRACT (matches StreakModal/MobileTabBar): every animation
 // here touches transform/opacity only. The one static backdrop-blur (chrome
@@ -83,6 +84,13 @@ export default function ReaderChrome({
         )}
         {children}
       </div>
+
+      {/* Last child, z-50: the filter has to sit over the header AND over
+          anything a reader view renders into the pane above (the definition
+          sheet is a z-40 fixed layer inside those children), so it is the top
+          of this stacking context by DOM order as well as by z-index. Renders
+          nothing at all while the filter is off. */}
+      <EyeFilterOverlay />
     </div>
   );
 }

@@ -32,6 +32,15 @@
      success/danger/pending  answer-correctness feedback in the study feed
                           only (correct / incorrect / awaiting verification) -
                           a third confined exception, never structural chrome
+
+   NOT an exception, despite appearing to be one: the reader's Eye Filter can
+   put a warm amber cast over the entire reader. It is a LENS, not a colour in
+   this system - one `mix-blend-mode: multiply` layer above everything, with a
+   colour computed at runtime from two user settings (see src/lib/eyeFilter.ts).
+   It defines no token, is referenced by no class, and every surface underneath
+   it is still built from the achromatic tokens above. Turn it off and the
+   monochrome design is untouched, which is exactly why it is a filter rather
+   than a theme.
    ========================================================================== */
 :root {
   --background: 0 0% 2%;

@@ -10,6 +10,11 @@ export type PdfViewMode = "original" | "reflow";
  * but it lives here for the same reason the others do: it is one global choice
  * the user makes once and expects to still be there tomorrow. */
 export type LibrarySort = "recent" | "title" | "progress";
+
+/** Eye Filter - how much blue the reader's overlay takes out. The step values,
+ * the dim bounds and the colour maths all live in eyeFilter.ts; this file only
+ * persists the choice, the same way it persists a font. */
+export type EyeFilterWarmth = "off" | "soft" | "warm" | "amber";
 export type PdfReflowLayoutMode = "paginated" | "scrolling";
 
 export type ReaderPreferences = {
@@ -20,6 +25,11 @@ export type ReaderPreferences = {
   pdfViewMode: PdfViewMode;
   pdfReflowLayoutMode: PdfReflowLayoutMode;
   librarySort: LibrarySort;
+  eyeFilterWarmth: EyeFilterWarmth;
+  /** Percent of black over the page, 0-50. Bounds enforced by eyeFilter.ts's
+   * clampDim, applied again on read here so a hand-edited localStorage value
+   * can't blank the page out. */
+  eyeFilterDim: number;
 };
 
 const STORAGE_KEY = "flowrecall:reader-prefs";
@@ -47,6 +57,11 @@ const DEFAULTS: ReaderPreferences = {
   // continue. It also replaces what the grid did before this preference
   // existed: IndexedDB's own key order, which is random UUID order.
   librarySort: "recent",
+  // Off by default, deliberately: an eye filter that arrives uninvited reads as
+  // a broken screen, not a feature. Someone reading for hours will go and turn
+  // it on; someone opening their first book should see the design as designed.
+  eyeFilterWarmth: "off",
+  eyeFilterDim: 0,
 };
 
 // EPUB content renders inside epub.js's own sandboxed iframe documents,
@@ -92,6 +107,18 @@ function isLibrarySort(value: unknown): value is LibrarySort {
   return value === "recent" || value === "title" || value === "progress";
 }
 
+function isEyeFilterWarmth(value: unknown): value is EyeFilterWarmth {
+  return value === "off" || value === "soft" || value === "warm" || value === "amber";
+}
+
+/** Mirrors eyeFilter.ts's DIM_MAX. Duplicated rather than imported to keep this
+ * module dependency-free in the direction that matters: eyeFilter.ts imports
+ * from here, so importing back would be a cycle. */
+function clampStoredDim(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULTS.eyeFilterDim;
+  return Math.min(50, Math.max(0, Math.round(value)));
+}
+
 function isPdfViewMode(value: unknown): value is PdfViewMode {
   return value === "original" || value === "reflow";
 }
@@ -119,6 +146,8 @@ export function getReaderPreferences(): ReaderPreferences {
       pdfViewMode: isPdfViewMode(parsed.pdfViewMode) ? parsed.pdfViewMode : DEFAULTS.pdfViewMode,
       pdfReflowLayoutMode: isPdfReflowLayoutMode(parsed.pdfReflowLayoutMode) ? parsed.pdfReflowLayoutMode : DEFAULTS.pdfReflowLayoutMode,
       librarySort: isLibrarySort(parsed.librarySort) ? parsed.librarySort : DEFAULTS.librarySort,
+      eyeFilterWarmth: isEyeFilterWarmth(parsed.eyeFilterWarmth) ? parsed.eyeFilterWarmth : DEFAULTS.eyeFilterWarmth,
+      eyeFilterDim: clampStoredDim(parsed.eyeFilterDim),
     };
   } catch {
     return DEFAULTS;

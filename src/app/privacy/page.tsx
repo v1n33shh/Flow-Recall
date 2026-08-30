@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - FlowRecall",
   description: "How FlowRecall collects, uses, and protects your data.",
 };
 
-const LAST_UPDATED = "August 21, 2026";
+const LAST_UPDATED = "August 31, 2026";
 const CONTACT_EMAIL = "founder@flowrecall.app";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -112,14 +113,30 @@ export default function PrivacyPolicyPage() {
 
       <Section title="Data retention and deletion">
         <p>
-          We keep your account data for as long as your account is active. To request that we
-          delete your account and associated data, email us at{" "}
+          We keep your account data for as long as your account is active. You can delete it
+          yourself at any time, without asking us: open{" "}
+          <Link href="/account" className="text-foreground underline underline-offset-2">
+            Account
+          </Link>{" "}
+          and choose <strong className="font-semibold text-foreground">Delete Account</strong>
+          {" "}under Danger Zone. You&apos;ll be asked to type your email address to confirm,
+          because it cannot be undone.
+        </p>
+        <p className="mt-3">
+          Deleting your account removes your profile, email address, streak history and usage
+          counters from our database immediately, and cancels any active subscription with our
+          payment provider first, so you are never charged for an account that no longer exists.
+          It also erases everything the app has stored on the device you delete from: your saved
+          decks and their progress, and any books, highlights and reading positions in the
+          reader. That local data never reaches our servers in the first place, so deleting it is
+          the only copy there is.
+        </p>
+        <p className="mt-3">
+          If you would rather we did it for you, or you can no longer sign in, email us at{" "}
           <a href={`mailto:${CONTACT_EMAIL}`} className="text-foreground underline underline-offset-2">
             {CONTACT_EMAIL}
           </a>{" "}
-          from the address on your account, and we&apos;ll remove it. Since your flashcards live
-          in your own browser&apos;s local storage rather than on our servers, you can also clear
-          them yourself at any time by clearing that browser&apos;s site data.
+          from the address on your account and we&apos;ll remove it.
         </p>
       </Section>
 

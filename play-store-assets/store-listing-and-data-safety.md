@@ -45,7 +45,77 @@ Yes (HTTPS/TLS throughout — Vercel-hosted, standard TLS termination).
 - **On the device:** the whole reader library (books, files, cached PDF text, highlights, reading positions) plus saved decks, in-progress study state and per-deck progress. Only the light/dark theme preference is kept, so the UI doesn't flip mid-teardown.
 - **Billing:** a live Stripe subscription is cancelled at the gateway *first*, and if that call fails **nothing is deleted** — so a deleted account can never be left being charged. (Razorpay is a one-time payment, not a recurring subscription, so there is nothing to cancel there.)
 
-No grace period and no soft delete — it is a hard delete on confirmation. Answer "Yes" to the in-app deletion question and give the same URL as the account page; no support-request fallback is needed.
+No grace period and no soft delete — it is a hard delete on confirmation. Answer "Yes" to the in-app deletion question and give the URL in the next section. The privacy policy describes this flow and keeps an email fallback for anyone locked out of their account.
+
+## Data deletion URL (Data Safety asks for a link, not "it's in the app")
+
+Give **`https://www.flowrecall.app/privacy`** — its "Data retention and deletion" section names
+the in-app path, what deletion removes on the server and on the device, that a subscription is
+cancelled first, and an email fallback for anyone who can no longer sign in. `/account` is the
+page that actually deletes, but it is behind a login, so the policy page is the better public URL.
+
+---
+
+## App access — the section most likely to get this rejected
+
+FlowRecall requires an account for every core feature, so **"All functionality is available
+without special access" is the wrong answer.** Choose *All or some functionality is restricted*
+and supply credentials.
+
+**Before submitting, create a dedicated review account** (e.g. `review@flowrecall.app`) and give
+Console its email and password with these instructions:
+
+> 1. Open the app and tap Account, then Log In.
+> 2. Sign in with the email and password provided.
+> 3. All features are then available. Reader content can be added from Reader > Paste Text; a
+>    flashcard deck can be generated from Ingest > paste any text > Generate micro-concepts.
+
+⚠️ **The review account must not be the only one, and expect it to be destroyed.** Account >
+Danger Zone > Delete Account is now a real, unconfirmed-by-us-anywhere-else button sitting in the
+app a reviewer is asked to explore. If they press it, the credentials stop working and the next
+review fails for a reason that looks like a broken login. Options, in order of preference:
+
+1. Recreate the review account after every review round, and re-check it can sign in before each
+   resubmission.
+2. Keep two review accounts and give both, so one surviving is enough.
+3. Grant it Pro manually (`plan: "PRO"`) so the reviewer sees the paid experience without a
+   payment, which also avoids them hitting the FREE lifetime cap of one deck mid-review.
+
+## Content rating questionnaire
+
+Answers for an educational study tool with no user-to-user content:
+
+| Question area | Answer |
+|---|---|
+| Category | Reference, News, or Educational |
+| Violence, sexuality, profanity, drugs, gambling | None |
+| User-generated content / user interaction | **No** — nothing a user creates is visible to any other user; decks and books stay on their own device |
+| Shares user location | No |
+| Allows purchases | **Yes** — a Pro subscription |
+| Contains ads | No |
+
+Expect an "everyone / 3+" style rating. Answer from the app as it actually is: the AI generates
+text from material the user supplies, which is not user-to-user content, but say so honestly if
+the form asks about AI-generated content.
+
+## Target audience and content
+
+- Target age groups: **18+** (or 13+ if you prefer, but the privacy policy says the app is not
+  directed at children under 13 — keep the two consistent).
+- Appeals to children: **No.**
+- Do not opt into the Teacher Approved / Families programme; it pulls in extra requirements.
+
+## The remaining declarations, all straightforward
+
+| Declaration | Answer |
+|---|---|
+| Ads | **No ads** — nothing in the app serves them |
+| News app | No |
+| COVID-19 contact tracing or status | No |
+| Financial features | **No** — a subscription is not a financial product; Stripe and Razorpay handle payment and FlowRecall never touches card data |
+| Government app | No |
+| Data safety: encrypted in transit | Yes |
+| Data safety: deletion available | Yes, with the URL above |
 
 ---
 

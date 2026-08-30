@@ -24,8 +24,13 @@ is now the *only* thing standing between this repo and a submission. Everything 
 1. Create the app in Play Console and upload **`android/app/build/outputs/bundle/release/app-release.aab`**
    (gitignored - rebuild it if this is a fresh clone, recipe below).
 2. Attach the eight screenshots in `play-store-assets/screenshots/` - current as of `880c8b3`, all 1080x2160.
-3. Work the Data Safety form from `play-store-assets/store-listing-and-data-safety.md`. Its answers were read off
-   the actual code, and the account-deletion answer that sat open all week is now filled in and true.
+3. Work through `play-store-assets/store-listing-and-data-safety.md`. It now covers **every** Console form, not
+   just Data Safety: the deletion URL to give, **App access** (the app is login-gated, so review credentials are
+   mandatory - and note the warning there about a reviewer pressing Delete Account and destroying them), the
+   content rating questionnaire, target audience, and the ads/news/COVID/financial/government declarations. Every
+   answer was read off the actual code.
+   **Still to do by hand: create the review account** (e.g. `review@flowrecall.app`), ideally granted `plan: "PRO"`
+   so a reviewer never hits the FREE one-deck lifetime cap.
 4. Console then issues **Play App Signing's own SHA-256**, which is the second fingerprint
    `public/.well-known/assetlinks.json` is missing. It degrades rather than breaks until then.
 

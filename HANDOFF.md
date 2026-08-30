@@ -4,10 +4,89 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State as of **2026-08-30, end of session**: the last **code** commit is **`b9626df`**, which is pushed to
-`origin/main` and **verified live in production**. The commit that added this section is documentation only and
-may still be unpushed - run `git status -sb` first and push it if it says `ahead 1`. Trust `git status` over this
-line either way; it has gone stale mid-session before.
+State as of **2026-08-30, later session**: the last **code** commit is still **`b9626df`**, pushed to
+`origin/main` and **verified live in production**. Since then only assets and documentation have changed, and the
+screenshot set is rewritten but **uncommitted** - run `git status -sb` first and trust it over this line; it has
+gone stale mid-session before.
+
+---
+
+## 🔴 START HERE — 2026-08-30 (screenshots): the store set is current again
+
+Yesterday's open item #2 is **done**. `play-store-assets/screenshots/` was three reader sessions stale (dated
+Aug 22); all six slots are recaptured off the physical device and **two new slots added** for the features that
+appeared in no asset at all, so the set is now **eight** at **1080x2160 exactly**, sitting uncommitted in the
+working tree. Play allows 8 phone screenshots, so the set is full. No code changed.
+
+### The set, and what each one had to work around
+
+| file | crop `y` | notes |
+|---|---|---|
+| `01-home-hero.png` | 216 | the one shot kept from the earlier attempt at 15:29; already clean |
+| `02-ingest.png` | 231 | the fictional cardiac-cycle notes, deck title filled. `y` had to go *down* to 231: at 186 the dropzone's "Tap to upload a PDF" is cut mid-line |
+| `03-reader.png` | 96 | the earlier attempt was **blank** - see the pagination trap below. Parked at paragraph 155 so the progress bar reads ~35% rather than a 2%-wide sliver |
+| `04-pricing-pro.png` | 186 | Pro card framed by scrolling the app's own overflow pane, badge at CSS y=150. Better than the Aug 22 one: the CTA now clears the tab bar |
+| `05-study-feed.png` | 168 | real generated cards, see the new deck below. The `✕` loses its top 24px: `✕`-to-CTA is 2184 rows and only 2160 fit |
+| `06-account.png` | 186 | name **"Unknown"**, avatar **"U"**, email removed - the user asked for exactly this. `y=186` is the only offset where both the `Account` heading and the whole tab bar survive |
+| `07-definition.png` | 240 | **new.** A real long-press lookup on the word *simplicity*, definition plus both examples plus `Save as Note`. `y=240` drops the reader header entirely: header-top to sheet-bottom is 2268 rows |
+| `08-eye-filter.png` | 96 | **new.** The Aa menu open on the Eye Filter row, `Warm` selected, `Dim 10%`, page visibly warmed. The panel is translucent by design, so reader text shows through behind the labels - that is the app, not an artefact |
+
+`_check.png` was deleted from that folder - the previous handoff already called it a stray, not an asset.
+
+**2:1 is the binding constraint.** The Aug 22 set was 1080x2300 (2.13:1). Every screen whose content spans more
+than 2160 device rows now forces a choice about what to sacrifice; the table says which choice was taken and why.
+Nothing was faked to dodge it - no zoom changes, no hidden elements.
+
+### Three traps worth not re-learning
+
+- **Replacing reader paragraph text collapses the layout and paints a blank page.** `TextReaderCore` translates
+  the column container by `currentPage * (containerWidth + gap)`; shortening the paragraphs shrinks
+  `content.scrollWidth`, so a `currentPage` deep into the window points past the end. That is exactly why the
+  15:35 attempt captured a black page under a live "Page 401 of 444" header. Swap **length-preservingly** - build
+  each replacement by cycling the prose until it matches the original paragraph's character count.
+- **A full document load lands on the marketing home page, whatever the URL says.** The export writes
+  `reader.html`, not `reader/index.html`, so the Capacitor server falls back to `index.html` and the client router
+  renders `/`. `page.reload()` and `page.goto("/reader")` both do this. Navigate **in-app** from a fresh launch.
+- **The definition popover needs a real OS long-press**, `adb shell input swipe X Y X Y 800`, and
+  `window.getSelection()` stays **empty** afterwards - the app runs its own selection, so assert on the action
+  sheet's buttons (`✦ Define`, `▍ Highlight`, `Copy`) instead. To aim the press, put a `Range` around the word and
+  convert: `deviceX = rectCenterX * 3`, `deviceY = rectCenterY * 3 + 96`. Only accept a hit whose rect is wholly
+  inside the viewport; off-screen columns report boxes too. The lookup takes ~7.5s.
+- **The Dim stepper does not batch.** Three `click()` calls in one `evaluate` advance it by one step; space them
+  ~700ms apart. `Reset` in the same menu returns warmth `off` + dim `0`, which is the user's stored state - use it
+  rather than writing `localStorage` back by hand.
+- **`MobileTabBar` returns `null` on `/reader` and `/study`** (`src/components/MobileTabBar.tsx:200`), so there is
+  no tab link to click from inside either. Leave via `button[aria-label="Back to library"]`; the reader chrome has
+  proper aria-labels throughout (`Previous page`, `Next page`, `Book Contents`, `Display settings`).
+- Also: `a[href="/reader"]` matches **three** elements, two of them the hidden desktop nav. Playwright's
+  `click()` picks the first and times out. Filter by rendered box and click in-page.
+
+### What this session changed outside the screenshots
+
+- **A new deck exists: "Cardiac cycle - lecture 4", 3 concepts, saved to the library.** Generating it was the only
+  way to photograph the study feed with real cards; the source notes are fictional, so nothing private is in it.
+  Delete it if it is unwanted - it is the one piece of state this session added.
+- The reader's stored position was moved to paragraph 6, then 155, then **restored to
+  `{"paragraphIndex":400}`** with `progress` unchanged at `0.9051918735891648`. Verified by census afterwards.
+- Reader preferences were changed for `08` and **restored byte-for-byte** - `eyeFilterWarmth:"off"`,
+  `eyeFilterDim:0`, verified by string equality against the value read before touching anything.
+- **The phone is running a devtools-enabled build**, not the release APK the previous block describes. That is how
+  these captures were possible. Re-flash `public/flowrecall-release.apk` before shipping - and note that a
+  different signing key would need an uninstall first, which **wipes the library**.
+
+### Census, taken after all the writing was done
+
+Two books, and the EPUB has changed identity again since the last block: `aae884e8` **How to Win Friends is gone**,
+replaced by `aa230a39` **Awareness (Osho Insights for a New Way of Living)**, `progress 0`. The user tidying, as
+before. `11da49a7` The Book of Wisdom holds the only highlight, `0a4000f3`, phrase `"have"`,
+`{paragraphIndex:104, start:1389, end:1393}`, `note: null` - byte-identical to the previous block's record.
+`pdfText.version` is still **2**.
+
+### Still waiting on the user, unchanged
+
+Items 1, 3, 4 and 5 from the block below all stand: `PDF_EXTRACT_VERSION` bump (recommendation: skip),
+`assetlinks.json` missing Play App Signing's SHA-256, the $25 Play account still blocked on the card, and the two
+unbuilt offers (Eye Filter auto-schedule, light-mode verification). Item 2 - the screenshots - is now closed.
 
 ---
 

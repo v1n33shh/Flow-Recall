@@ -153,17 +153,14 @@ above), and the Stripe failure path beyond unit tests (the throwaway was FREE, s
 - `pgrep -f "next dev"` matches the shell command containing that string, so it reports a server still running
   after it has stopped. Check the port instead.
 
-### The untracked `_*.mjs` scratch, and what is worth keeping
+### The device scripts are committed now
 
-Not committed, and they encode most of the CDP knowledge above. `_shot.sh` is the screenshot harness (collapses
-the notification shade, crops to 1080x2160, asserts the top rows). The rest drive the phone over CDP:
-`_census.mjs` (library + highlight census - run this before and after anything destructive), `_pos.mjs`
-(read/write the stored reading position), `_reader_shot.mjs` (open the PDF at a paragraph and swap in fictional
-prose, length-preservingly), `_tab.mjs` (route home then to a tab, since the tab bar is null on `/reader` and
-`/study`), `_frame.mjs` (scroll the app's own overflow pane to put an element at a chosen y), `_measure.mjs`,
-`_word.mjs` (locate a word's device-px centre for a long-press), `_acct.mjs` (mask name/email before a store
-capture), `_prefs.mjs` / `_restore.mjs` (save and restore reader preferences), `_define.mjs`, `_eyefilter.mjs`,
-`_fill_ingest.mjs`, `_survey.mjs`. They all assume `adb forward tcp:9222` and a devtools build.
+`scripts/device/` - the Playwright-over-CDP harness this and the screenshot session were
+built on, moved out of the repo root and into the tree so it survives a clone. Read
+`scripts/device/README.md` first: it carries the connection recipe, what each script does,
+and the traps (length-preserving prose swap, the 96px status bar, the `z-50` modal rule,
+`elementFromPoint` for tap targets, `librarySort` reordering the grid). The seven superseded
+one-offs from the screenshot session were deleted rather than kept.
 
 ### Release artifacts: rebuilt, and current with this code
 

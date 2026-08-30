@@ -65,9 +65,17 @@ credits against a row that no longer existed. Both now carry the `if (!user) ret
   native cross-origin call needed no CORS work.
 - No test rows left behind - queried for `deletion-test+*` / `cascade-test+*`, empty.
 
-**Not** verified: the native cross-origin cookie path (the button is installed on the phone but pressing it there
-wipes the real library), and the Stripe failure path beyond unit tests (the throwaway was FREE, so no gateway call
-fired).
+**The on-device check found a bug the browser test could not.** The sheet's overlay was `z-50`, the same layer as
+`MobileTabBar` (`fixed bottom-0 z-50`), which renders later in DOM order and therefore painted over it. Both sheet
+buttons sit at y 704-748 with the tab bar starting at 683, so `elementFromPoint` on **"Keep my account" returned
+the Ingest tab link** - on a phone neither button was tappable and the sheet was a trap. Invisible on the web,
+where the bar is `sm:hidden`, which is exactly why the desktop e2e passed. Fixed by moving the overlay to
+`z-[60]`; re-measured on the device, both taps now land on their own buttons, the gate still arms only on the
+right address (padding and case forgiven), and `Keep my account` dismisses without leaving `/account`. Lesson: a
+modal added to this app has to outrank `z-50`, and a viewport-dependent overlap needs the real device.
+
+**Not** verified: actually pressing Delete on the phone (it would wipe the real library - see the scoping note
+above), and the Stripe failure path beyond unit tests (the throwaway was FREE, so no gateway call fired).
 
 ### Environment traps learned this session
 
@@ -88,8 +96,8 @@ Both were rebuilt after the feature commit and check out:
 
 | | |
 |---|---|
-| `public/flowrecall-release.apk` | md5 `3d1ec489…`, 6,315,724 bytes, **committed**. Cert `e1f4352f…bc09`, devtools `false`, carries `Delete Account`, no nested copy of itself |
-| `android/app/build/outputs/bundle/release/app-release.aab` | 6,165,970 bytes, `jar verified`, same cert, devtools `false`, carries the feature. **Gitignored** - a local artifact, so it does not survive a fresh clone |
+| `public/flowrecall-release.apk` | md5 `dcb36846…`, 6,315,792 bytes, **committed**. Cert `e1f4352f…bc09`, devtools `false`, carries `Delete Account` and the `z-[60]` fix, no nested copy of itself |
+| `android/app/build/outputs/bundle/release/app-release.aab` | 6,166,052 bytes, `jar verified`, same cert, devtools `false`, carries both. **Gitignored** - a local artifact, so it does not survive a fresh clone |
 
 `versionCode` is still **1**. Fine for a first upload; every upload after it must bump or the Console rejects it.
 

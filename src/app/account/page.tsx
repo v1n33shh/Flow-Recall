@@ -112,7 +112,13 @@ function DeleteAccountSheet({ email, onClose }: { email: string | null; onClose:
   const armed = confirmationMatches(typed, email);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+    // z-[60], not z-50: MobileTabBar is `fixed bottom-0 z-50` and renders after
+    // this in DOM order, so at an equal z-index the tab bar wins and paints over
+    // the sheet's own buttons. Measured on the device - the buttons land at
+    // y 704-748 with the tab bar starting at 683, and elementFromPoint on
+    // "Keep my account" returned the Ingest tab link. A modal has to outrank the
+    // navigation chrome it covers. Invisible on the web, where the bar is sm:hidden.
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm">
       <div
         className="w-full max-w-md rounded-t-3xl border-t border-border bg-background px-5 pt-5"
         // Matches MobileTabBar and the library's delete bar: a WebView that is

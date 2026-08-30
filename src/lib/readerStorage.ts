@@ -282,6 +282,15 @@ export async function deleteBooks(ids: string[]): Promise<void> {
   notifyLibraryUpdate();
 }
 
+/** Removes every book in the library, and with it every file, cached PDF text
+ * and highlight - the local half of account deletion. Goes through deleteBooks
+ * so there is exactly one cascade in this file: a second one would drift out of
+ * sync with it the next time a store is added. */
+export async function deleteAllBooks(): Promise<void> {
+  const books = await listBooks();
+  await deleteBooks(books.map((book) => book.id));
+}
+
 /** Persists a highlight so it survives closing and reopening the book -
  * `position` is opaque and type-dependent, see HighlightRecord. Idempotent:
  * if a highlight already exists for this book at the exact same position

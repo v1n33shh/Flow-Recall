@@ -71,6 +71,15 @@ export async function POST(request: Request) {
     where: { id: session.user.id },
     select: { plan: true, currentPeriodEnd: true, definitionsUsed: true },
   });
+
+  // A JWT outlives the row it names: sessions are stateless (src/auth.ts sets
+  // strategy "jwt" and keeps a token valid when the lookup finds nothing), so a
+  // token held across account deletion would otherwise read as a brand-new FREE
+  // user with zero usage and sail through the quota gate below. Same guard
+  // /api/study/track already applies.
+  if (!user) {
+    return Response.json({ error: "You must be signed in." }, { status: 401 });
+  }
   const plan = await resolveEffectivePlan(
     user ? { id: session.user.id, plan: user.plan, currentPeriodEnd: user.currentPeriodEnd } : null,
   );

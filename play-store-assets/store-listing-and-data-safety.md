@@ -39,7 +39,13 @@ Yes — an account is required to use core features (this isn't optional profili
 Yes (HTTPS/TLS throughout — Vercel-hosted, standard TLS termination).
 
 ### Can users request data deletion?
-Verify current account-deletion capability before answering this — if there's no self-serve "delete my account" flow yet, Play Console will want either one, or a documented support-request path (e.g., an email to contact for deletion), and Google has been tightening enforcement of this requirement.
+**Yes — self-serve, in the app.** Account → Danger Zone → **Delete Account**, confirmed by typing the account's own email address. One tap deletes:
+
+- **Server-side:** the `User` row, and with it (via `onDelete: Cascade`) every `Account`, `Session` and `StudyDay` row — so name, email, plan/billing ids, streak history and usage counters all go. Any outstanding `VerificationToken` for that address is swept too.
+- **On the device:** the whole reader library (books, files, cached PDF text, highlights, reading positions) plus saved decks, in-progress study state and per-deck progress. Only the light/dark theme preference is kept, so the UI doesn't flip mid-teardown.
+- **Billing:** a live Stripe subscription is cancelled at the gateway *first*, and if that call fails **nothing is deleted** — so a deleted account can never be left being charged. (Razorpay is a one-time payment, not a recurring subscription, so there is nothing to cancel there.)
+
+No grace period and no soft delete — it is a hard delete on confirmation. Answer "Yes" to the in-app deletion question and give the same URL as the account page; no support-request fallback is needed.
 
 ---
 
@@ -75,5 +81,4 @@ Verify current account-deletion capability before answering this — if there's 
 ## Known follow-ups (not blocking today, but don't forget)
 
 - After the *first* Play Console upload: add Google Play App Signing's own SHA-256 to `public/.well-known/assetlinks.json` (Play re-signs your app with its own key, which won't match the upload-key fingerprint currently there).
-- `play-store-assets/screenshots/` predate the Level 2 cloze redesign (2026-08-23 session) — the study-feed screenshot in particular no longer reflects the current UI. Worth a fresh capture pass before uploading.
 - Re-verify the "crash logs / diagnostics" and "data deletion" answers above against the app's actual current state right before submitting — both can change independently of this document.

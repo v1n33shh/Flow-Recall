@@ -4,10 +4,95 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State as of **2026-08-30, later session**: the last **code** commit is still **`b9626df`**, pushed to
-`origin/main` and **verified live in production**. Since then only assets and documentation have changed, and the
-screenshot set is rewritten but **uncommitted** - run `git status -sb` first and trust it over this line; it has
-gone stale mid-session before.
+State as of **2026-08-30, later session**: the newest **code** commit is account deletion (see the block
+directly below), committed locally and **not yet pushed at the time of writing** - the user was going to push it
+so Vercel picks it up. Under it sit `880c8b3` (the eight-shot screenshot set) and `b9626df` (the last commit
+verified live in production). Run `git status -sb` first and trust it over this line; it has gone stale
+mid-session before.
+
+---
+
+## 🔴 START HERE - 2026-08-30 (account deletion): the last pre-submission blocker is closed
+
+Play Console requires self-serve account deletion and the app had none - no handler in `src/`, no route, nothing
+on the account screen. That was the only item left that needed code; everything else is blocked on the $25
+developer account. Built, tested and committed. **Not yet released**: see the stale-artifacts warning below.
+
+### What it does
+
+`DELETE /api/account` (new), reached from **Account > Danger Zone > Delete Account** on the native screen and a
+`Delete account` link on the web card. Confirmed by **typing the account's own email** - not a two-tap, because
+this is unrecoverable. Order is deliberate and load-bearing:
+
+1. **Cancel recurring billing first.** New `cancelRecurringBilling` in `src/lib/billing.ts` - the codebase's first
+   real gateway call, `stripe.subscriptions.cancel`. A failed cancel returns **502 and deletes nothing**, so a
+   deleted account can never be left billing a card. Stripe's `resource_missing` counts as success (already gone
+   is the outcome we wanted). Razorpay is a no-op **on purpose**: that flow is a one-time order, not a
+   subscription.
+2. `prisma.user.delete` in a transaction with a `verificationToken.deleteMany` on the email - `VerificationToken`
+   has no user FK, so the cascade does not reach it.
+3. Client wipes local data **only after a 2xx**, then signs out. Wiping first would take the user's books for a
+   deletion that a failed cancel prevented.
+
+### The one thing to know before touching it again
+
+**The on-device library is not scoped to an account.** `readerStorage.ts` opens `flowrecall-reader` with no user
+id, and the localStorage decks are not keyed by account either. So `deleteAllBooks()` clears *the device*, not
+*the signed-in user's* books, and **deleting any account on the user's phone destroys their Osho library** - a
+throwaway account gives no protection whatsoever. That is why the e2e test below ran in a desktop browser. It is
+correct behaviour for a single-user phone and a wart on a shared one; the user knows and chose to keep it.
+
+### A real hole this closed on the way past
+
+`src/auth.ts:79` keeps a JWT valid when the user row is gone ("stale token is still valid for auth"), and
+`/api/ingest` and `/api/define` read `user?.decksGeneratedToday ?? 0` / `user?.definitionsUsed ?? 0`. A token held
+across deletion therefore read as a **brand-new FREE user with zero usage**, cleared the quota gate, and spent AI
+credits against a row that no longer existed. Both now carry the `if (!user) return 401` guard
+`/api/study/track:22` already had.
+
+### Verified, by measurement
+
+- 90 tests pass (14 new: `deleteAccount.test.ts`, `storage.test.ts`, `billing.test.ts`), `tsc --noEmit` clean,
+  lint 0 errors and **0 warnings in any file touched**, both `npm run build` and `npm run build:apk` succeed.
+- **E2E in a fresh browser profile against a throwaway account.** Gate disabled before typing / with the wrong
+  email / enabled with the right one uppercased. After deleting: IndexedDB books, files and highlights all 0;
+  localStorage down to `flowrecall-theme` plus an unrelated control key, **both `flowrecall:progress:*` keys
+  gone** (the case a fixed key list misses); signed out on `/`; DB row gone.
+- **The cascade was checked separately** because the throwaway never exercised it - credentials login under JWT
+  sessions means zero `Session`/`Account`/`StudyDay` rows, so the 200 proved nothing. Seeded one of each plus a
+  `VerificationToken`, ran the route's exact transaction, all four went to 0 with the parent.
+- Unauthenticated `DELETE` -> 401, `GET` -> 405, and `src/proxy.ts` already allowed `DELETE` for `/api/*`, so the
+  native cross-origin call needed no CORS work.
+- No test rows left behind - queried for `deletion-test+*` / `cascade-test+*`, empty.
+
+**Not** verified: the native cross-origin cookie path (the button is installed on the phone but pressing it there
+wipes the real library), and the Stripe failure path beyond unit tests (the throwaway was FREE, so no gateway call
+fired).
+
+### Environment traps learned this session
+
+- **A local dev server cannot authenticate with the checked-in env.** `.env` sets
+  `NEXT_PUBLIC_API_URL=https://www.flowrecall.app`, so the browser fetches
+  `https://www.flowrecall.app/api/auth/session`, the app's own CSP blocks the cross-origin connect, `useSession()`
+  throws `ClientFetchError` and every page reads as signed out. Run dev as
+  `NEXT_PUBLIC_API_URL= AUTH_URL=http://localhost:PORT NEXTAUTH_URL=http://localhost:PORT npx next dev`.
+- **`BUILD_TARGET=capacitor next build` fails by design** on `/api/cron/keep-alive` - `output: "export"` walks
+  `src/app/api`, which is why `scripts/build-capacitor.mjs` moves that directory aside. Only ever use
+  `npm run build:apk`.
+- `pgrep -f "next dev"` matches the shell command containing that string, so it reports a server still running
+  after it has stopped. Check the port instead.
+
+### ⚠️ Both release artifacts are now stale
+
+This commit changed app code, so the two binaries no longer match `main`:
+
+- `public/flowrecall-release.apk` (md5 `5a693bcd…`, 14:44) - **has no delete button**, and the web deploy serves
+  it as the download. Rebuild and re-commit it before pointing anyone at it.
+- `android/app/build/outputs/bundle/release/app-release.aab` (14:58) - same, and it is what a Play upload would
+  use. Rebuild with `npm run build:apk && ./gradlew bundleRelease` (`assembleRelease` does **not** build the AAB).
+
+The phone is currently on a **devtools-enabled release-signed** APK built 19:41 that *does* contain the feature
+(cert `e1f4352f…bc09`, same key, so `adb install -r` upgrades in place and the library survives).
 
 ---
 
@@ -15,8 +100,8 @@ gone stale mid-session before.
 
 Yesterday's open item #2 is **done**. `play-store-assets/screenshots/` was three reader sessions stale (dated
 Aug 22); all six slots are recaptured off the physical device and **two new slots added** for the features that
-appeared in no asset at all, so the set is now **eight** at **1080x2160 exactly**, sitting uncommitted in the
-working tree. Play allows 8 phone screenshots, so the set is full. No code changed.
+appeared in no asset at all, so the set is now **eight** at **1080x2160 exactly**, committed and pushed as
+`880c8b3`. Play allows 8 phone screenshots, so the set is full. No code changed.
 
 ### The set, and what each one had to work around
 

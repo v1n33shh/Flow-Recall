@@ -10,7 +10,10 @@ import { Browser } from "@capacitor/browser";
 import SignOutButton from "@/components/SignOutButton";
 import GoogleIcon from "@/components/GoogleIcon";
 import LogoMark from "@/components/LogoMark";
-import { apiUrl } from "@/lib/apiUrl";
+import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
+import { confirmationMatches } from "@/lib/deleteAccount";
+import { deleteAllBooks } from "@/lib/readerStorage";
+import { clearAllLocalUserData } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { useIsNative } from "@/lib/useIsNative";
@@ -45,9 +48,135 @@ export default function AccountPage() {
   return isNative ? <NativeAccountScreen /> : <WebAccountCard />;
 }
 
+// ---------------------------------------------------------------------------
+// Account deletion. Shared by both the web card and the native screen: it is
+// the same account either way, and Play Console expects the flow to exist in
+// the app itself rather than only as a support request.
+// ---------------------------------------------------------------------------
+
+type DeleteState = { busy: boolean; error: string | null };
+
+/** Order matters here and is the whole point of the hook.
+ *
+ * The server is asked first and local data is only destroyed on a 2xx, because
+ * the route refuses to delete anything when it cannot cancel a live
+ * subscription - wiping the library before hearing that back would take the
+ * user's books for a deletion that did not happen. */
+function useDeleteAccount() {
+  const [state, setState] = useState<DeleteState>({ busy: false, error: null });
+
+  async function run() {
+    setState({ busy: true, error: null });
+    try {
+      const response = await fetch(apiUrl("/api/account"), {
+        method: "DELETE",
+        credentials: API_FETCH_CREDENTIALS,
+      });
+
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        setState({
+          busy: false,
+          error: body?.error ?? "We could not delete your account. Please try again.",
+        });
+        return;
+      }
+
+      // Best-effort: the account is already gone server-side, so a failure to
+      // clear local storage must not be reported as a failed deletion. Log it
+      // and continue to sign-out, which is what the user is waiting for.
+      try {
+        await deleteAllBooks();
+        clearAllLocalUserData();
+      } catch (error) {
+        console.error("deleteAccount: local wipe failed after server deletion", error);
+      }
+
+      await signOut({ redirectTo: "/" });
+    } catch {
+      setState({ busy: false, error: "No connection. Your account has not been deleted." });
+    }
+  }
+
+  return { ...state, run };
+}
+
+/** Bottom sheet rather than window.confirm: on Android that renders a system
+ * dialog titled with the app's own localhost origin (the same reason the
+ * library's delete bar is in-page - see src/app/reader/page.tsx). Typing the
+ * account's own address is the gate, so this cannot be cleared by a stray tap
+ * on an irreversible action. */
+function DeleteAccountSheet({ email, onClose }: { email: string | null; onClose: () => void }) {
+  const [typed, setTyped] = useState("");
+  const { busy, error, run } = useDeleteAccount();
+  const armed = confirmationMatches(typed, email);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm">
+      <div
+        className="w-full max-w-md rounded-t-3xl border-t border-border bg-background px-5 pt-5"
+        // Matches MobileTabBar and the library's delete bar: a WebView that is
+        // not drawing edge-to-edge reports a 0 inset for the gesture pill, so
+        // the constant is what actually keeps the buttons clear of it.
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+      >
+        <h2 className="text-lg font-semibold text-foreground">Delete account?</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This removes your account, your streak and your saved decks, and erases every book,
+          highlight and reading position stored on this device. It cannot be undone.
+        </p>
+
+        <label htmlFor="delete-confirm" className="mt-4 block text-xs font-medium text-muted-foreground">
+          Type <span className="font-semibold text-foreground">{email ?? "your email"}</span> to confirm
+        </label>
+        <input
+          id="delete-confirm"
+          type="email"
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          disabled={busy}
+          className="mt-1.5 w-full rounded-xl border border-border bg-foreground/[0.04] px-3 py-2.5 text-[15px] text-foreground outline-none focus-visible:border-foreground/30 disabled:opacity-50"
+        />
+
+        {error && (
+          <p className="mt-3 text-sm text-red-400" role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="min-h-11 rounded-full px-4 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            Keep my account
+          </button>
+          <button
+            type="button"
+            disabled={!armed || busy}
+            onClick={() => {
+              vibrateTap();
+              void run();
+            }}
+            className="min-h-11 rounded-full bg-red-500 px-4 text-sm font-semibold text-white transition-opacity active:scale-[0.97] disabled:opacity-40"
+          >
+            {busy ? "Deleting..." : "Delete forever"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function WebAccountCard() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/");
@@ -88,11 +217,23 @@ function WebAccountCard() {
         <SignOutButton />
       </div>
 
+      <button
+        type="button"
+        onClick={() => setConfirmingDelete(true)}
+        className="mt-6 self-center text-xs font-medium text-red-400 underline underline-offset-2 transition-colors hover:text-red-300"
+      >
+        Delete account
+      </button>
+
       <p className="mt-6 text-center text-xs text-zinc-500">
         <Link href="/privacy" className="underline underline-offset-2 hover:text-zinc-300">
           Privacy Policy
         </Link>
       </p>
+
+      {confirmingDelete && (
+        <DeleteAccountSheet email={user.email ?? null} onClose={() => setConfirmingDelete(false)} />
+      )}
     </main>
   );
 }
@@ -128,6 +269,15 @@ function AppearanceIcon() {
         strokeWidth="1.8"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-red-400" aria-hidden="true">
+      <path d="M4 7h16M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 7l1 12a1.5 1.5 0 0 0 1.5 1.4h7A1.5 1.5 0 0 0 17 19L18 7M10 11v6M14 11v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -449,6 +599,7 @@ function NativeAccountScreen() {
   const { data: session, status } = useSession();
   const [theme, setThemeState] = useState<Theme>("dark");
   const [graceElapsed, setGraceElapsed] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -563,6 +714,23 @@ function NativeAccountScreen() {
           </div>
         </Reveal>
 
+        <Reveal index={5}>
+          <p className="mt-6 mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Danger Zone
+          </p>
+          <SettingsGroup>
+            <SettingsRow
+              icon={<TrashIcon />}
+              label="Delete Account"
+              destructive
+              onClick={() => {
+                vibrateTap();
+                setConfirmingDelete(true);
+              }}
+            />
+          </SettingsGroup>
+        </Reveal>
+
         <p className="mt-8 text-center text-xs text-muted-foreground">
           <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
             Privacy Policy
@@ -570,6 +738,13 @@ function NativeAccountScreen() {
         </p>
         {APP_VERSION && (
           <p className="mt-1 text-center text-xs text-muted-foreground">FlowRecall v{APP_VERSION}</p>
+        )}
+
+        {confirmingDelete && (
+          <DeleteAccountSheet
+            email={user.email ?? null}
+            onClose={() => setConfirmingDelete(false)}
+          />
         )}
       </main>
     </PullToRefresh>

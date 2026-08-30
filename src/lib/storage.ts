@@ -191,3 +191,30 @@ export function clearProgress(deckId: string): void {
   window.localStorage.removeItem(progressStorageKey(deckId));
   notifyLocalStorageUpdate();
 }
+
+// Kept across account deletion: a device display preference, not account data.
+// Wiping it would flip the whole UI from dark to light mid-teardown, which
+// reads as a bug at the exact moment the user needs to trust what just happened.
+const THEME_STORAGE_KEY = "flowrecall-theme";
+
+const OWNED_KEY_PREFIXES = ["flowrecall:", "flowrecall-", "flowrecall."];
+
+/** The localStorage half of account deletion: saved decks, the in-progress
+ * study deck, per-deck progress and reader preferences.
+ *
+ * Sweeps by PREFIX rather than from a list of known keys, because progress is
+ * stored per deck under `flowrecall:progress:${deckId}` (see
+ * progressStorageKey) - an enumerated list cannot name those, and would leave
+ * one row behind per deck the user ever studied. */
+export function clearAllLocalUserData(): void {
+  const doomed: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key === null || key === THEME_STORAGE_KEY) continue;
+    if (OWNED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) doomed.push(key);
+  }
+  // Collected first, removed after: removing during the walk reindexes
+  // localStorage under the cursor and silently skips the next key.
+  for (const key of doomed) window.localStorage.removeItem(key);
+  notifyLocalStorageUpdate();
+}

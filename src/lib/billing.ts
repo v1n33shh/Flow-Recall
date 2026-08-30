@@ -112,3 +112,49 @@ export async function revokePro(
     data: { plan: "FREE", planStatus: "CANCELED" },
   });
 }
+
+export type CancelBillingResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Stops any *recurring* charge at the gateway before an account is deleted.
+ * Unlike revokePro above, which only flips our own columns, this is the one
+ * place that talks to the gateway - deleting the row without it would leave
+ * Stripe billing a card for an account nobody can reach.
+ *
+ * Razorpay needs nothing: that flow is a one-time payment, not a subscription
+ * (see api/razorpay/verify/route.ts - it stores the *order* id in
+ * razorpaySubscriptionId), so there is no recurring charge to stop. Said out
+ * loud rather than left as an implicit no-op.
+ *
+ * Returns a result instead of throwing so the caller can refuse the deletion
+ * and show the reason, rather than deleting anyway on a failed cancel.
+ */
+export async function cancelRecurringBilling(user: {
+  stripeSubscriptionId: string | null;
+}): Promise<CancelBillingResult> {
+  if (!user.stripeSubscriptionId) return { ok: true };
+
+  try {
+    const { getStripe } = await import("@/lib/stripe");
+    await getStripe().subscriptions.cancel(user.stripeSubscriptionId);
+    return { ok: true };
+  } catch (error) {
+    // A subscription that is already gone is the outcome we wanted. Match on
+    // Stripe's error code, never the message, which is not part of its API.
+    if (isStripeResourceMissing(error)) return { ok: true };
+    console.error("cancelRecurringBilling: Stripe cancel failed", error);
+    return {
+      ok: false,
+      reason: "We could not cancel your subscription with the payment provider, so nothing was deleted. Please try again in a moment.",
+    };
+  }
+}
+
+function isStripeResourceMissing(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "resource_missing"
+  );
+}

@@ -4,11 +4,72 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State as of **2026-08-30, later session**: the newest **code** commit is account deletion (see the block
-directly below), committed locally and **not yet pushed at the time of writing** - the user was going to push it
-so Vercel picks it up. Under it sit `880c8b3` (the eight-shot screenshot set) and `b9626df` (the last commit
-verified live in production). Run `git status -sb` first and trust it over this line; it has gone stale
-mid-session before.
+State at **end of session, 2026-08-31 ~01:10 IST**: `main` and `origin/main` both at **`89e7eb0`**, working tree
+clean apart from untracked `_*.mjs` scratch. Everything below is **pushed and verified live in production.** Run
+`git status -sb` first and trust it over this line; it has gone stale mid-session before.
+
+```
+89e7eb0  Lift the delete sheet above the tab bar, where it was unreachable   <- HEAD, live
+8d7fc28  Rebuild the release APK so the download has account deletion
+96ce1d2  Let a user delete their account, and stop billing first
+880c8b3  Recapture the store screenshots, and add two the set was missing
+b9626df  Add the reader's Eye Filter, for reading for hours
+```
+
+## ✅ Nothing is half-done. One thing is left, and it is not code.
+
+**Pay the $25 Google Play developer registration.** It has been blocked on the user's card for over a week and it
+is now the *only* thing standing between this repo and a submission. Everything it gates:
+
+1. Create the app in Play Console and upload **`android/app/build/outputs/bundle/release/app-release.aab`**
+   (gitignored - rebuild it if this is a fresh clone, recipe below).
+2. Attach the eight screenshots in `play-store-assets/screenshots/` - current as of `880c8b3`, all 1080x2160.
+3. Work the Data Safety form from `play-store-assets/store-listing-and-data-safety.md`. Its answers were read off
+   the actual code, and the account-deletion answer that sat open all week is now filled in and true.
+4. Console then issues **Play App Signing's own SHA-256**, which is the second fingerprint
+   `public/.well-known/assetlinks.json` is missing. It degrades rather than breaks until then.
+
+`versionCode` is **1**: correct for a first upload, and it must be bumped for every upload after it.
+
+### Optional work, offered and never built
+
+- **Eye Filter auto-schedule** (warm after sunset). The better of the two.
+- **Light-mode verification** of the blue annotation family and the filter. The user has said three times that
+  light mode is not a priority.
+- `PDF_EXTRACT_VERSION` is still **2**. Recommendation on file for two sessions now: **leave it.** The bump's only
+  justification was 1809 ciphered paragraphs in a chess book that the user has since deleted.
+
+### The keystore is safe - do not re-raise this as a risk
+
+Confirmed 2026-08-30 by looking at the actual Drive folder. `My Drive > Info` holds **both**
+`flowrecall-release.jks` (3 KB, i.e. the real 2,800 bytes rounded) **and**
+`FlowRecall-release-keystore-credentials.txt` (2 KB), both dated 21 Aug - the day the key was created. The
+credentials are also in the user's WhatsApp self-chat. The credentials were verified read-only against the real
+keystore: store password and alias open it, and the key password unlocks the private key via `-certreq`, so the
+backup can genuinely **sign**, not merely list. Cert `e1f4352f…bc09`, alias `flowrecall-release`, valid to 2054.
+
+Never commit either file - `android/.gitignore:56,58` ignores them and they have never been in history. Never run
+`keytool -keypasswd` to test a password: it rewrites the keystore in place. Use `-list` and `-certreq`.
+
+The only check never performed is a byte compare of the restored copy against
+`md5 2ca8def45112850e11946d2897543d46`.
+
+### The user's phone, as left
+
+On the **clean shipping build**, md5 `dcb36846c3648562ac2fd7838bd7f60f`, byte-identical to the committed
+`public/flowrecall-release.apk`. `webContentsDebuggingEnabled: false`, **zero devtools sockets**, adb forwards
+cleared. So there is **no WebView access until a devtools build is flashed again** -
+`DEVTOOLS=1 npm run build:apk && cd android && ./gradlew assembleRelease`, then `adb install -r`. Same signing
+key either way, so it is always an in-place upgrade and the library survives.
+
+Library at hand-off (census taken immediately before the final swap): `11da49a7` The Book of Wisdom (Osho, pdf) at
+`{"paragraphIndex":400}`, progress `0.9052`, holding the only highlight `0a4000f3`, phrase `"have"`,
+`{paragraphIndex:104, start:1389, end:1393}`, `note: null`; and `aa230a39` Awareness (Osho, epub) at progress 0.
+Also on the account: a deck **"Cardiac cycle - lecture 4"** (3 concepts) that this work created to photograph the
+study feed. Fictional content, delete it freely.
+
+---
+
 
 ---
 
@@ -16,7 +77,9 @@ mid-session before.
 
 Play Console requires self-serve account deletion and the app had none - no handler in `src/`, no route, nothing
 on the account screen. That was the only item left that needed code; everything else is blocked on the $25
-developer account. Built, tested and committed. **Not yet released**: see the stale-artifacts warning below.
+developer account. Built, tested, shipped and **verified live**: `DELETE /api/account` answers 401 on
+`https://www.flowrecall.app`, and `Danger Zone`, `Delete Account`, `Delete forever` and the `z-[60]` fix are all
+present in the deployed chunks.
 
 ### What it does
 
@@ -89,6 +152,18 @@ above), and the Stripe failure path beyond unit tests (the throwaway was FREE, s
   `npm run build:apk`.
 - `pgrep -f "next dev"` matches the shell command containing that string, so it reports a server still running
   after it has stopped. Check the port instead.
+
+### The untracked `_*.mjs` scratch, and what is worth keeping
+
+Not committed, and they encode most of the CDP knowledge above. `_shot.sh` is the screenshot harness (collapses
+the notification shade, crops to 1080x2160, asserts the top rows). The rest drive the phone over CDP:
+`_census.mjs` (library + highlight census - run this before and after anything destructive), `_pos.mjs`
+(read/write the stored reading position), `_reader_shot.mjs` (open the PDF at a paragraph and swap in fictional
+prose, length-preservingly), `_tab.mjs` (route home then to a tab, since the tab bar is null on `/reader` and
+`/study`), `_frame.mjs` (scroll the app's own overflow pane to put an element at a chosen y), `_measure.mjs`,
+`_word.mjs` (locate a word's device-px centre for a long-press), `_acct.mjs` (mask name/email before a store
+capture), `_prefs.mjs` / `_restore.mjs` (save and restore reader preferences), `_define.mjs`, `_eyefilter.mjs`,
+`_fill_ingest.mjs`, `_survey.mjs`. They all assume `adb forward tcp:9222` and a devtools build.
 
 ### Release artifacts: rebuilt, and current with this code
 

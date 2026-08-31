@@ -10,6 +10,7 @@ import { deckMastery, type DeckMastery } from "@/lib/recallStorage";
 import { unitIdFor, type MasteryLevel } from "@/lib/recallModel";
 import { setStudyDeck } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
+import ConceptAsk from "./ConceptAsk";
 
 /** Read the deck instead of answering it.
  *
@@ -229,6 +230,10 @@ export default function RevisionSheet({
                 <p className={`text-sm leading-relaxed text-muted-foreground ${showFact ? "mt-2" : "mt-3"}`}>
                   {body}
                 </p>
+
+                {/* Reading is where a question actually forms - the explanation is
+                    right there and either it landed or it did not. */}
+                <ConceptAsk unitId={unitIdFor(deckId, concept.id)} concept={concept} />
               </motion.li>
             );
           })}

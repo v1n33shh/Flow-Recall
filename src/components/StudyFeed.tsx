@@ -470,6 +470,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
           <FeedSlide
             key={item.key}
             isNew={item.isNew}
+            unitId={unitIdFor(deckId, item.concept.id)}
             concept={item.concept}
             level={item.level}
             attempt={item.attempt}

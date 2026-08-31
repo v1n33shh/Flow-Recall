@@ -33,11 +33,12 @@ export type SwipeChallengeHandle = {
 
 type SwipeChallengeProps = {
   concept: Concept;
+  unitId: string;
   onAnswered: (correct: boolean, confidence?: Confidence) => void;
   ref?: Ref<SwipeChallengeHandle>;
 };
 
-export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChallengeProps) {
+export default function SwipeChallenge({ concept, unitId, onAnswered, ref }: SwipeChallengeProps) {
   const [showTrue] = useState(() => Math.random() < 0.5);
   const claim = showTrue ? concept.answer : concept.distractor;
   // Answer visible but not yet graded - the middle "revealed" state that only
@@ -217,6 +218,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
         // null check, which TypeScript cannot use to narrow `boolean | null` here.
         <ConceptDebrief
           concept={concept}
+          unitId={unitId}
           correct={outcome === true}
           // The flipped card above already states it under an ANSWER label.
           showAnswer={false}

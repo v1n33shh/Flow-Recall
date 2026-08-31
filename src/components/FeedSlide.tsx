@@ -9,6 +9,10 @@ import ClozeChallenge from "./ClozeChallenge";
 
 type FeedSlideProps = {
   concept: Concept;
+  /** `${deckId}::${conceptId}` - what the recall engine keys everything on.
+   * Passed down rather than derived here so the id scheme stays in one place
+   * (unitIdFor), and so a challenge never has to know about deck ids. */
+  unitId: string;
   level: ChallengeLevel;
   attempt: number;
   /** True for cards freshly injected by Infinite Recall Mode — triggers the
@@ -22,6 +26,7 @@ type FeedSlideProps = {
 
 export default function FeedSlide({
   concept,
+  unitId,
   level,
   attempt,
   isNew,
@@ -155,9 +160,9 @@ export default function FeedSlide({
         </div>
 
         {level === 2 ? (
-          <ClozeChallenge concept={concept} onAnswered={handleAnswered} />
+          <ClozeChallenge concept={concept} unitId={unitId} onAnswered={handleAnswered} />
         ) : (
-          <SwipeChallenge ref={attachSwipe} concept={concept} onAnswered={handleAnswered} />
+          <SwipeChallenge ref={attachSwipe} concept={concept} unitId={unitId} onAnswered={handleAnswered} />
         )}
 
         <p className="mt-8 text-center text-sm text-muted-foreground">

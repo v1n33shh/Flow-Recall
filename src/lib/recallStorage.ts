@@ -30,11 +30,17 @@ import {
 // it lands, this is device-local, exactly as the deck list already was.
 
 const DB_NAME = "flowrecall-recall";
-const DB_VERSION = 1;
+// v2 added the `asks` store. Every createObjectStore below is guarded by a
+// `contains` check and nothing existing is touched, so upgrading a v1 database
+// adds the one store and leaves units, memory and reviews exactly as they were -
+// which matters more here than usual, since `reviews` is the asset the whole
+// memory model can be rebuilt from and cannot be regenerated if lost.
+const DB_VERSION = 2;
 
 const UNITS_STORE = "units";
 const MEMORY_STORE = "memory";
 const REVIEWS_STORE = "reviews";
+const ASKS_STORE = "asks";
 
 const USER_INDEX = "userId";
 const UNIT_INDEX = "unitId";
@@ -74,9 +80,33 @@ function openDb(): Promise<IDBDatabase> {
         reviews.createIndex(USER_INDEX, "userId");
         reviews.createIndex(USER_UNIT_INDEX, ["userId", "unitId"]);
       }
+      if (!db.objectStoreNames.contains(ASKS_STORE)) {
+        const asks = db.createObjectStore(ASKS_STORE, { keyPath: "id" });
+        asks.createIndex(USER_INDEX, "userId");
+        asks.createIndex(USER_UNIT_INDEX, ["userId", "unitId"]);
+      }
+    };
+    // A version change cannot start while another connection still holds the
+    // database open at the older version. On the web that is a second tab; it
+    // happened for real while adding v2, when a devtools script held a v1
+    // connection and the upgrade simply never fired. Logged rather than rejected
+    // on purpose: the open does complete once the blocker closes, whereas a
+    // rejection would be cached in dbPromise and kill the engine for the whole
+    // session. A blocked upgrade is otherwise indistinguishable from "this student
+    // has no history", which is the worst way for it to fail.
+    request.onblocked = () => {
+      console.error(
+        `${DB_NAME}: upgrade to v${DB_VERSION} is blocked by another open connection - ` +
+          "nothing will be recorded until that connection closes.",
+      );
     };
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => {
+      // Clear the cache so a later call can try again. Holding a rejected promise
+      // here would make one transient failure permanent for the session.
+      dbPromise = null;
+      reject(request.error);
+    };
   });
   return dbPromise;
 }
@@ -471,13 +501,77 @@ export function hasMigratedSavedDecks(): boolean {
  * deletion flow at the exact moment the user most needs it to complete. */
 export async function deleteAllRecallData(): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([UNITS_STORE, MEMORY_STORE, REVIEWS_STORE], "readwrite");
+  const tx = db.transaction([UNITS_STORE, MEMORY_STORE, REVIEWS_STORE, ASKS_STORE], "readwrite");
   tx.objectStore(UNITS_STORE).clear();
   tx.objectStore(MEMORY_STORE).clear();
   tx.objectStore(REVIEWS_STORE).clear();
+  // Asks are the student's own words and an AI answer they paid a lookup for, so
+  // account deletion has to take them too - the whole point of this function is
+  // that nothing survives it.
+  tx.objectStore(ASKS_STORE).clear();
   await txDone(tx);
   if (typeof window !== "undefined") window.localStorage.removeItem(MIGRATION_FLAG_KEY);
   notifyRecallUpdate();
+}
+
+// ── Asks ─────────────────────────────────────────────────────────────────────
+
+/** A question the student asked about one concept, and the answer they got.
+ *
+ * Kept here rather than on the deck's concept in localStorage, and that is the
+ * whole reason it lives in this file: decks are not scoped to an account, which
+ * is the wart that makes deleting any account on a shared phone wipe the whole
+ * device's reader library. Every record in this database carries a userId, so two
+ * people signing in on one phone can never read each other's questions.
+ *
+ * Append-only in practice - a student can ask the same card several things and
+ * all of them are worth keeping, because together they are that person's own
+ * route into the concept. */
+export type AskRecord = {
+  id: string;
+  userId: string;
+  unitId: string;
+  question: string;
+  answer: string;
+  /** True when the model said the concept's material does not cover this, so the
+   * UI can mark the answer as reaching beyond the source rather than presenting
+   * it with the same authority as the rest. */
+  beyondMaterial: boolean;
+  askedAt: number;
+};
+
+/** Oldest first, so a card reads as the conversation it was. */
+export async function listAsks(userId: string, unitId: string): Promise<AskRecord[]> {
+  const db = await openDb();
+  const tx = db.transaction(ASKS_STORE, "readonly");
+  const rows = await requestToPromise<AskRecord[]>(
+    tx.objectStore(ASKS_STORE).index(USER_UNIT_INDEX).getAll(IDBKeyRange.only([userId, unitId])),
+  );
+  return rows.sort((a, b) => a.askedAt - b.askedAt);
+}
+
+export async function saveAsk(input: {
+  userId: string;
+  unitId: string;
+  question: string;
+  answer: string;
+  beyondMaterial?: boolean;
+}): Promise<AskRecord> {
+  const record: AskRecord = {
+    id: crypto.randomUUID(),
+    userId: input.userId,
+    unitId: input.unitId,
+    question: input.question,
+    answer: input.answer,
+    beyondMaterial: input.beyondMaterial ?? false,
+    askedAt: Date.now(),
+  };
+  const db = await openDb();
+  const tx = db.transaction(ASKS_STORE, "readwrite");
+  tx.objectStore(ASKS_STORE).put(record);
+  await txDone(tx);
+  notifyRecallUpdate();
+  return record;
 }
 
 // ── React binding ────────────────────────────────────────────────────────────

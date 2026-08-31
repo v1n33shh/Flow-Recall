@@ -5,6 +5,7 @@ import { motion } from "motion/react";
 import type { Concept } from "@/lib/types";
 import type { Confidence } from "@/lib/recallModel";
 import { vibrateTap } from "@/lib/haptics";
+import ConceptAsk from "./ConceptAsk";
 
 /** What the student is told once a card is resolved, shared by every challenge
  * format so no two of them can disagree about it.
@@ -27,12 +28,15 @@ import { vibrateTap } from "@/lib/haptics";
  * ~224px scroll region with no affordance saying it scrolled. */
 export default function ConceptDebrief({
   concept,
+  unitId,
   correct,
   note,
   onConfidence,
   showAnswer = true,
 }: {
   concept: Concept;
+  /** `${deckId}::${conceptId}`, for storing questions against this concept. */
+  unitId: string;
   correct: boolean;
   /** An extra line the format needs to add - cloze uses it to say the auto-check
    * was unavailable and the student's own grading stood. */
@@ -163,6 +167,8 @@ export default function ConceptDebrief({
           )}
         </>
       )}
+
+      <ConceptAsk unitId={unitId} concept={concept} />
     </div>
   );
 }

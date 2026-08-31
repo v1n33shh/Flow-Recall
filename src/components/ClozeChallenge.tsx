@@ -10,6 +10,7 @@ import ConceptDebrief from "./ConceptDebrief";
 
 type ClozeChallengeProps = {
   concept: Concept;
+  unitId: string;
   onAnswered: (correct: boolean) => void;
 };
 
@@ -18,7 +19,7 @@ type ClozeChallengeProps = {
  * recognize a claim as true or false; this asks them to produce the answer
  * from memory before anything on screen confirms it, using the `cloze`
  * field the AI already generates but Level 1 never used. */
-export default function ClozeChallenge({ concept, onAnswered }: ClozeChallengeProps) {
+export default function ClozeChallenge({ concept, unitId, onAnswered }: ClozeChallengeProps) {
   const [attempt, setAttempt] = useState("");
   const [submitted, setSubmitted] = useState(false);
   // null = the AI check hasn't come back yet; boolean = its verdict;
@@ -219,6 +220,7 @@ export default function ClozeChallenge({ concept, onAnswered }: ClozeChallengePr
       {resolved && (
         <ConceptDebrief
           concept={concept}
+          unitId={unitId}
           correct={correct}
           note={
             aiVerdict === "failed"

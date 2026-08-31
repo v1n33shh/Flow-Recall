@@ -11,10 +11,16 @@ import FeedSlide from "./FeedSlide";
 import type { SwipeChallengeHandle } from "./SwipeChallenge";
 import CompletionSlide from "./CompletionSlide";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
-import { buildConceptQueueItems, buildInitialQueue, nextEasierLevel, reconstructResolvedKeys } from "@/lib/studyQueue";
+import {
+  buildConceptQueueItems,
+  buildInitialQueue,
+  nextEasierLevel,
+  pathForLevel,
+  reconstructResolvedKeys,
+} from "@/lib/studyQueue";
 import { getSavedDecks } from "@/lib/storage";
 import { hasMigratedSavedDecks, importDeck, migrateSavedDecks, recordReview } from "@/lib/recallStorage";
-import { unitIdFor, type Confidence, type RetrievalPath } from "@/lib/recallModel";
+import { unitIdFor, type Confidence } from "@/lib/recallModel";
 import {
   createRetrievalClock,
   latencyFor,
@@ -32,10 +38,10 @@ const RETRY_OFFSET = 3;
 // every failure comes back, and nothing runs forever.
 const MAX_ATTEMPTS_PER_LANE = 3;
 
-// Which retrieval format each lane is, in the recall engine's vocabulary. Lane 1
-// is the true/false swipe (recognition - winnable by luck, which is why the
-// engine checks its latency); lane 2 is the typed cloze (production).
-const PATH_BY_LANE: Record<1 | 2, RetrievalPath> = { 1: "swipe", 2: "cloze" };
+// Which retrieval format the student was actually shown. Derived from LEVEL, not
+// lane, and imported rather than declared here so FeedSlide's dispatch and this
+// write can never drift apart again - see the PATH_BY_LEVEL docblock in
+// lib/studyQueue.ts for what that drift cost.
 
 /** A small Electric-Azure spinner with a soft glow behind it - the premium
  * loading state while Infinite Recall generates fresh cards. */
@@ -290,7 +296,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       void recordReview({
         userId,
         unitId: unitIdFor(deckId, item.concept.id),
-        path: PATH_BY_LANE[item.lane],
+        path: pathForLevel(item.level),
         outcome,
         // Read by the RESOLVING card's own key, not by whatever is on screen.
         // Cloze grading is an async fetch, so a student who scrolls while a

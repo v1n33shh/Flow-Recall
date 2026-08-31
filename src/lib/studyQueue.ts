@@ -1,4 +1,27 @@
 import type { ChallengeLevel, Concept, QueueItem, StudyProgress } from "@/lib/types";
+import type { RetrievalPath } from "@/lib/recallModel";
+
+/** The retrieval format a given challenge level actually puts in front of the
+ * student, in the recall engine's vocabulary. Level 1 is the two-option
+ * true/false swipe (recognition); level 2 is the typed cloze (production).
+ *
+ * Lives here, beside the queue that assigns levels, because two places need to
+ * agree about it and they used not to: FeedSlide renders by `level`, while the
+ * feed recorded the review by `lane`. Those diverge every time D.I.E. requeues a
+ * failed lane-2 cloze at the easier level 1 - the item keeps `lane: 2` but is
+ * shown as a swipe - so a recognition answer was written to the engine as a
+ * production retrieval. `masteryFor` requires a production success precisely so
+ * that passing recognition formats repeatedly cannot masquerade as knowledge,
+ * and that substitution handed it exactly that. One source of truth now, with
+ * the recognition/production split asserted in studyQueue.test.ts. */
+export const PATH_BY_LEVEL: Record<ChallengeLevel, RetrievalPath> = {
+  1: "swipe",
+  2: "cloze",
+};
+
+export function pathForLevel(level: ChallengeLevel): RetrievalPath {
+  return PATH_BY_LEVEL[level];
+}
 
 export function nextEasierLevel(level: ChallengeLevel): ChallengeLevel | null {
   if (level === 1) return null;

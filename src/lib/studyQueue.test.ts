@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Concept, QueueItem, StudyProgress } from "@/lib/types";
-import { buildConceptQueueItems, nextEasierLevel, reconstructResolvedKeys } from "./studyQueue";
+import { buildConceptQueueItems, nextEasierLevel, pathForLevel, reconstructResolvedKeys } from "./studyQueue";
+import { isProductionPath, isRecognitionPath } from "./recallModel";
 
 function makeConcept(id: string): Concept {
   return {
@@ -110,5 +111,39 @@ describe("reconstructResolvedKeys", () => {
     };
     const resolved = reconstructResolvedKeys(progress);
     expect(resolved.size).toBe(0);
+  });
+});
+
+describe("pathForLevel", () => {
+  // The invariant, not just the mapping. The feed used to record a review by the
+  // item's LANE while FeedSlide rendered by its LEVEL, and D.I.E. drives those
+  // apart: a failed lane-2 cloze is requeued at level 1 and shown as a swipe. So
+  // a two-option recognition answer was written to the engine as production
+  // evidence - and masteryFor requires a production success specifically to stop
+  // recognition passes from looking like knowledge.
+  it("maps the easier level to a recognition format", () => {
+    expect(pathForLevel(1)).toBe("swipe");
+    expect(isRecognitionPath(pathForLevel(1))).toBe(true);
+  });
+
+  it("maps the harder level to a production format", () => {
+    expect(pathForLevel(2)).toBe("cloze");
+    expect(isProductionPath(pathForLevel(2))).toBe(true);
+  });
+
+  it("never reports a level as production when it is recognition", () => {
+    // Guards the substitution directly: whatever the mapping becomes, the two
+    // levels must not both count as production, or the mastery bar loses the one
+    // condition that makes it mean anything.
+    const paths = ([1, 2] as const).map(pathForLevel);
+    expect(paths.filter(isProductionPath)).toHaveLength(1);
+    expect(paths.filter(isRecognitionPath)).toHaveLength(1);
+  });
+
+  it("degrades a failed cloze to a level whose recorded path is the swipe", () => {
+    // The concrete D.I.E. path that produced the bug on the device.
+    const easier = nextEasierLevel(2);
+    expect(easier).toBe(1);
+    expect(pathForLevel(easier!)).toBe("swipe");
   });
 });

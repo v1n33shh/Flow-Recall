@@ -4,6 +4,7 @@ import { useImperativeHandle, useState, type Ref } from "react";
 import { motion, useMotionValue, useTransform, useAnimationControls, animate } from "motion/react";
 import type { Concept } from "@/lib/types";
 import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
+import ConceptDebrief from "./ConceptDebrief";
 
 /** Imperative surface a Level-1 swipe card exposes to the study feed's global
  * keyboard listener - Anki-style "reveal, then self-grade". Only Level-1 cards
@@ -36,11 +37,18 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
   const [revealed, setRevealed] = useState(false);
   // Final graded result, and the single source of truth for "locked".
   const [outcome, setOutcome] = useState<boolean | null>(null);
-  // Deep-dive is opt-in so the flipped card stays uncluttered until asked.
-  const [showExplanation, setShowExplanation] = useState(false);
 
   const x = useMotionValue(0);
   const rotate = useTransform(x, [-200, 200], [-12, 12]);
+  // The two edge labels that make the gesture discoverable. `cursor-grab` used
+  // to be the ONLY hint this card was draggable, and nothing anywhere said which
+  // direction meant what - the mapping existed solely inside onDragEnd's ±100px
+  // check. On a phone, which is the only platform this ships to, that made the
+  // app's signature interaction invisible: a student could find the ✕/✓ buttons
+  // and nothing else. Each label brightens as the card is dragged its way, so the
+  // gesture teaches itself on the first attempt.
+  const falseHint = useTransform(x, [-100, 0], [1, 0.4]);
+  const trueHint = useTransform(x, [0, 100], [0.4, 1]);
   // Drives a shake/bounce on a wrapper around the draggable card, kept
   // separate from the card's own drag-bound `x`/`rotate` motion values so
   // the two animations don't fight over the same style props.
@@ -128,55 +136,45 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
                 so its text must too - text-zinc-300 (near-white) used to go
                 invisible on the near-white light-mode surface. */}
             <div className="absolute inset-0 flex items-center justify-center rounded-3xl border border-border bg-surface p-8 text-center [backface-visibility:hidden]">
+              {!resolved && (
+                <>
+                  <motion.span
+                    style={{ opacity: falseHint }}
+                    className="absolute left-4 top-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+                  >
+                    &larr; False
+                  </motion.span>
+                  <motion.span
+                    style={{ opacity: trueHint }}
+                    className="absolute right-4 top-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+                  >
+                    True &rarr;
+                  </motion.span>
+                </>
+              )}
               <p className="text-xl font-medium text-foreground">{claim}</p>
             </div>
 
-            {/* Back face: the real answer. Pre-rotated 180° so it reads
-                upright once the card has flipped. Deliberately a fixed-dark
-                card in both themes (like the Account avatar) - its light text
-                stays hardcoded on purpose, not a theming bug. */}
-            <div className="absolute inset-0 flex flex-col rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-[#0A0A0A] p-6 text-center [transform:rotateY(180deg)] [backface-visibility:hidden] overflow-y-auto no-scrollbar">
-              <div className="flex flex-col items-center justify-center shrink-0 mb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                  Answer
-                </p>
-                <p className="text-lg font-medium text-zinc-100 mt-1 line-clamp-3">{concept.answer}</p>
-              </div>
-              {concept.explanation && !showExplanation && (
-                <button
-                  type="button"
-                  onClick={() => setShowExplanation(true)}
-                  className="mt-4 text-xs font-medium text-accent hover:underline"
-                >
-                  Read Deep Dive ↓
-                </button>
-              )}
-              {concept.explanation && showExplanation && (
-                <div className="mt-2 rounded-r-xl border-l-4 border-l-accent bg-white/5 p-4 text-sm text-left leading-relaxed text-zinc-300 shrink-0">
-                  {concept.explanation}
-                </div>
-              )}
+            {/* Back face: the real answer. Pre-rotated 180° so it reads upright
+                once the card has flipped. Deliberately a fixed-dark card in both
+                themes (like the Account avatar) - its light text stays hardcoded
+                on purpose, not a theming bug. The deep dive used to live in here
+                too, read through a ~224px `no-scrollbar` box; it is ConceptDebrief's
+                job now, below the card at full width. */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-zinc-900 to-[#0A0A0A] p-6 text-center [transform:rotateY(180deg)] [backface-visibility:hidden]">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                Answer
+              </p>
+              <p className="mt-1 text-lg font-medium text-zinc-100">{concept.answer}</p>
             </div>
           </motion.div>
         </div>
       </motion.div>
 
       {resolved ? (
-        // Color-coded verdict: green for correct, red for incorrect.
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`mt-6 rounded-2xl border px-4 py-3 text-center text-sm ${
-            outcome ? "border-success/30 bg-success/10" : "border-danger/30 bg-danger/10"
-          }`}
-        >
-          <p className={`font-medium ${outcome ? "text-success" : "text-danger"}`}>
-            {outcome ? "Correct!" : "Not quite"}
-          </p>
-          <p className="mt-1 text-foreground">
-            {concept.question} &rarr; {concept.answer}
-          </p>
-        </motion.div>
+        // `outcome === true` rather than `outcome`: `resolved` is derived from a
+        // null check, which TypeScript cannot use to narrow `boolean | null` here.
+        <ConceptDebrief concept={concept} correct={outcome === true} />
       ) : revealed ? (
         // Keyboard "reveal" state: the card has flipped to show the answer,
         // now awaiting a 1 / 2 self-grade.
@@ -208,23 +206,28 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
           </div>
         </motion.div>
       ) : (
-        <div className="mt-6 flex justify-center gap-4">
-          <button
-            type="button"
-            onClick={() => decide(false)}
-            aria-label="Mark as false"
-            className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
-          >
-            ✕
-          </button>
-          <button
-            type="button"
-            onClick={() => decide(true)}
-            aria-label="Mark as true"
-            className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
-          >
-            ✓
-          </button>
+        <div className="mt-6 flex flex-col items-center gap-3">
+          <div className="flex justify-center gap-4">
+            <button
+              type="button"
+              onClick={() => decide(false)}
+              aria-label="Mark as false"
+              className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
+            >
+              ✕
+            </button>
+            <button
+              type="button"
+              onClick={() => decide(true)}
+              aria-label="Mark as true"
+              className="flex h-14 w-14 items-center justify-center rounded-full border border-border text-2xl text-foreground transition-transform hover:scale-105 active:scale-95"
+            >
+              ✓
+            </button>
+          </div>
+          {/* States the gesture in words, since the card's own affordance was
+              `cursor-grab` - which does not exist on touch. */}
+          <p className="text-[11px] text-muted-foreground">Swipe the card, or tap</p>
         </div>
       )}
     </div>

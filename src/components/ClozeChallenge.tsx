@@ -6,6 +6,7 @@ import type { Concept } from "@/lib/types";
 import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
 import { normalizeForCompare } from "@/lib/clozeMatch";
+import ConceptDebrief from "./ConceptDebrief";
 
 type ClozeChallengeProps = {
   concept: Concept;
@@ -32,7 +33,6 @@ export default function ClozeChallenge({ concept, onAnswered }: ClozeChallengePr
   // careless or dishonest tap, and this is only the final answer if the AI
   // check itself failed (no authoritative source left).
   const [userPick, setUserPick] = useState<boolean | null>(null);
-  const [showExplanation, setShowExplanation] = useState(false);
   const announcedRef = useRef(false);
 
   // "_____" is required by the schema, but AI output isn't guaranteed to
@@ -217,40 +217,15 @@ export default function ClozeChallenge({ concept, onAnswered }: ClozeChallengePr
       )}
 
       {resolved && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={`mt-6 rounded-2xl border px-4 py-3 text-center text-sm ${
-            correct ? "border-success/30 bg-success/10" : "border-danger/30 bg-danger/10"
-          }`}
-        >
-          <p className={`font-medium ${correct ? "text-success" : "text-danger"}`}>
-            {correct ? "Correct!" : "Not quite"}
-          </p>
-          <p className="mt-1 text-foreground">
-            {concept.question} &rarr; {concept.answer}
-          </p>
-          {aiVerdict === "failed" && (
-            <p className="mt-2 text-xs text-muted-foreground">Auto-check unavailable - your own grading was used.</p>
-          )}
-        </motion.div>
-      )}
-
-      {resolved && concept.explanation && !showExplanation && (
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={() => setShowExplanation(true)}
-            className="text-xs font-medium text-accent hover:underline"
-          >
-            Read Deep Dive ↓
-          </button>
-        </div>
-      )}
-      {resolved && concept.explanation && showExplanation && (
-        <div className="mt-4 rounded-r-xl border-l-4 border-l-accent bg-foreground/5 p-4 text-sm text-left leading-relaxed text-muted-foreground">
-          {concept.explanation}
-        </div>
+        <ConceptDebrief
+          concept={concept}
+          correct={correct}
+          note={
+            aiVerdict === "failed"
+              ? "Auto-check unavailable - your own grading was used."
+              : undefined
+          }
+        />
       )}
     </div>
   );

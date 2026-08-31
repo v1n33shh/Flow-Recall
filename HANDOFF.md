@@ -4,29 +4,53 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`2f08c0b`**, **ahead of
-`origin/main` by three unpushed commits**, working tree clean. Work against the plan at
-`~/.claude/plans/goofy-moseying-heron.md`. **Move 2 is now complete**: the session builder landed as
-`f8056db` and its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck
-handoff - as `2f08c0b`. Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`),
-A2 ask-this-card (`1ff2bc2`), and Move 4's generation fields - `misconception` (`8dccdbf`),
-`whyItMatters` / `sourceQuote` (`2afdb16`). 229 tests pass, `tsc --noEmit` clean, lint 0 errors / 46
-warnings, both `npm run build` and `npm run build:apk` succeed.
+State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`0a336bd`**, **ahead of
+`origin/main` by five unpushed commits**, working tree clean. Work against the plan at
+`~/.claude/plans/goofy-moseying-heron.md`. **Move 2 is complete and device-verified**: the session
+builder (`f8056db`), its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the
+cross-deck handoff (`2f08c0b`) - and the three bugs the device pass found (`0a336bd`). Shipped before
+it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
+Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
+234 tests pass, `tsc --noEmit` clean, lint 0 errors / 46 warnings, both `npm run build` and
+`npm run build:apk` succeed.
 
-**Two things are outstanding on it, in this order.** (1) **Device-verify Moves 1-2 together**, which the
-plan calls for and which has caught three bugs a test suite could not - the phone is on the clean
-shipping build, so this needs a `DEVTOOLS=1` reflash first (recipe under *The user's phone*, below), and
-a rebuild without it afterwards. (2) **Nothing is pushed.** Next new work per the revised sequencing is
-**A3 (teach it back)**, then A4 the concept map, then Move 5.
+**One thing is outstanding: nothing is pushed.** Next new work per the revised sequencing is **A3
+(teach it back)**, then A4 the concept map, then Move 5.
 
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-2f08c0b  Ask "got 20 minutes?" instead of handing back the deck list   <- HEAD, not pushed
+0a336bd  Fix the three things the device found, none of which a test would have   <- HEAD, not pushed
+9392e29  Bring the handoff's first block back to what the repo is
+2f08c0b  Ask "got 20 minutes?" instead of handing back the deck list
 f8056db  Let the engine decide what to study tonight
 2afdb16  Make the provenance chip claim only as much as it can back
-19c3d27  Answer the question instead of refusing it, and get the flag right  <- origin/main
+19c3d27  Answer the question instead of refusing it, and get the flag right   <- origin/main
 ```
+
+### What the device pass settled, 2026-09-01
+
+Two full engine-built sessions driven over CDP, one slide at a time. The format rotation is real: the
+second session offered the complementary format of all three concepts without being told to. Three
+bugs found, all UI, all invisible to the suite - the completion slide reporting **0 cleared / 0%
+accuracy after a perfect session** (mastery needs both formats; a session asks one on purpose), a
+requeued failure **dropping `unitId`** and so recording against `__session__::<conceptId>`, and the
+hero **printing a blank reason line** for a session made entirely of held-but-not-solid cards, which
+is the state the home screen is in right after any session. All three are fixed in `0a336bd`.
+
+Engine store afterwards, checked with `scripts/device/recall-census.mjs`: 3 units, **6 memories**
+(both paths on all three concepts now), **14 reviews**, and no `__session__` anywhere. That history
+is fabricated - it is the fictional *Cardiac cycle - lecture 4* deck - and was **deliberately left in
+place**, because it is the only data the home block has to schedule against. Clear it whenever the
+demo value runs out.
+
+**Not verified on device:** the *"Nothing needs you tonight"* / resting state. Reaching it needs every
+concept solid and inside target, which the fixture cannot be without writing fake review history -
+the one thing this pass would not do. The `resting` count itself is covered in `sessionBuilder.test.ts`.
+
+The phone ends on a **clean shipping build**, md5 `425f9337146952afc2bc9fd8e035ebc9`, no devtools
+socket, adb forwards cleared. Note this is **newer than the committed `public/flowrecall-release.apk`**,
+which still predates Move 2 - refresh that binary when the download should carry this work.
 
 ## ✅ Nothing is half-done. One thing is left, and it is not code.
 

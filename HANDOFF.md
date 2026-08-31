@@ -4,8 +4,9 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`0a336bd`**, **ahead of
-`origin/main` by five unpushed commits**, working tree clean. Work against the plan at
+State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`46ea904`** and **pushed** -
+`origin/main` matches it, working tree clean. (This commit, which corrects the line you are reading, is
+the one exception and sits one ahead until the next push.) Work against the plan at
 `~/.claude/plans/goofy-moseying-heron.md`. **Move 2 is complete and device-verified**: the session
 builder (`f8056db`), its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the
 cross-deck handoff (`2f08c0b`) - and the three bugs the device pass found (`0a336bd`). Shipped before
@@ -14,18 +15,18 @@ Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sour
 234 tests pass, `tsc --noEmit` clean, lint 0 errors / 46 warnings, both `npm run build` and
 `npm run build:apk` succeed.
 
-**One thing is outstanding: nothing is pushed.** Next new work per the revised sequencing is **A3
-(teach it back)**, then A4 the concept map, then Move 5.
+**Nothing is outstanding on the flashcard work.** Next new work per the revised sequencing is **A3
+(teach it back)**, then A4 the concept map, then Move 5. The one non-code item is still the **$25 Play
+registration**, below.
 
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-0a336bd  Fix the three things the device found, none of which a test would have   <- HEAD, not pushed
+46ea904  Record what the device pass settled, and what it could not   <- HEAD, origin/main
+0a336bd  Fix the three things the device found, none of which a test would have
 9392e29  Bring the handoff's first block back to what the repo is
 2f08c0b  Ask "got 20 minutes?" instead of handing back the deck list
 f8056db  Let the engine decide what to study tonight
-2afdb16  Make the provenance chip claim only as much as it can back
-19c3d27  Answer the question instead of refusing it, and get the flag right   <- origin/main
 ```
 
 ### What the device pass settled, 2026-09-01

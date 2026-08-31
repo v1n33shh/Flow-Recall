@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Concept, QueueItem, StudyProgress } from "@/lib/types";
-import { buildConceptQueueItems, nextEasierLevel, pathForLevel, reconstructResolvedKeys } from "./studyQueue";
+import {
+  buildConceptQueueItems,
+  nextEasierLevel,
+  pathForLevel,
+  reconstructResolvedKeys,
+  retryItemFor,
+} from "./studyQueue";
 import { isProductionPath, isRecognitionPath } from "./recallModel";
 
 function makeConcept(id: string): Concept {
@@ -145,5 +151,48 @@ describe("pathForLevel", () => {
     const easier = nextEasierLevel(2);
     expect(easier).toBe(1);
     expect(pathForLevel(easier!)).toBe("swipe");
+  });
+});
+
+// A retry has to stay attributable, and both fields below were found dropped on a
+// real device run rather than in review.
+describe("retryItemFor", () => {
+  function failed(overrides: Partial<QueueItem> = {}): QueueItem {
+    return {
+      key: "c1::2::1",
+      concept: makeConcept("c1"),
+      level: 2,
+      lane: 2,
+      attempt: 1,
+      ...overrides,
+    };
+  }
+
+  // An engine-built session's feed is handed a placeholder deckId, because a
+  // session drawn from the whole library has no single deck. So a retry that lost
+  // unitId did not fail loudly - it recorded a real answer against a unit id
+  // derived from that placeholder, which nothing in the store rejects.
+  it("carries the unit across a retry, since the feed cannot re-derive it", () => {
+    expect(retryItemFor(failed({ unitId: "deck-a::c1" }), 1).unitId).toBe("deck-a::c1");
+  });
+
+  it("leaves unitId absent for a deck session, which derives it from its own deck", () => {
+    expect(retryItemFor(failed(), 1).unitId).toBeUndefined();
+  });
+
+  // The lane is the evidence the mastery bar counts, and the level is only how the
+  // card is drawn. A cloze that comes back as the easier swipe is still the cloze
+  // lane's second attempt.
+  it("keeps the lane when the level drops", () => {
+    const retry = retryItemFor(failed(), 1);
+    expect(retry.level).toBe(1);
+    expect(retry.lane).toBe(2);
+  });
+
+  it("advances the attempt and keys the card by it, so the retry is not deduped", () => {
+    const retry = retryItemFor(failed({ attempt: 1 }), 1);
+    expect(retry.attempt).toBe(2);
+    expect(retry.key).toBe("c1::1::2");
+    expect(retry.key).not.toBe(failed().key);
   });
 });

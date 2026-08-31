@@ -1,11 +1,11 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import type { Deck } from "@/lib/types";
-import { buildSession } from "@/lib/sessionBuilder";
+import { buildSession, type SessionPlan } from "@/lib/sessionBuilder";
 import { readSessionInputs, type SessionInputs } from "@/lib/recallStorage";
 import { setStudySession } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
@@ -23,6 +23,40 @@ import { vibrateTap } from "@/lib/haptics";
  * built on no data would be a lie. */
 
 const BUDGETS = [10, 20, 40] as const;
+
+/** Why the engine is asking, in the order that matters, and never empty.
+ *
+ * Assembled rather than hand-wired because every selected card is slipping, fresh
+ * or building, and the earlier version had a line only for the first two. A session
+ * made entirely of the third - the state the home screen is in the moment a student
+ * finishes one - printed a blank line above the Start button and left the offer
+ * unexplained.
+ *
+ * Emphasis is weight, not hue: globals.css scopes success/danger/pending to
+ * answer-correctness inside the study feed and keeps everything structural
+ * monochrome, and this is neither a verdict nor in the feed. */
+function reasons(plan: SessionPlan): { key: string; node: ReactNode }[] {
+  const parts: { key: string; node: ReactNode }[] = [];
+  if (plan.slipping > 0)
+    parts.push({
+      key: "slipping",
+      node: <span className="font-medium text-foreground">{plan.slipping} slipping</span>,
+    });
+  if (plan.urgent > 0)
+    parts.push({
+      key: "urgent",
+      node: <span className="font-semibold text-foreground">{plan.urgent} nearly gone</span>,
+    });
+  if (plan.fresh > 0) parts.push({ key: "fresh", node: `${plan.fresh} new` });
+  if (plan.building > 0)
+    // "Still building" is what the completion slide already calls this population,
+    // and it is the honest description: answered before, holding, not yet proven a
+    // second way or after a gap.
+    parts.push({ key: "building", node: `${plan.building} still building` });
+  if (plan.deckCount > 1)
+    parts.push({ key: "decks", node: `across ${plan.deckCount} decks` });
+  return parts;
+}
 
 export default function TodaySession({ decks }: { decks: Deck[] }) {
   const router = useRouter();
@@ -121,17 +155,12 @@ export default function TodaySession({ decks }: { decks: Deck[] }) {
         ) : (
           <>
             <p className="mt-3 text-sm text-muted-foreground tabular-nums">
-              {plan.slipping > 0 && (
-                <>
-                  <span className="font-medium text-foreground">{plan.slipping} slipping</span>
-                  {plan.urgent > 0 && (
-                    <span className="text-pending"> · {plan.urgent} nearly gone</span>
-                  )}
-                </>
-              )}
-              {plan.slipping > 0 && plan.fresh > 0 && " · "}
-              {plan.fresh > 0 && `${plan.fresh} new`}
-              {plan.deckCount > 1 && ` · across ${plan.deckCount} decks`}
+              {reasons(plan).map((part, i) => (
+                <span key={part.key}>
+                  {i > 0 && " · "}
+                  {part.node}
+                </span>
+              ))}
             </p>
 
             {/* The restraint. summariseDeck's own docblock calls this the number

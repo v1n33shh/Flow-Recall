@@ -44,6 +44,27 @@ export function nextEasierLevel(level: ChallengeLevel): ChallengeLevel | null {
   return (level - 1) as ChallengeLevel;
 }
 
+/** The card a failed lane comes back as.
+ *
+ * Lives here rather than inline in the feed because everything the engine needs to
+ * attribute the retry has to be CARRIED, not re-derived, and each field has a bug
+ * behind it. `lane` survives a level drop because a cloze that comes back as the
+ * easier swipe is still evidence about the cloze lane. `unitId` survives because an
+ * engine-built session's feed has no real deckId to fall back on - a retry that
+ * dropped it recorded its review against a unit id that does not exist, which the
+ * store accepts silently. */
+export function retryItemFor(item: QueueItem, retryLevel: ChallengeLevel): QueueItem {
+  const attempt = item.attempt + 1;
+  return {
+    key: `${item.concept.id}::${retryLevel}::${attempt}`,
+    concept: item.concept,
+    level: retryLevel,
+    lane: item.lane,
+    attempt,
+    unitId: item.unitId,
+  };
+}
+
 /** Builds the two genuinely different questions the queue needs per concept -
  * a Level 1 swipe (recognize the claim as true/false) and a Level 2 fill-in-
  * the-blank (produce the answer from memory), never the same fact tested

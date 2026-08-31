@@ -66,14 +66,21 @@ function CompletionFlame({ streak }: { streak: number }) {
 export default function CompletionSlide({
   deckId,
   total,
-  mastered,
+  cleared,
 }: {
   /** Null when the engine built this session across decks: there is no single deck
    * to summarise, so the "your memory of this deck" block is simply not shown. A
    * library-wide summary is the honest replacement and is a later move. */
   deckId: string | null;
   total: number;
-  mastered: number;
+  /** What the "Cleared" tile counts, and the numerator of the accuracy figure.
+   *
+   * Deck mode passes concepts MASTERED - both formats answered right - because a
+   * deck session asks every concept both ways, so mastery is the honest summary of
+   * it. An engine-built session asks each concept ONE way deliberately, which puts
+   * mastery out of reach inside it; it passes cards answered correctly instead.
+   * Both are "what you got through tonight", which is what this tile claims. */
+  cleared: number;
 }) {
   const { data: session, status, update } = useSession();
   const isPro = session?.user?.plan === "PRO";
@@ -86,7 +93,7 @@ export default function CompletionSlide({
   const [memoryOfDeck, setMemoryOfDeck] = useState<DeckSummary | null>(null);
   const hasCelebrated = useRef(false);
 
-  const accuracy = total > 0 ? Math.round((mastered / total) * 100) : 0;
+  const accuracy = total > 0 ? Math.round((cleared / total) * 100) : 0;
   const displayStreak = newStreak ?? session?.user?.currentStreak ?? 0;
   const tier = getFlameTier(displayStreak);
   const milestone = newStreak !== null ? getMilestoneMessage(newStreak) : null;
@@ -175,7 +182,7 @@ export default function CompletionSlide({
           className="grid w-full grid-cols-2 gap-3"
         >
           <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
-            <span className="text-2xl font-bold tabular-nums text-foreground">{mastered}</span>
+            <span className="text-2xl font-bold tabular-nums text-foreground">{cleared}</span>
             <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Cleared
             </span>

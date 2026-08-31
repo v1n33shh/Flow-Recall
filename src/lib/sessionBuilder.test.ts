@@ -178,8 +178,9 @@ describe("buildSession", () => {
 
   it("asks a well-retained card that has not yet proven itself across formats", () => {
     // Inside its target but not solid, so it is not rested: more evidence is
-    // exactly what it needs. It counts as neither slipping nor fresh, so the plan's
-    // three counts deliberately do not sum to the card count.
+    // exactly what it needs. Neither slipping nor fresh, and the reason `building`
+    // exists - without it this card was selected and reported as nothing at all,
+    // which is what the home block rendered as a blank line.
     const p = plan({
       units: [unit("comfortable")],
       // BOTH formats, or the unstudied one is fresh and the card is counted there -
@@ -193,6 +194,26 @@ describe("buildSession", () => {
     expect(p.resting).toBe(0);
     expect(p.slipping).toBe(0);
     expect(p.fresh).toBe(0);
+    expect(p.building).toBe(1);
+  });
+
+  // The invariant behind that: every selected card lands in exactly one of the
+  // three buckets, so the hero can always say why it is asking. Urgent is a subset
+  // of slipping and is deliberately excluded from the sum.
+  it("accounts for every selected card as slipping, fresh or building", () => {
+    const p = plan({
+      units: [unit("gone"), unit("new"), unit("comfortable")],
+      memories: [
+        memory("gone", { path: "cloze", stability: 0.5, lastReviewedAt: NOW - 30 * MS_PER_DAY }),
+        memory("gone", { path: "swipe", stability: 0.5, lastReviewedAt: NOW - 30 * MS_PER_DAY }),
+        memory("comfortable", { path: "cloze", stability: 400, lastReviewedAt: NOW - 5 * MS_PER_DAY }),
+        memory("comfortable", { path: "swipe", stability: 400, lastReviewedAt: NOW - 5 * MS_PER_DAY }),
+      ],
+      budgetMinutes: 60,
+    });
+    expect(p.items).toHaveLength(3);
+    expect(p.slipping + p.fresh + p.building).toBe(p.items.length);
+    expect(p.urgent).toBeLessThanOrEqual(p.slipping);
   });
 
   it("rests a solid concept that is inside its own target instead of asking it", () => {

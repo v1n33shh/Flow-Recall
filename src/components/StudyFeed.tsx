@@ -17,6 +17,7 @@ import {
   nextEasierLevel,
   pathForLevel,
   reconstructResolvedKeys,
+  retryItemFor,
 } from "@/lib/studyQueue";
 import { getSavedDecks } from "@/lib/storage";
 import { hasMigratedSavedDecks, importDeck, migrateSavedDecks, recordReview } from "@/lib/recallStorage";
@@ -362,14 +363,7 @@ export default function StudyFeed({
       if (idx === -1) return prev;
 
       const insertAt = Math.min(Math.max(idx + RETRY_OFFSET, currentIndexRef.current + 1), prev.length);
-      const nextAttempt = item.attempt + 1;
-      const retryItem: QueueItem = {
-        key: `${item.concept.id}::${retryLevel}::${nextAttempt}`,
-        concept: item.concept,
-        level: retryLevel,
-        lane: item.lane,
-        attempt: nextAttempt,
-      };
+      const retryItem = retryItemFor(item, retryLevel);
 
       const next = [...prev];
       next.splice(insertAt, 0, retryItem);
@@ -516,7 +510,12 @@ export default function StudyFeed({
         <CompletionSlide
           deckId={isSession ? null : deckId}
           total={totalConcepts}
-          mastered={masteredIds.size}
+          // Mastery takes both of a concept's formats, and an engine-built
+          // session asks each concept exactly one way on purpose - so mastery is
+          // unreachable inside one, and passing it here read "0 cleared, 0%
+          // accuracy" in red after a session answered perfectly. Cards answered
+          // correctly is what a mixed session can honestly claim.
+          cleared={isSession ? correctLaneKeys.size : masteredIds.size}
         />
       </div>
 

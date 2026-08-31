@@ -112,6 +112,12 @@ export type SessionPlan = {
   urgent: number;
   /** Selected cards never answered on that format. */
   fresh: number;
+  /** Selected cards that are inside their target and not new: answered before, not
+   * yet decayed, not yet solid. Neither slipping nor fresh, and so uncounted until
+   * this existed - which left the hero with nothing at all to say about a session
+   * made entirely of them. That is not a corner case: it is the state the screen is
+   * in the moment a student finishes a session and goes back to the home page. */
+  building: number;
   /** Concepts held solidly with nothing due - deliberately NOT asked tonight. */
   resting: number;
   /** How many distinct decks the session draws from. */
@@ -207,6 +213,7 @@ export function buildSession(input: {
   let slipping = 0;
   let urgent = 0;
   let fresh = 0;
+  let building = 0;
   const decks = new Set<string>();
 
   for (const candidate of candidates) {
@@ -220,7 +227,7 @@ export function buildSession(input: {
     else if (candidate.shortfall > 0) {
       slipping += 1;
       if (candidate.shortfall >= URGENT_SHORTFALL) urgent += 1;
-    }
+    } else building += 1;
     items.push({
       key: `${candidate.unit.id}::${candidate.level}::1`,
       concept: candidate.unit.concept,
@@ -237,6 +244,7 @@ export function buildSession(input: {
     slipping,
     urgent,
     fresh,
+    building,
     resting,
     deckCount: decks.size,
     deferred,

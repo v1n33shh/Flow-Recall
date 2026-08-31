@@ -12,9 +12,24 @@ import type { SwipeChallengeHandle } from "./SwipeChallenge";
 import CompletionSlide from "./CompletionSlide";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { buildConceptQueueItems, buildInitialQueue, nextEasierLevel, reconstructResolvedKeys } from "@/lib/studyQueue";
+import { getSavedDecks } from "@/lib/storage";
+import { hasMigratedSavedDecks, importDeck, migrateSavedDecks, recordReview } from "@/lib/recallStorage";
+import { unitIdFor, type RetrievalPath } from "@/lib/recallModel";
 
 // How many slides ahead a failed/skipped concept gets requeued at an easier level.
 const RETRY_OFFSET = 3;
+
+// A lane is retried at most this many times per session. Level 1 has no easier
+// level to fall back to, so before this cap existed a failed swipe was requeued
+// nowhere at all and failing the easiest card carried no consequence - while a
+// failed cloze fell back to a two-option swipe that could then be guessed. Now
+// every failure comes back, and nothing runs forever.
+const MAX_ATTEMPTS_PER_LANE = 3;
+
+// Which retrieval format each lane is, in the recall engine's vocabulary. Lane 1
+// is the true/false swipe (recognition - winnable by luck, which is why the
+// engine checks its latency); lane 2 is the typed cloze (production).
+const PATH_BY_LANE: Record<1 | 2, RetrievalPath> = { 1: "swipe", 2: "cloze" };
 
 /** A small Electric-Azure spinner with a soft glow behind it - the premium
  * loading state while Infinite Recall generates fresh cards. */
@@ -52,6 +67,30 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         (savedProgress ? reconstructResolvedKeys(savedProgress) : []),
     ),
   );
+  // Which lanes of each concept have been answered CORRECTLY - the evidence
+  // mastery now requires two of, instead of the single lucky answer it used to
+  // take. Keyed `${conceptId}::${lane}`. Restored from saved progress; a session
+  // saved before this field existed falls back to treating an already-mastered
+  // concept as having passed both lanes, which is the only reading that keeps an
+  // old resume from suddenly looking incomplete.
+  // State, not a ref, and load-bearingly so: the save effect below keys off this
+  // exactly as it does off masteredIds. Held as a ref, a correct answer on a
+  // concept's FIRST lane would change neither masteredIds nor the queue, the
+  // effect would never re-run, and that answer would be lost on resume.
+  const [correctLaneKeys, setCorrectLaneKeys] = useState<Set<string>>(
+    () =>
+      new Set(
+        savedProgress?.correctLaneKeys ??
+          (savedProgress?.masteredIds ?? []).flatMap((id) => [`${id}::1`, `${id}::2`]),
+      ),
+  );
+
+  // When each slide came into view, so a resolution can be timed. Measured from
+  // viewport entry rather than mount: the feed renders every slide up front, so
+  // mount time would report how long the student has been in the session, not
+  // how long they spent on this card.
+  const enteredAt = useRef(new Map<number, number>());
+
   // Tracks roughly where the user is in the feed, so an async grading result
   // (chat challenge) can't requeue a retry behind where they've already scrolled.
   const currentIndexRef = useRef(0);
@@ -82,6 +121,11 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // the session so the navbar flame updates instantly without a reload.
   const { data: session, update: updateSession } = useSession();
   const isPro = session?.user?.plan === "PRO";
+  // Every recall-engine record is scoped to the account, so two people signing
+  // in on one phone can never merge learning histories - the wart the reader
+  // library has. Undefined while the session loads or when signed out, in which
+  // case the engine simply records nothing and the feed behaves as before.
+  const userId = session?.user?.id;
   useEffect(() => {
     fetch(apiUrl("/api/study/track"), {
       method: "POST",
@@ -103,6 +147,23 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       .catch(() => {}); // silent — streak tracking is non-critical
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Bring this deck into the recall engine. Runs on every session open, which is
+  // deliberate: importDeck is idempotent (unit ids are derived from deck +
+  // concept id), so this picks up concepts appended by Infinite Recall or a JIT
+  // continuation without ever duplicating a unit or resetting its history.
+  //
+  // The one-time sweep of every OTHER saved deck is what stops the engine only
+  // knowing about whichever deck happened to be studied first. Both are
+  // best-effort: a failure here leaves the feed working exactly as it did.
+  useEffect(() => {
+    if (!userId) return;
+    const deck = getSavedDecks().find((d) => d.id === deckId);
+    const work = deck ? importDeck(deck, userId) : Promise.resolve([]);
+    void work
+      .then(() => (hasMigratedSavedDecks() ? null : migrateSavedDecks(userId, getSavedDecks())))
+      .catch((error) => console.error("recall engine import failed", error));
+  }, [userId, deckId]);
 
   // --- Infinite Recall Mode (Pro) ---------------------------------------
 
@@ -192,7 +253,11 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     }
   }
 
-  function resolve(item: QueueItem, outcome: ChallengeOutcome) {
+  // `resolvedAt` is captured by the caller, at the moment the answer actually
+  // landed, rather than read here - both because that is the honest timestamp
+  // and because reading the clock during render is exactly what the purity rule
+  // exists to catch.
+  function resolve(item: QueueItem, outcome: ChallengeOutcome, resolvedAt: number) {
     if (resolvedKeys.current.has(item.key)) return;
     resolvedKeys.current.add(item.key);
 
@@ -205,16 +270,50 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       }
     }
 
+    // Hand the retrieval to the recall engine. Fire-and-forget on purpose: the
+    // feed must never stall or fail because a write to IndexedDB did, and the
+    // engine is additive - if this throws, the session behaves exactly as it
+    // did before the engine existed.
+    if (userId) {
+      const startedAt = enteredAt.current.get(currentIndexRef.current);
+      void recordReview({
+        userId,
+        unitId: unitIdFor(deckId, item.concept.id),
+        path: PATH_BY_LANE[item.lane],
+        outcome,
+        // 0 means "not measured", which the engine reads as trustworthy rather
+        // than suspect - the safe direction. Happens when a card resolves
+        // without ever having entered the viewport (an async grade landing late).
+        latencyMs: startedAt === undefined ? 0 : Math.max(0, resolvedAt - startedAt),
+      }).catch((error) => console.error("recordReview failed", error));
+    }
+
     if (outcome === "correct") {
-      setMasteredIds((prev) => new Set(prev).add(item.concept.id));
+      // Mastery now needs BOTH of a concept's lanes answered correctly - a
+      // recognition swipe and a typed cloze. One correct answer used to be
+      // enough, and since lane 1 is a two-option true/false, that made the
+      // progress bar half guesswork.
+      setCorrectLaneKeys((prev) => {
+        const next = new Set(prev).add(`${item.concept.id}::${item.lane}`);
+        if (next.has(`${item.concept.id}::1`) && next.has(`${item.concept.id}::2`)) {
+          setMasteredIds((mastered) => new Set(mastered).add(item.concept.id));
+        }
+        return next;
+      });
       return;
     }
 
-    // Skipping counts the same as answering wrong here - the user didn't
-    // demonstrate recall either way, and D.I.E.'s retry logic already
-    // treats them identically below.
-    const easierLevel = nextEasierLevel(item.level);
-    if (easierLevel === null) return;
+    // Skipping counts the same as answering wrong for requeueing - the user
+    // didn't demonstrate recall either way. (The engine tells them apart: a
+    // skip is logged but never allowed to decay a memory. See gradeFor.)
+    //
+    // Every failure comes back now. It used to fall to an EASIER level or, at
+    // level 1, nowhere at all - so failing the easiest card had no consequence
+    // and a failed cloze dropped to a swipe that could then be guessed. A lane
+    // with no easier level left is retried at its own level instead, capped so
+    // nothing runs forever.
+    if (item.attempt >= MAX_ATTEMPTS_PER_LANE) return;
+    const retryLevel = nextEasierLevel(item.level) ?? item.level;
 
     setQueue((prev) => {
       const idx = prev.findIndex((q) => q.key === item.key);
@@ -223,9 +322,9 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       const insertAt = Math.min(Math.max(idx + RETRY_OFFSET, currentIndexRef.current + 1), prev.length);
       const nextAttempt = item.attempt + 1;
       const retryItem: QueueItem = {
-        key: `${item.concept.id}::${easierLevel}::${nextAttempt}`,
+        key: `${item.concept.id}::${retryLevel}::${nextAttempt}`,
         concept: item.concept,
-        level: easierLevel,
+        level: retryLevel,
         lane: item.lane,
         attempt: nextAttempt,
       };
@@ -244,13 +343,15 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
       masteredIds: Array.from(masteredIds),
       queue,
       resolvedKeys: Array.from(resolvedKeys.current),
+      correctLaneKeys: Array.from(correctLaneKeys),
     });
     // resolvedKeys is a ref (mutated in resolve(), not via setState) so it's
-    // exempt from the deps list - masteredIds/queue change on every
-    // resolve() call too (correct: setMasteredIds; incorrect with a retry:
-    // setQueue), so this still fires right after resolvedKeys itself is
-    // updated in the vast majority of cases.
-  }, [deckId, masteredIds, queue]);
+    // exempt from the deps list. Every resolve() path now changes at least one
+    // dep, so this always fires right after it: a correct answer updates
+    // correctLaneKeys, and a wrong or skipped one updates queue. Before
+    // correctLaneKeys was a dep, a first-lane success changed neither and the
+    // answer was silently lost on resume.
+  }, [deckId, masteredIds, queue, correctLaneKeys]);
 
   // Anki-style desktop shortcuts. One listener for the whole feed's lifetime,
   // torn down on unmount so it never double-fires. It reads everything it
@@ -359,11 +460,15 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
             }}
             onEnter={() => {
               currentIndexRef.current = index;
+              // First entry only: scrolling back to a card the student already
+              // looked at must not restart its clock and turn a long
+              // deliberation into a suspiciously fast answer.
+              if (!enteredAt.current.has(index)) enteredAt.current.set(index, Date.now());
             }}
-            onResolve={(outcome) => resolve(item, outcome)}
+            onResolve={(outcome) => resolve(item, outcome, Date.now())}
           />
         ))}
-        <CompletionSlide total={totalConcepts} mastered={masteredIds.size} />
+        <CompletionSlide deckId={deckId} total={totalConcepts} mastered={masteredIds.size} />
       </div>
 
       {/* Mid-session Pro nudge — shown once after card 15 for free users. */}

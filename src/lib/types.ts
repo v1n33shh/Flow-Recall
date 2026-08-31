@@ -136,4 +136,10 @@ export type StudyProgress = {
    * done" for the same concept id, so a heuristic keyed only on concept id
    * would wrongly treat an unanswered lane as already resolved. */
   resolvedKeys?: string[];
+  /** `${conceptId}::${lane}` for every lane answered CORRECTLY, so mastery can
+   * require two different question formats rather than one lucky answer.
+   * Optional for the same reason resolvedKeys is: sessions saved before this
+   * field existed still load, and fall back to treating an already-mastered
+   * concept as having both lanes passed. */
+  correctLaneKeys?: string[];
 };

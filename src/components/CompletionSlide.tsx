@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { fireCelebration } from "@/lib/confetti";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { summariseDeck, type DeckSummary } from "@/lib/recallStorage";
 
 // Mirrors the tier thresholds in StreakCounter / StreakModal so all
 // three components stay in visual sync.
@@ -63,9 +64,11 @@ function CompletionFlame({ streak }: { streak: number }) {
 }
 
 export default function CompletionSlide({
+  deckId,
   total,
   mastered,
 }: {
+  deckId: string;
   total: number;
   mastered: number;
 }) {
@@ -74,6 +77,10 @@ export default function CompletionSlide({
 
   // newStreak is null until trackStreak() resolves — avoids flashing 0.
   const [newStreak, setNewStreak] = useState<number | null>(null);
+  // What the recall engine knows about this deck, read once the student actually
+  // reaches this slide rather than in an effect - it costs two IndexedDB reads
+  // and there is no reason to pay them for a session nobody finishes.
+  const [memoryOfDeck, setMemoryOfDeck] = useState<DeckSummary | null>(null);
   const hasCelebrated = useRef(false);
 
   const accuracy = total > 0 ? Math.round((mastered / total) * 100) : 0;
@@ -86,6 +93,14 @@ export default function CompletionSlide({
     hasCelebrated.current = true;
     fireCelebration();
     void trackStreak();
+    const userId = session?.user?.id;
+    if (userId) {
+      // Best-effort: the celebration stands on its own if the engine has
+      // nothing to say yet, or fails to answer.
+      summariseDeck(userId, deckId)
+        .then(setMemoryOfDeck)
+        .catch((error) => console.error("summariseDeck failed", error));
+    }
   }
 
   async function trackStreak() {
@@ -156,7 +171,7 @@ export default function CompletionSlide({
           <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
             <span className="text-2xl font-bold tabular-nums text-foreground">{mastered}</span>
             <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Mastered
+              Cleared
             </span>
           </div>
           <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
@@ -176,6 +191,51 @@ export default function CompletionSlide({
             </span>
           </div>
         </motion.div>
+
+        {/* What the recall engine knows — the part that outlives this session.
+             "Cleared" above is about tonight; this is about whether the
+             knowledge is actually durable. */}
+        {memoryOfDeck && memoryOfDeck.units > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 280, damping: 24 }}
+            className="w-full rounded-2xl border border-border bg-foreground/[0.03] p-4 text-left"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Your memory of this deck
+            </p>
+
+            <div className="mt-3 flex items-baseline gap-5">
+              <span className="flex flex-col">
+                <span className="text-2xl font-bold tabular-nums text-accent">{memoryOfDeck.solid}</span>
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Solid
+                </span>
+              </span>
+              <span className="flex flex-col">
+                <span className="text-2xl font-bold tabular-nums text-amber-400">{memoryOfDeck.fading}</span>
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Fading
+                </span>
+              </span>
+              <span className="flex flex-col">
+                <span className="text-2xl font-bold tabular-nums text-foreground">
+                  {memoryOfDeck.holding + memoryOfDeck.familiar + memoryOfDeck.met}
+                </span>
+                <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Still building
+                </span>
+              </span>
+            </div>
+
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              {memoryOfDeck.resting > 0
+                ? `${memoryOfDeck.resting} ${memoryOfDeck.resting === 1 ? "concept is" : "concepts are"} resting — you have ${memoryOfDeck.resting === 1 ? "it" : "these"} solidly, so reviewing ${memoryOfDeck.resting === 1 ? "it" : "them"} tonight would have bought you almost nothing.`
+                : "A concept turns solid once you've answered it two different ways, including once after a week away. That gap is the part that proves it stuck."}
+            </p>
+          </motion.div>
+        )}
 
         {/* Pro upsell — only for free users, at peak dopamine */}
         {!isPro && status === "authenticated" && (

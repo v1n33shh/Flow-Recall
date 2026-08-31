@@ -13,6 +13,7 @@ import LogoMark from "@/components/LogoMark";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
 import { confirmationMatches } from "@/lib/deleteAccount";
 import { deleteAllBooks } from "@/lib/readerStorage";
+import { deleteAllRecallData } from "@/lib/recallStorage";
 import { clearAllLocalUserData } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
@@ -87,6 +88,7 @@ function useDeleteAccount() {
       // and continue to sign-out, which is what the user is waiting for.
       try {
         await deleteAllBooks();
+        await deleteAllRecallData();
         clearAllLocalUserData();
       } catch (error) {
         console.error("deleteAccount: local wipe failed after server deletion", error);

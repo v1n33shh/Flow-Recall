@@ -5,8 +5,10 @@ block was the current state on its own date and is now history, kept for the rea
 as instructions. The first block is the only one describing the repo as it stands.
 
 State at **end of session, 2026-08-31 ~01:10 IST**: `main` and `origin/main` both at **`89e7eb0`**, working tree
-clean apart from untracked `_*.mjs` scratch. Everything below is **pushed and verified live in production.** Run
-`git status -sb` first and trust it over this line; it has gone stale mid-session before.
+clean apart from untracked `_*.mjs` scratch. **Since then: two further commits landed (`24c7c61`, `52c9644`),
+and the recall-engine foundation is written but UNCOMMITTED — see the 2026-08-31 (recall engine) block
+immediately below.** Everything up to `52c9644` is pushed and verified live in production; the recall engine is
+not. Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
 89e7eb0  Lift the delete sheet above the tab bar, where it was unreachable   <- HEAD, live
@@ -74,6 +76,153 @@ Also on the account: a deck **"Cardiac cycle - lecture 4"** (3 concepts) that th
 study feed. Fictional content, delete it freely.
 
 ---
+
+## 🟡 START HERE — 2026-08-31 (recall engine, phases 1-2): live on the device, uncommitted
+
+**Working tree is dirty and nothing here is committed or pushed.** Run `git status -sb` before anything else.
+Three new files plus a two-line change to the account screen. All of it is additive: the study feed, the reader,
+ingest and every route are untouched, and the app behaves exactly as it did before.
+
+### Why this, and why first
+
+The study feed had no tomorrow. `saveProgress` snapshots a session so it can resume, and that is the end of it -
+no interval, no review history, no row anywhere that says a concept was retrieved and should come back Thursday.
+So there was nothing for the app to manage on the student's behalf, which is the actual reason the flashcard
+experience felt thin. Phase 1 is the substrate for that; the session builder and the new question formats sit on
+top of it and are the next two pieces.
+
+Deliberately on-device only. Everything runs client-side, which is what lets it work inside the Capacitor shell
+(a static export with no server behind it) and offline. Syncing to Postgres for durability and cross-device is
+phase 3 - **until then this is device-local, exactly as the deck list already was, so do not claim cross-device.**
+
+### What landed
+
+| | |
+|---|---|
+| `src/lib/fsrs.ts` | FSRS-6, ported not invented. Curve, interval, initial state, difficulty update, recall/lapse/same-day stability, all 21 published weights. Plus two FlowRecall extensions, both clearly marked: cross-path stability coupling, and `desiredRetentionFor` deriving retention from importance + exam proximity instead of a slider |
+| `src/lib/recallModel.ts` | Types and every pure derivation: `RetrievalPath`, `KnowledgeUnit`, `MemoryRecord`, `ReviewRecord`, `unitsFromDeck`, `pathsFor`, `gradeFor` (incl. the lucky-guess check), `masteryFor` (the five-condition bar), `dueFirst` / `isDue` |
+| `src/lib/recallStorage.ts` | IndexedDB `flowrecall-recall` v1 - `units`, `memory`, `reviews`. `recordReview` is the one write path. Idempotent `importDeck`, non-destructive `migrateSavedDecks`, `deleteAllRecallData`, `useRecallMemories` |
+| `src/app/account/page.tsx` | One import plus one `await deleteAllRecallData()` in the local-wipe block, so deleting an account clears the new stores too |
+| `src/components/StudyFeed.tsx` | The wiring. Latency clock per slide, `recordReview` on every resolve, `importDeck` + one-time `migrateSavedDecks` on session open, mastery now requiring BOTH lanes, and every failure requeued instead of level-1 failures vanishing |
+| `src/components/CompletionSlide.tsx` | "Your memory of this deck" - solid / fading / still building, plus the resting line. The visible payoff |
+| `src/lib/types.ts` | `StudyProgress.correctLaneKeys?`, optional in the same way `resolvedKeys?` is |
+
+### The decisions worth knowing before touching it again
+
+- **FSRS was ported, not designed.** Cross-checked against two sources before writing (the awesome-fsrs wiki and
+  expertium.github.io/Algorithm.html) because a scheduler that is subtly wrong stays invisible until months of
+  review history are built on it. The two 90%-anchor invariants — `R(S,S) = 0.9` and `interval(S, 0.9) = S` — are
+  asserted across four decay values, so if `factor` is ever derived wrong the tests catch it immediately.
+- **Coupling constants are unfitted guesses.** `COUPLING_ON_SUCCESS = 0.35`, `COUPLING_ON_LAPSE = 0.6`. No
+  literature exists — FSRS has no notion of sibling formats. Failures couple harder than successes on purpose
+  (forgetting generalises; a recognition success does not). Both are stamped onto **every review row** so they can
+  be refitted later against real data instead of argued about.
+- **A suspiciously fast correct answer is recorded but not credited.** `gradeFor` compares latency against a
+  percentile of *this student's own* history on *that* format, so a fast reader is not punished and a slow guesser
+  is not waved through. Under ten prior answers it credits everything — erring toward crediting is right at cold
+  start. This is the direct fix for a two-option swipe being winnable by luck half the time.
+- **Mastery needs three of five conditions today, and can only get stricter.** Three successes across two formats,
+  one after a 7-day gap, one on a production path. The other two from the design (no active misconception, no
+  recent overconfident failure) are not evaluated because nothing records misconceptions or confidence yet — they
+  tighten the bar later, never loosen it. The delay is measured **per format**: a fortnight-old cloze warmed up by
+  a swipe an hour earlier is not delayed evidence.
+- **`met` / `familiar` / `holding` / `solid` / `fading`.** `familiar` is what the feed currently calls *mastered*.
+  Naming it separately was most of the fix; the label was doing the misleading, not the threshold.
+- **Due-ness is a shortfall against each unit's own target**, not a wall-clock date. That is what lets the engine
+  answer "don't study this tonight" for something Anki would have shown.
+- **`Memory` is derived; `Review` is the asset.** Memory can always be rebuilt by replaying reviews, which turns a
+  scheduler bug into a recomputation rather than a data-loss incident. Keep that property.
+- **Migration is non-destructive.** `flowrecall:savedDecks` is left exactly where it is, so the feed keeps working
+  off it and a bad migration is a no-op to recover from. `flowrecall:recall-migrated` only skips the work —
+  `importDeck` is idempotent, so clearing the flag re-runs it harmlessly. Dropping the localStorage copy is a
+  separate decision for a later release.
+- **`deleteAllRecallData` clears the stores rather than deleting the database.** `deleteDatabase` blocks
+  indefinitely while another tab holds a connection, which would hang the deletion flow at the worst moment.
+- Unit ids are `${deckId}::${conceptId}` and every record carries `userId`, so a re-import updates in place and two
+  accounts on one device can never merge histories — the wart `readerStorage.ts` has, avoided here from day one.
+
+### Verified, by measurement
+
+- **153 tests pass, up from 90** — 35 new in `fsrs.test.ts`, 28 in `recallModel.test.ts`. `tsc --noEmit` clean.
+  Lint still **46 warnings, 0 errors** — the same count as before, i.e. zero warnings added.
+- Both `npm run build` and `npm run build:apk` succeed, `cap sync` completes, and `src/app/api` is restored.
+- The staged APK assets do contain the new module: `flowrecall-recall` and `recall-engine-update` are both present
+  in `android/app/src/main/assets/public/_next/static/chunks/`.
+- **But the scheduler itself is tree-shaken out, correctly.** `36500`, `suspect-guess` and the w0-w3 weights appear
+  in **zero** chunks, because the only thing importing the module today is `deleteAllRecallData` on the account
+  screen. The math ships the moment the feed calls `recordReview` — which is the next commit, not a bug in this one.
+
+### Phase 2: the feed wiring, and two bugs it closed
+
+- **Latency is measured from viewport entry, not mount.** The feed renders every slide up front, so mount time
+  would report how long the student had been in the session. First entry only, so scrolling back to a card does
+  not restart its clock and turn a long deliberation into a suspiciously fast answer.
+- **Mastery needs both lanes.** `masteredIds` used to be set by one correct answer, and lane 1 is a two-option
+  true/false, so the progress bar was half guesswork. It now needs the swipe AND the cloze.
+- **Every failure comes back.** `nextEasierLevel(1)` returns null, so a failed level-1 swipe used to be requeued
+  nowhere at all - failing the easiest card had no consequence, while a failed cloze fell back to a swipe that
+  could then be guessed. A lane with no easier level left is now retried at its own level,
+  `MAX_ATTEMPTS_PER_LANE = 3` so nothing runs forever. This also had to be fixed for mastery-needs-both-lanes to
+  be reachable at all: without it a failed swipe was a dead end and the bar could never fill.
+- **A skip is logged but never credited.** Scrolling past a card is evidence of nothing; letting it decay a memory
+  would let thumb movement write the model. It still requeues exactly as before.
+
+**The one real bug this introduced, found on the device and fixed:** `correctLaneKeys` started as a ref, and a
+correct answer on a concept's FIRST lane changes neither `masteredIds` nor `queue` - so the save effect never
+re-fired and the answer was silently lost on resume. It is state now, and a dep of that effect. The device census
+showed `resolved: 0` with a review already written, which is what exposed it; nothing in the test suite would have.
+
+### Verified on the real device, not just in tests
+
+Built `DEVTOOLS=1`, release-signed, `adb install -r`. Cert `e1f4352f…bc09` on both the new APK and the committed
+one, checked with `apksigner` before installing, so it was an in-place upgrade. **Library survived**: both Osho
+books at their original positions (PDF 0.9052, EPUB 0.0226), 3 highlights, 2 files.
+
+Drove a full 3-concept session over CDP (walking one slide at a time - jumping ahead fires `onViewportLeave` on
+every slide passed over, which resolves them as skipped and shifts every index underneath you):
+
+- 3 units imported, 6 memory rows (3 concepts x 2 paths), 6 credited reviews, migration flag set.
+- Latencies genuinely captured: 3999-7099ms, per card.
+- Every first review wrote `stabilityAfter = 2.307`, i.e. `w2` exactly - the published initial stability for a
+  Good first answer. `desiredRetention` 0.905 = `0.86 + 0.09 x 0.5`.
+- `correctLaneKeys` persisted all 6 lane keys; `masteredIds` filled only after both lanes of each concept passed.
+- **Coupling measured exactly.** A same-day repeat correctly buys nothing (FSRS's short-term formula yields
+  SInc < 1 at S~2.3 and the floor clamps it back), so a concept was back-dated 10 days to create a real interval.
+  Reviewed path S 2.3065 -> 25.1088; sibling path 2.3065 -> 10.2873. **Observed ratio 0.3500 against the intended
+  0.35**, sibling `reps` unchanged, sibling clock HELD, difficulty untouched.
+- Completion slide renders on-device: `0 SOLID / 0 FADING / 3 STILL BUILDING` plus the explainer line, since two
+  formats in one sitting is `holding` and solid needs the 7-day gap. Screenshotted via `adb exec-out screencap` -
+  Playwright's own `page.screenshot()` returns pure black against this WebView.
+
+**All engine test data was then cleared from the device** (including the fabricated 10-day gap - test data must not
+masquerade as a learning history). The deck and reader library are untouched, so the next real session starts clean.
+
+### The installed build has devtools ON
+
+`webContentsDebuggingEnabled: true`, which is NOT the shipping posture. Fine while iterating; run
+`npm run build:apk && (cd android && ./gradlew assembleRelease)` **without** `DEVTOOLS=1` and reinstall before any
+Play upload, and re-verify the flag in `android/app/src/main/assets/capacitor.config.json`.
+
+### Not done, and not claimed
+
+Still device-local - no Postgres sync, so no cross-device and no durability beyond this phone. `importance` is a
+flat 0.5 for every unit because nothing measures it yet; a fabricated ranking would be worse than an honest
+constant. No Hard button, so `gradeFor` never returns HARD. Coupling does not fire on a path's FIRST review (there
+is no `stabilityBefore` to derive a delta from) even when a sibling already has state - defensible, but a known
+limitation. The home screen is still a deck list; nothing yet asks "got 20 minutes?".
+
+Also worth noting from the device run: the test deck's Stroke Volume cloze reads *"end-diastolic volume minus
+_____"* with `answer` = *"EDV minus ESV"*, which does not substitute grammatically. The ingest prompt already
+demands substitutability in prose; it needs to become a mechanical assertion in the quality gate.
+
+### Next, in order
+
+1. The session builder - value/cost ranking against a time budget - and the home screen becoming *"Got 20
+   minutes?"* instead of a deck list. This is the change students actually feel.
+2. MCQ (4-option, from the existing `answer`/`distractor` plus distractors borrowed across the deck) and
+   reverse-recall. Both free from data already generated, and MCQ drops the guess rate from 50% to 25%.
+3. Postgres sync for durability and cross-device.
+
 
 
 ---

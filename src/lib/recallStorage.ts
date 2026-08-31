@@ -15,6 +15,7 @@ import {
   unitsFromDeck,
   type MasteryEvidence,
 } from "./recallModel";
+import { buildSession, type SessionPlan } from "./sessionBuilder";
 
 // The recall engine's persistence, on the device.
 //
@@ -572,6 +573,37 @@ export async function saveAsk(input: {
   await txDone(tx);
   notifyRecallUpdate();
   return record;
+}
+
+/** Tonight's session, across every deck the student has.
+ *
+ * Imports first, and has to: units only enter the engine when a deck is studied or
+ * swept in by migrateSavedDecks, so a student who has generated decks but never
+ * opened the feed has no units at all - and the home screen is precisely where they
+ * would be standing. importDeck is idempotent, so this is a no-op for anything
+ * already present and picks up decks created since the last visit.
+ *
+ * Only decks with no units are imported, rather than all of them every time, since
+ * this runs on a screen the student may sit on. */
+export async function buildTodaySession(
+  userId: string,
+  decks: readonly Deck[],
+  budgetMinutes: number,
+  now?: number,
+): Promise<SessionPlan> {
+  const existing = await listUnits(userId);
+  const known = new Set(existing.map((u) => u.sourceDeckId));
+  const missing = decks.filter((deck) => !known.has(deck.id));
+  for (const deck of missing) {
+    await importDeck(deck, userId).catch((error) => console.error("importDeck failed", error));
+  }
+
+  const [units, memories, reviews] = await Promise.all([
+    missing.length > 0 ? listUnits(userId) : Promise.resolve(existing),
+    listMemories(userId),
+    listAllReviews(userId),
+  ]);
+  return buildSession({ units, memories, reviews, budgetMinutes, now });
 }
 
 // ── React binding ────────────────────────────────────────────────────────────

@@ -132,6 +132,13 @@ export type QueueItem = {
   lane: 1 | 2;
   attempt: number;
   isNew?: boolean;
+  /** `${deckId}::${conceptId}`, carried on items built by the session builder.
+   *
+   * A deck session can derive it from the one deck it is studying; a session drawn
+   * from the whole library cannot, because each card belongs to a different deck.
+   * Optional so every existing saved session still loads, and so the feed can fall
+   * back to deriving it from its own deckId. */
+  unitId?: string;
 };
 
 /** A snapshot of an in-progress (or finished) study session for one deck,

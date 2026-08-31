@@ -23,6 +23,22 @@ export function pathForLevel(level: ChallengeLevel): RetrievalPath {
   return PATH_BY_LEVEL[level];
 }
 
+/** The inverse, for the session builder: which level renders this format.
+ *
+ * Returns null for a path the feed cannot draw yet. `RetrievalPath` declares five
+ * formats and FeedSlide implements two, deliberately - the other three were
+ * declared early so the store would not need a migration when they arrive. So the
+ * builder has to be able to ask "can this actually be shown?" and get an honest
+ * no, rather than scheduling a card that would render as a swipe by fallthrough
+ * and then be RECORDED as a swipe, quietly turning a production format into a
+ * recognition one. That is the same class of bug PATH_BY_LEVEL exists to prevent. */
+export function levelForPath(path: RetrievalPath): ChallengeLevel | null {
+  const level = (Object.keys(PATH_BY_LEVEL) as unknown as ChallengeLevel[]).find(
+    (candidate) => PATH_BY_LEVEL[Number(candidate) as ChallengeLevel] === path,
+  );
+  return level === undefined ? null : (Number(level) as ChallengeLevel);
+}
+
 export function nextEasierLevel(level: ChallengeLevel): ChallengeLevel | null {
   if (level === 1) return null;
   return (level - 1) as ChallengeLevel;

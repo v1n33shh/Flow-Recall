@@ -30,6 +30,7 @@ export default function ConceptDebrief({
   correct,
   note,
   onConfidence,
+  showAnswer = true,
 }: {
   concept: Concept;
   correct: boolean;
@@ -41,6 +42,10 @@ export default function ConceptDebrief({
    * those apart from the outcome alone - so it asks. Absent on every success and
    * on production formats, where a failure already means one thing. */
   onConfidence?: (confidence: Confidence) => void;
+  /** False when the challenge already has the answer on screen. The swipe's
+   * flipped card states it under an ANSWER label directly above this, and
+   * repeating it 100px lower reads as a stutter rather than as confirmation. */
+  showAnswer?: boolean;
 }) {
   // Starts open on a failure, which is the behaviour this component exists for.
   const [showExplanation, setShowExplanation] = useState(!correct);
@@ -68,9 +73,13 @@ export default function ConceptDebrief({
         <p className={`font-medium ${correct ? "text-success" : "text-danger"}`}>
           {correct ? "Correct!" : "Not quite"}
         </p>
-        <p className="mt-1 text-foreground">
-          {concept.question} &rarr; {concept.answer}
-        </p>
+        {/* The answer alone, not `question → answer`: the question is already on
+            screen above the card, and repeating it cost ~40px of a 768px viewport
+            that the explanation needs more. Suppressed entirely when the format
+            already shows the answer itself. */}
+        {showAnswer && (
+          <p className="mt-1 text-base font-medium text-foreground">{concept.answer}</p>
+        )}
         {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
       </motion.div>
 

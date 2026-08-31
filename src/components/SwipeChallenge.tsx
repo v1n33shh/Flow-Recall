@@ -55,10 +55,15 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
   // direction meant what - the mapping existed solely inside onDragEnd's ±100px
   // check. On a phone, which is the only platform this ships to, that made the
   // app's signature interaction invisible: a student could find the ✕/✓ buttons
-  // and nothing else. Each label brightens as the card is dragged its way, so the
-  // gesture teaches itself on the first attempt.
-  const falseHint = useTransform(x, [-100, 0], [1, 0.4]);
-  const trueHint = useTransform(x, [0, 100], [0.4, 1]);
+  // and nothing else.
+  //
+  // Rest is 0.7, not lower: --muted-foreground at 0.4 over --surface measures
+  // about 2.1:1, and these are 10px uppercase labels that have to be readable
+  // before the student has touched anything. The directional cue comes from the
+  // pair diverging as the card is dragged - the far side fades to 0.35 while the
+  // near side goes full - rather than from a dim resting state.
+  const falseHint = useTransform(x, [-100, 0, 100], [1, 0.7, 0.35]);
+  const trueHint = useTransform(x, [-100, 0, 100], [0.35, 0.7, 1]);
   // Drives a shake/bounce on a wrapper around the draggable card, kept
   // separate from the card's own drag-bound `x`/`rotate` motion values so
   // the two animations don't fight over the same style props.
@@ -153,7 +158,12 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
           <motion.div
             drag={revealed ? false : "x"}
             style={{ x, rotate, transformStyle: "preserve-3d" }}
-            animate={{ rotateY: revealed ? 180 : 0 }}
+            // The card settles smaller once it is answered. Before it did not, and
+            // on the device that cost the explanation below it real space: a
+            // resolved card is 224px showing one short answer line, most of it
+            // empty, while the debrief underneath was overflowing a 768px
+            // viewport with its last lines unreachable.
+            animate={{ rotateY: revealed ? 180 : 0, height: resolved ? 132 : 224 }}
             transition={{ type: "spring", stiffness: 260, damping: 26 }}
             dragConstraints={{ left: 0, right: 0 }}
             dragElastic={0.85}
@@ -161,9 +171,7 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
               if (info.offset.x > 100) decide(true);
               else if (info.offset.x < -100) decide(false);
             }}
-            className={`relative h-56 w-full ${
-              revealed ? "" : "cursor-grab active:cursor-grabbing"
-            }`}
+            className={`relative w-full ${revealed ? "" : "cursor-grab active:cursor-grabbing"}`}
           >
             {/* Front face: the claim to judge. bg-surface flips with the theme,
                 so its text must too - text-zinc-300 (near-white) used to go
@@ -210,6 +218,8 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
         <ConceptDebrief
           concept={concept}
           correct={outcome === true}
+          // The flipped card above already states it under an ANSWER label.
+          showAnswer={false}
           // Only while the question can still be recorded, plus after it has been
           // answered so the acknowledgement stays on screen. Once flushPending
           // has announced without it, the question disappears rather than

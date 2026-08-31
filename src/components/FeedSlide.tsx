@@ -78,11 +78,35 @@ export default function FeedSlide({
       viewport={{ amount: 0.6 }}
       className="flex h-dvh w-full shrink-0 snap-start snap-always items-center justify-center px-5 sm:px-6"
       style={{
-        paddingTop: "env(safe-area-inset-top)",
-        paddingBottom: "env(safe-area-inset-bottom)",
+        // The feed floats two controls over every slide: the exit ✕ at top-left
+        // (z-20) and the Infinite Recall button along the bottom (z-30). While a
+        // slide's content was short enough to sit centred, both landed in empty
+        // space. A resolved card is not short any more - it carries a verdict, a
+        // confidence question and a full paragraph - so the column now reaches
+        // the edges, and without these the ✕ sat over the question and the button
+        // over the last lines of the explanation. Measured on the device at both.
+        paddingTop: "calc(env(safe-area-inset-top) + 3.25rem)",
+        paddingBottom: "calc(env(safe-area-inset-bottom) + 4.5rem)",
       }}
     >
-      <div className="w-full max-w-md">
+      {/* The column scrolls, and has to. A resolved card carries a verdict, a
+          confidence question and a full explanation paragraph, which on the 768px
+          viewport this app ships to overflowed the slide - the question clipped
+          off the top, the last lines of the explanation unreachable. `max-h-full`
+          keeps the column inside the slide's padded box (see the insets above,
+          which are what keep it clear of the two floating controls).
+
+          Scroll chaining is deliberately left at the default. `overscroll-contain`
+          was tried first and measured as a trap on the device: once the paragraph
+          was scrolled to its end, no further swipe starting inside the column
+          reached the snap scroller, so the student was stuck on the card with only
+          the 20px side gutters to swipe in. And the skip it was meant to prevent
+          cannot happen - only a RESOLVED card is tall enough to scroll at all, and
+          a resolved card has already been recorded, so chaining past it costs
+          nothing. The residual is that a very fast flick can carry past the last
+          line of the paragraph; the slide stays mounted, so scrolling back up
+          returns to it. */}
+      <div className="max-h-full w-full max-w-md overflow-y-auto no-scrollbar">
         {/* Card header — concept label + badges */}
         {/* The overflow-hidden + relative here contains the full-width sweep. */}
         <div className="relative mb-6 flex flex-wrap items-center justify-between gap-2 overflow-hidden rounded-xl text-xs font-medium text-muted-foreground">

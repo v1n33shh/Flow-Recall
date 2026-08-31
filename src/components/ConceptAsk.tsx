@@ -143,9 +143,15 @@ export default function ConceptAsk({
                 <div key={row.id} className="rounded-r-xl border-l-2 border-l-accent/50 pl-3">
                   <p className="text-xs font-medium text-foreground">{row.question}</p>
                   <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{row.answer}</p>
+                  {/* A hedge, not a verdict. Measured against the live route, the
+                      model sets this correctly about 10 times in 12 - good enough to
+                      be worth showing, not good enough to assert as fact, and its
+                      ABSENCE is the unreliable direction (an answer drawn from
+                      outside the material occasionally arrives unflagged). So the
+                      wording claims less than the flag does. */}
                   {row.beyondMaterial && (
                     <p className="mt-1.5 inline-block rounded-full border border-pending/40 bg-pending/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-pending">
-                      Beyond your material
+                      May go beyond your material
                     </p>
                   )}
                 </div>

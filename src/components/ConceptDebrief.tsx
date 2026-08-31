@@ -129,6 +129,27 @@ export default function ConceptDebrief({
         </motion.div>
       )}
 
+      {/* --- Why the wrong option looked right. Shown immediately on a failure and
+          BEFORE the explanation, because that is the order a student needs it in:
+          first why my answer was tempting, then what is actually true. Not behind
+          the disclosure and not gated on `explanation` existing - correcting the
+          error is the entire reason this field is generated. --- */}
+      {!correct && concept.misconception && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.1 }}
+          className="mt-3 rounded-r-xl border-l-4 border-l-danger/60 bg-foreground/5 p-4 text-left"
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Why that looked right
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {concept.misconception}
+          </p>
+        </motion.div>
+      )}
+
       {/* --- The explanation. Open already on a failure; a real control on a
           success. The left rule stays --accent rather than --danger even after a
           wrong answer: this block is the material, not a verdict on it. --- */}
@@ -163,6 +184,14 @@ export default function ConceptDebrief({
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {concept.explanation}
               </p>
+              {/* The consequence, kept inside the same block rather than given its
+                  own card: it is the last line of the explanation, not a separate
+                  claim, and the slide has no room for another bordered box. */}
+              {concept.whyItMatters && (
+                <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground">
+                  {concept.whyItMatters}
+                </p>
+              )}
             </motion.div>
           )}
         </>

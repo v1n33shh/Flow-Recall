@@ -6,6 +6,7 @@ import type { Concept } from "@/lib/types";
 import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
 import { normalizeForCompare } from "@/lib/clozeMatch";
+import { normaliseBlank } from "@/lib/conceptProse";
 import ConceptDebrief from "./ConceptDebrief";
 
 type ClozeChallengeProps = {
@@ -39,7 +40,11 @@ export default function ClozeChallenge({ concept, unitId, onAnswered }: ClozeCha
   // "_____" is required by the schema, but AI output isn't guaranteed to
   // comply - a malformed cloze degrades to a plain typed-recall prompt
   // against the full question instead of rendering a broken sentence.
-  const clozeParts = concept.cloze.split("_____");
+  // normaliseBlank first: the model emits three-to-seven underscores and this
+  // splits on exactly five, so without it a seven-underscore cloze rendered the
+  // two leftovers as literal text next to the input. Applied here as well as in
+  // the ingest gate because decks saved before the gate carry the raw output.
+  const clozeParts = normaliseBlank(concept.cloze).split("_____");
   const hasBlank = clozeParts.length === 2;
   const [before, after] = hasBlank ? clozeParts : ["", ""];
 

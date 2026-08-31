@@ -231,6 +231,26 @@ export default function RevisionSheet({
                   {body}
                 </p>
 
+                {concept.whyItMatters && (
+                  <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground">
+                    {concept.whyItMatters}
+                  </p>
+                )}
+
+                {/* The sentence this card came from. Provenance is what stops a
+                    revision sheet reading as trivia: it is the student's own
+                    material, and they can see that it is. */}
+                {concept.sourceQuote && (
+                  <figure className="mt-3">
+                    <figcaption className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      From your material
+                    </figcaption>
+                    <blockquote className="mt-1.5 border-l-2 border-l-border pl-3 text-sm italic leading-relaxed text-muted-foreground">
+                      {concept.sourceQuote}
+                    </blockquote>
+                  </figure>
+                )}
+
                 {/* Reading is where a question actually forms - the explanation is
                     right there and either it landed or it did not. */}
                 <ConceptAsk unitId={unitIdFor(deckId, concept.id)} concept={concept} />

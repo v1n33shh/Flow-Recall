@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factSentence, readableBody } from "./conceptProse";
+import { factSentence, normaliseBlank, readableBody } from "./conceptProse";
 import type { Concept } from "./types";
 
 function concept(overrides: Partial<Concept> = {}): Concept {
@@ -103,6 +103,21 @@ describe("factSentence: substitutions that would stutter", () => {
     ).toBe("Stroke volume is the difference between the two ventricular volumes.");
   });
 
+  it("allows the repeat that a wider seam window wrongly rejected", () => {
+    // The false positive that made the gate destroy a good card: the word before
+    // the blank is "minus", the answer is "end-systolic volume", and "volume"
+    // appears two words back. The filled sentence is correct English, so only the
+    // single word at the seam may be compared.
+    expect(
+      factSentence(
+        concept({
+          cloze: "Stroke volume is end-diastolic volume minus _____.",
+          answer: "end-systolic volume",
+        }),
+      ),
+    ).toBe("Stroke volume is end-diastolic volume minus end-systolic volume.");
+  });
+
   it("allows the ordinary case where nothing is repeated", () => {
     expect(
       factSentence(concept({ cloze: "Renin is released in response to _____.", answer: "reduced renal perfusion" })),
@@ -137,5 +152,61 @@ describe("readableBody", () => {
     expect(
       readableBody(concept({ explanation: undefined, cloze: "no blank here" })),
     ).toBe("How is stroke volume derived from ventricular volumes?");
+  });
+});
+
+describe("normaliseBlank", () => {
+  // The prompt asks for exactly five underscores. Probing the pinned model against
+  // real source text, it returned seven - and nothing validated the count, so the
+  // card passed every check and then rendered its leftovers as visible text.
+  it("collapses the seven underscores the model actually emits", () => {
+    expect(normaliseBlank("S1 is caused by closure of the _______ at onset.")).toBe(
+      "S1 is caused by closure of the _____ at onset.",
+    );
+  });
+
+  it("leaves a correct blank alone", () => {
+    expect(normaliseBlank("Stroke volume is _____.")).toBe("Stroke volume is _____.");
+  });
+
+  it("expands a short run so it is still a usable blank", () => {
+    expect(normaliseBlank("Stroke volume is ___.")).toBe("Stroke volume is _____.");
+  });
+
+  it("normalises every gap, not just the first", () => {
+    expect(normaliseBlank("___ minus _______ gives it.")).toBe("_____ minus _____ gives it.");
+  });
+});
+
+describe("factSentence: seven-underscore and trailing-seam cards", () => {
+  it("fills a seven-underscore blank instead of leaving leftovers", () => {
+    expect(
+      factSentence(
+        concept({
+          cloze: "S1 is caused by closure of the _______ at the onset of systole.",
+          answer: "mitral and tricuspid valves",
+        }),
+      ),
+    ).toBe("S1 is caused by closure of the mitral and tricuspid valves at the onset of systole.");
+  });
+
+  it("declines when the word AFTER the blank is repeated by the answer", () => {
+    // A real generated card: "closure of the _____ valves." with the answer
+    // "aortic and pulmonary valves" fills to "...valves valves." The leading-seam
+    // check alone waves this straight through, since the word before is "the".
+    expect(
+      factSentence(
+        concept({
+          cloze: "S2 follows closure of the _______ valves.",
+          answer: "aortic and pulmonary valves",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("allows a trailing word the answer does not repeat", () => {
+    expect(
+      factSentence(concept({ cloze: "Blood enters the _____ ventricle.", answer: "left" })),
+    ).toBe("Blood enters the left ventricle.");
   });
 });

@@ -1,3 +1,5 @@
+export const maxDuration = 60;
+
 import { generateText } from "ai";
 import { createGroq } from "@ai-sdk/groq";
 import { z } from "zod";
@@ -6,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
+import { applyQualityGate } from "@/lib/conceptQuality";
 
 // "Infinite Recall Mode": a PRO-only endpoint that generates brand-new,
 // deep-dive flashcards from the concepts a user has already studied - so they
@@ -74,15 +77,27 @@ function buildShufflePrompt(seed: SeedConcept[], count: number): string {
     "- 'explanation' must be a rich 3-4 sentence paragraph that deeply explains the",
     "  concept, its mechanisms, and why it matters (NOT a short phrase).",
     "",
+    "THREE MORE FIELDS, each ONE sentence:",
+    "- 'misconception': name the wrong belief your 'distractor' encodes and why a real",
+    "  student would hold it. Shown to a student who got the card wrong, so it must",
+    "  explain the error rather than restate the right answer.",
+    "- 'whyItMatters': what knowing this lets someone do, predict or avoid.",
+    "- 'sourceQuote': omit this field entirely. These cards are generated from concepts,",
+    "  not from source text, so there is no sentence you could quote without inventing one.",
+    "",
     "HARD CONSTRAINTS (do NOT break these - they keep the cards usable and parseable):",
     "- 'answer' must be a concise phrase (ideally under 6 words) that fills the cloze",
     "  blank verbatim and can be graded objectively.",
     "- 'cloze' must be a single declarative sentence containing exactly '_____' where",
     "  the answer phrase goes; the blank must be fillable with 'answer' verbatim.",
+    "  Perform the substitution in your head before emitting the card and reject it if",
+    "  the result repeats itself - e.g. cloze 'Stretching sarcomeres improves _____'",
+    "  with answer 'improved actin-myosin overlap' gives 'improves improved actin-myosin",
+    "  overlap'. The answer is only the missing phrase, never a restatement of the fact.",
     "- 'distractor' must be short and the same style/length as 'answer'.",
     "",
     "Respond with ONLY raw JSON matching exactly this shape - no markdown, no code blocks, no commentary:",
-    '{"concepts":[{"concept":"short 2-6 word label","question":"a focused recall question","answer":"the concise correct answer, ideally under 6 words","distractor":"a plausible but INCORRECT answer, similar length and style to the real answer","cloze":"a declarative sentence stating the fact, with the answer phrase replaced by exactly \'_____\'","explanation":"a rich 3-4 sentence paragraph deeply explaining the concept, its mechanisms, and why it matters"}]}',
+    '{"concepts":[{"concept":"short 2-6 word label","question":"a focused recall question","answer":"the concise correct answer, ideally under 6 words","distractor":"a plausible but INCORRECT answer, similar length and style to the real answer","cloze":"a declarative sentence stating the fact, with the answer phrase replaced by exactly \'_____\'","explanation":"a rich 3-4 sentence paragraph deeply explaining the concept, its mechanisms, and why it matters","misconception":"one sentence naming the wrong belief the distractor encodes","whyItMatters":"one sentence on what this lets you do or predict"}]}',
     "",
     "MATERIAL ALREADY COVERED (generate new angles on these concepts):",
     material,
@@ -141,7 +156,10 @@ export async function POST(
     const { text: rawText } = await generateText({
       model,
       prompt: buildShufflePrompt(seed, NEW_CARDS),
-      maxOutputTokens: 4096,
+      // Raised with the two new one-sentence fields. Five cards each carrying a
+      // full explanation was already the largest response any route asks for, and
+      // a truncation here is a dead batch rather than a degraded card.
+      maxOutputTokens: 5200,
       providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
@@ -169,7 +187,20 @@ export async function POST(
     // client appends these to its localStorage deck via addConceptsToDeck.
     void deckId;
 
-    const concepts = validated.data.concepts.map((concept) => ({
+    // Same gate ingest applies - a shuffled card is graded exactly like a
+    // generated one, so a cloze the answer cannot fill is just as wrong here.
+    const gated = applyQualityGate(validated.data.concepts);
+    if (gated.report.clozeCleared > 0 || gated.report.dropped > 0) {
+      console.warn("Shuffle quality gate", gated.report);
+    }
+    if (gated.concepts.length === 0) {
+      return Response.json(
+        { error: "The new cards didn't pass our quality checks. Please try again." },
+        { status: 502 },
+      );
+    }
+
+    const concepts = gated.concepts.map((concept) => ({
       id: crypto.randomUUID(),
       ...concept,
     }));

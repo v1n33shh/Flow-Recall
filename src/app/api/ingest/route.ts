@@ -14,7 +14,8 @@ import {
   providerLabel,
   parseModelJson,
 } from "@/lib/ai";
-import { ConceptsResponseSchema } from "@/lib/conceptSchema";
+import { ConceptsResponseSchema, buildConceptsPrompt } from "@/lib/conceptSchema";
+import { applyQualityGate } from "@/lib/conceptQuality";
 
 const requestSchema = z.object({
   text: z.string().min(1),
@@ -29,39 +30,6 @@ const requestSchema = z.object({
   // through. Defaults true so a plain single-chunk request always counts.
   isFirstChunk: z.boolean().default(true),
 });
-
-function buildConceptsPrompt(text: string): string {
-  return [
-    "You are a demanding professor creating challenging active-recall flashcards.",
-    "STRICT LIMIT: Generate a MAXIMUM of 3 flashcards from the source material below.",
-    "Do NOT generate more than 3. Quality over quantity.",
-    "",
-    "Each flashcard must be genuinely hard - test deep understanding not surface recall.",
-    "Distractors must be dangerously plausible — a subtle near-miss that targets a real misconception.",
-    "Each flashcard must test a DIFFERENT fact or mechanism from the source material.",
-    "Never generate two flashcards that test the same underlying fact from a slightly",
-    "different angle - if the material only supports one genuinely distinct hard",
-    "question, return just that one card rather than padding with a near-duplicate.",
-    "'answer' must be a concise phrase under 6 words.",
-    "'cloze' must contain exactly '_____' where the answer goes.",
-    "CRITICAL: 'answer' must be the EXACT words that fill that blank - if you",
-    "substitute 'answer' into the _____ in 'cloze', the sentence must read as a",
-    "single grammatically correct sentence. Never make 'answer' a restatement or",
-    "summary of the whole fact (e.g. a mini-sentence like 'X drives Y') - it must",
-    "be only the specific term or phrase actually missing, nothing more.",
-    "",
-    "DEEP-DIVE EXPLANATION - this is the most important field:",
-    "- 'explanation' must be a rich 3-4 sentence paragraph that deeply explains the concept,",
-    "  its mechanisms, and why it matters. This is what the student reads after answering.",
-    "- Never write a short phrase for explanation. Always write a full paragraph.",
-    "",
-    "Respond with ONLY raw JSON - no markdown, no code blocks:",
-    '{"concepts":[{"concept":"short label","question":"hard recall question","answer":"concise answer under 6 words","distractor":"plausible wrong answer","cloze":"sentence with _____ blank","explanation":"a rich 3-4 sentence paragraph explaining the concept deeply"}]}',
-    "",
-    "Source material:",
-    text,
-  ].join("\n");
-}
 
 export async function POST(request: Request) {
   // Generation is gated behind login - no anonymous access to the AI engine.
@@ -135,12 +103,16 @@ export async function POST(request: Request) {
 
   try {
     const model = getProviderModel(plan, requestedModel);
-    // maxOutputTokens at 1500 — enough for 3 concepts with full rich
-    // 3-4 sentence explanations while staying well under Vercel's 60s limit.
+    // Raised from 1500 when misconception/whyItMatters/sourceQuote were added -
+    // roughly 80 more tokens per card, and a truncated response is not a degraded
+    // card but a dead batch, since parseModelJson's balanced-brace fallback cannot
+    // repair an object that stops mid-string. Still sized for 3 cards; if the 60s
+    // limit ever starts biting, the lever is the client's 1500-char chunk size
+    // (see MAX_CHUNKS in src/app/ingest/page.tsx), not this.
     const { text: rawText } = await generateText({
       model,
       prompt: buildConceptsPrompt(text),
-      maxOutputTokens: 1500,
+      maxOutputTokens: 2400,
       providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
@@ -164,7 +136,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const concepts = validated.data.concepts.map((concept) => ({
+    // Everything the schema cannot assert - see applyQualityGate. Logged so the
+    // rate is visible: if a prompt change is supposed to fix substitutability,
+    // this is the number that has to move.
+    const gated = applyQualityGate(validated.data.concepts);
+    if (gated.report.clozeCleared > 0 || gated.report.dropped > 0) {
+      console.warn("Ingest quality gate", gated.report);
+    }
+    if (gated.concepts.length === 0) {
+      return Response.json(
+        { error: "The model's cards didn't pass our quality checks. Please try again." },
+        { status: 502 },
+      );
+    }
+
+    const concepts = gated.concepts.map((concept) => ({
       id: crypto.randomUUID(),
       ...concept,
     }));

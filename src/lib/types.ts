@@ -30,6 +30,20 @@ export type Concept = {
    * and why it matters. Optional so decks generated before this field existed
    * still load - consumers fall back to `answer` when it's absent. */
   explanation?: string;
+  /** The wrong belief `distractor` encodes, named - e.g. "students confuse stroke
+   * volume with cardiac output because both are per-beat quantities". Lets a
+   * failed card say WHY the wrong option was tempting instead of only that it was
+   * wrong, which is the difference between correcting a mistake and repeating it.
+   * Optional for the same reason `explanation` is: decks predate it. */
+  misconception?: string;
+  /** One line on the consequence of knowing this - what it lets you do or predict.
+   * Read on the revision sheet, where a list of facts otherwise gives no sense of
+   * which ones carry weight. */
+  whyItMatters?: string;
+  /** The sentence from the uploaded material this card was generated from.
+   * Provenance without touching the reader: it grounds a card in the student's own
+   * source, which is the direct answer to "I memorised the card, not the concept". */
+  sourceQuote?: string;
 };
 
 /** A saved set of concepts, persisted in localStorage so a page refresh

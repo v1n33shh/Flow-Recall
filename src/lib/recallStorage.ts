@@ -182,31 +182,46 @@ export type DeckSummary = {
   resting: number;
 };
 
-export async function summariseDeck(userId: string, deckId: string): Promise<DeckSummary> {
-  const [units, memories, reviews] = await Promise.all([
+/** Everything a deck-level view needs about mastery, from one pass.
+ *
+ * `byUnit` is what a per-concept surface (the revision sheet) needs and what
+ * `masteryOf` cannot supply affordably: called per concept it would fire two
+ * IndexedDB transactions per card, so a 60-concept deck would open 120 while the
+ * student waited. `units` comes back too, keyed by id, so a caller can render in
+ * its own order without a second read. */
+export type DeckMastery = {
+  summary: DeckSummary;
+  byUnit: Map<string, MasteryEvidence>;
+  units: Map<string, KnowledgeUnit>;
+  /** unitIds with nothing currently due - `resting`, per unit rather than counted. */
+  resting: Set<string>;
+};
+
+export async function deckMastery(userId: string, deckId: string): Promise<DeckMastery> {
+  const [allUnits, memories, reviews] = await Promise.all([
     listUnits(userId),
     listMemories(userId),
     listAllReviews(userId),
   ]);
 
-  const deckUnitIds = new Set(units.filter((u) => u.sourceDeckId === deckId).map((u) => u.id));
+  const units = new Map(allUnits.filter((u) => u.sourceDeckId === deckId).map((u) => [u.id, u]));
   const memoriesByUnit = new Map<string, MemoryRecord[]>();
   for (const m of memories) {
-    if (!deckUnitIds.has(m.unitId)) continue;
+    if (!units.has(m.unitId)) continue;
     const list = memoriesByUnit.get(m.unitId);
     if (list) list.push(m);
     else memoriesByUnit.set(m.unitId, [m]);
   }
   const reviewsByUnit = new Map<string, ReviewRecord[]>();
   for (const r of reviews) {
-    if (!deckUnitIds.has(r.unitId)) continue;
+    if (!units.has(r.unitId)) continue;
     const list = reviewsByUnit.get(r.unitId);
     if (list) list.push(r);
     else reviewsByUnit.set(r.unitId, [r]);
   }
 
   const summary: DeckSummary = {
-    units: deckUnitIds.size,
+    units: units.size,
     solid: 0,
     fading: 0,
     holding: 0,
@@ -214,16 +229,25 @@ export async function summariseDeck(userId: string, deckId: string): Promise<Dec
     met: 0,
     resting: 0,
   };
+  const byUnit = new Map<string, MasteryEvidence>();
+  const resting = new Set<string>();
 
-  for (const unitId of deckUnitIds) {
+  for (const unitId of units.keys()) {
     const unitMemories = memoriesByUnit.get(unitId) ?? [];
-    const level = masteryFor(reviewsByUnit.get(unitId) ?? [], unitMemories).level;
-    summary[level] += 1;
-    if (level === "solid" && unitMemories.length > 0 && !unitMemories.some((m) => isDue(m))) {
+    const evidence = masteryFor(reviewsByUnit.get(unitId) ?? [], unitMemories);
+    byUnit.set(unitId, evidence);
+    summary[evidence.level] += 1;
+    if (evidence.level === "solid" && unitMemories.length > 0 && !unitMemories.some((m) => isDue(m))) {
       summary.resting += 1;
+      resting.add(unitId);
     }
   }
-  return summary;
+
+  return { summary, byUnit, units, resting };
+}
+
+export async function summariseDeck(userId: string, deckId: string): Promise<DeckSummary> {
+  return (await deckMastery(userId, deckId)).summary;
 }
 
 async function listAllReviews(userId: string): Promise<ReviewRecord[]> {

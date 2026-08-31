@@ -13,8 +13,10 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
       // App/authenticated surfaces carry no SEO value and waste crawl budget:
-      // the API layer, the full-bleed study feed, and the account area.
-      disallow: ["/api/", "/study", "/account"],
+      // the API layer, the full-bleed study feed, the revision sheet (which
+      // renders nothing without a deck handoff in sessionStorage), and the
+      // account area.
+      disallow: ["/api/", "/study", "/revise", "/account"],
     },
     sitemap: `${siteUrl}/sitemap.xml`,
     host: siteUrl,

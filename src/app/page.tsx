@@ -536,6 +536,16 @@ export default function Home() {
     });
   }
 
+  /** Same sessionStorage handoff `/study` uses, so the revision sheet needs no
+   * dynamic route - which `output: "export"` could not build for localStorage
+   * deck ids anyway. */
+  function handleRead(deck: Deck) {
+    setStudyDeck(deck.id, deck.concepts);
+    startTransition(() => {
+      router.push("/revise");
+    });
+  }
+
   function handleDelete(id: string, event: ReactMouseEvent) {
     event.stopPropagation();
     if (window.confirm("Delete this deck? This can't be undone.")) {
@@ -769,13 +779,25 @@ export default function Home() {
                       </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => handleStudyNow(deck, isFullyMastered)}
-                      className="mt-4 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_32px_-6px_rgba(0,0,0,0.5)] active:scale-[0.98]"
-                    >
-                      {buttonLabel}
-                    </button>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleStudyNow(deck, isFullyMastered)}
+                        className="flex-1 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_32px_-6px_rgba(0,0,0,0.5)] active:scale-[0.98]"
+                      >
+                        {buttonLabel}
+                      </button>
+                      {/* The deck as material rather than as a test. Every concept
+                          already carries a full explanation paragraph that was only
+                          ever reachable one card at a time, after answering it. */}
+                      <button
+                        type="button"
+                        onClick={() => handleRead(deck)}
+                        className="rounded-full border border-border bg-foreground/5 px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.98]"
+                      >
+                        Read
+                      </button>
+                    </div>
 
                     {deck.pendingChunks && deck.pendingChunks.length > 0 && (
                       <>

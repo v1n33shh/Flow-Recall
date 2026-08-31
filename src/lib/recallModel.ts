@@ -42,6 +42,23 @@ export function isProductionPath(path: RetrievalPath): boolean {
   return !RECOGNITION_PATHS.has(path);
 }
 
+/** What the student says about a failed recognition answer.
+ *
+ * Only ever asked after a failure, and only on a recognition path, because that
+ * is the only place the answer is ambiguous: missing a two-option swipe is either
+ * a coin-flip that landed badly or a confidently held wrong belief, and those are
+ * completely different facts about a student's memory. A production failure needs
+ * no question - not being able to type the answer means one thing.
+ *
+ * `knew-it` is the observable form of a misconception: the student was sure, and
+ * they were wrong. It blocks `solid` until they get that format right again (see
+ * masteryFor).
+ *
+ * Self-serving bias runs toward over-claiming knowledge here, and that is the
+ * safe direction for it to run: over-claiming makes the mastery bar STRICTER for
+ * that unit, never looser. */
+export type Confidence = "guessed" | "knew-it";
+
 /** One thing worth knowing. Derived from the `Concept` the ingest route already
  * generates, rather than replacing it: the study feed keeps consuming Concepts
  * unchanged while the engine tracks units underneath. `sourceDeckId` is the
@@ -98,6 +115,11 @@ export type ReviewRecord = {
   elapsedDays: number;
   stabilityBefore: number | null;
   stabilityAfter: number;
+  /** The student's own report on a failed recognition answer. Absent on every
+   * success, on every production path, and on any failure the student scrolled
+   * away from before answering the question - so consumers must treat "missing"
+   * as "not asked", never as "guessed". */
+  confidence?: Confidence;
   /** The coupling constants in force when this was written, so they can be
    * refitted later against real data instead of being argued about. */
   couplingOnSuccess: number;
@@ -236,16 +258,25 @@ export type MasteryEvidence = {
   pathsPassed: RetrievalPath[];
   hasDelayedSuccess: boolean;
   hasProductionSuccess: boolean;
+  /** A `knew-it` failure with no credited success on that same format since.
+   * Blocks `solid` while it stands. */
+  hasActiveConfidentFailure: boolean;
 };
 
 /** Evaluates a unit against the evidence bar, from its credited reviews alone.
  *
- * `solid` requires all three of: three successes across two different formats,
- * one success after a 7-day gap, and one success on a production path. Two
- * further conditions from the design - no active misconception, and no recent
- * high-confidence failure - are not evaluated here because nothing records
- * misconceptions or confidence yet. They tighten this bar later; they can never
- * loosen it, so a unit called `solid` now stays at least `solid` then.
+ * `solid` requires all four of: three successes across two different formats, one
+ * success after a 7-day gap, one success on a production path, and no active
+ * high-confidence failure.
+ *
+ * That fourth condition was one of two the original design named and this code
+ * could not evaluate, because nothing recorded confidence. It does now (see
+ * Confidence), and it is deliberately "active" rather than time-boxed: a student
+ * who was sure and wrong has a misconception until they get that same format
+ * right again, which is a fact about their memory rather than about the calendar.
+ * The one still unevaluated condition - no active misconception recorded
+ * independently of the student's own report - can only tighten this bar further;
+ * it can never loosen it, so a unit called `solid` now stays at least `solid`.
  *
  * `fading` outranks the rest deliberately: a concept that was solid and is now
  * slipping is the single most useful thing to surface, and it is invisible if
@@ -268,6 +299,11 @@ export function masteryFor(
   // fortnight-old cloze is delayed evidence; a fortnight-old cloze that was
   // warmed up by a swipe an hour earlier is not.
   const lastSeenByPath = new Map<RetrievalPath, number>();
+  // Per format: does a `knew-it` failure stand un-answered? Set by a confident
+  // failure, cleared only by a later credited success on that same format - a
+  // `guessed` failure in between leaves it exactly as it was, because guessing
+  // wrong again is no evidence the belief was fixed.
+  const confidentFailureByPath = new Map<RetrievalPath, boolean>();
   let hasDelayedSuccess = false;
   for (const review of credited) {
     const previous = lastSeenByPath.get(review.path);
@@ -278,18 +314,29 @@ export function masteryFor(
     ) {
       hasDelayedSuccess = true;
     }
+    if (review.grade === AGAIN) {
+      if (review.confidence === "knew-it") confidentFailureByPath.set(review.path, true);
+    } else {
+      confidentFailureByPath.set(review.path, false);
+    }
     lastSeenByPath.set(review.path, review.reviewedAt);
   }
+  const hasActiveConfidentFailure = [...confidentFailureByPath.values()].some(Boolean);
 
   const evidence = {
     successes: successes.length,
     pathsPassed,
     hasDelayedSuccess,
     hasProductionSuccess,
+    hasActiveConfidentFailure,
   };
 
   const isSolid =
-    successes.length >= 3 && pathsPassed.length >= 2 && hasDelayedSuccess && hasProductionSuccess;
+    successes.length >= 3 &&
+    pathsPassed.length >= 2 &&
+    hasDelayedSuccess &&
+    hasProductionSuccess &&
+    !hasActiveConfidentFailure;
 
   if (isSolid) {
     // Solid but slipping. Checked against every path's own target so a concept

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import type { Concept } from "@/lib/types";
+import type { Confidence } from "@/lib/recallModel";
 import { vibrateTap } from "@/lib/haptics";
 
 /** What the student is told once a card is resolved, shared by every challenge
@@ -28,15 +29,29 @@ export default function ConceptDebrief({
   concept,
   correct,
   note,
+  onConfidence,
 }: {
   concept: Concept;
   correct: boolean;
   /** An extra line the format needs to add - cloze uses it to say the auto-check
    * was unavailable and the student's own grading stood. */
   note?: string;
+  /** Present only on a failed RECOGNITION answer. Missing a two-option swipe is
+   * either a coin-flip or a confidently wrong belief, and the engine cannot tell
+   * those apart from the outcome alone - so it asks. Absent on every success and
+   * on production formats, where a failure already means one thing. */
+  onConfidence?: (confidence: Confidence) => void;
 }) {
   // Starts open on a failure, which is the behaviour this component exists for.
   const [showExplanation, setShowExplanation] = useState(!correct);
+  const [answeredConfidence, setAnsweredConfidence] = useState<Confidence | null>(null);
+
+  function answerConfidence(confidence: Confidence) {
+    if (answeredConfidence) return;
+    vibrateTap();
+    setAnsweredConfidence(confidence);
+    onConfidence?.(confidence);
+  }
 
   return (
     <div className="mt-6 w-full">
@@ -58,6 +73,48 @@ export default function ConceptDebrief({
         </p>
         {note && <p className="mt-2 text-xs text-muted-foreground">{note}</p>}
       </motion.div>
+
+      {/* --- "Were you sure?" Sits between the verdict and the explanation and
+          gates nothing: the explanation is already open, so this is a signal the
+          student may give, never a toll they must pay to read on. --- */}
+      {onConfidence && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ type: "spring", stiffness: 280, damping: 24, delay: 0.15 }}
+          className="mt-3 rounded-2xl border border-border bg-surface px-4 py-3 text-center"
+        >
+          {answeredConfidence === null ? (
+            <>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Before you saw the answer
+              </p>
+              <div className="mt-3 flex justify-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => answerConfidence("guessed")}
+                  className="rounded-full border border-border bg-foreground/5 px-4 py-2 text-xs font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.98]"
+                >
+                  I guessed
+                </button>
+                <button
+                  type="button"
+                  onClick={() => answerConfidence("knew-it")}
+                  className="rounded-full border border-border bg-foreground/5 px-4 py-2 text-xs font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.98]"
+                >
+                  I thought I knew it
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {answeredConfidence === "knew-it"
+                ? "Flagged. This won't count as solid until you get it right again."
+                : "Noted."}
+            </p>
+          )}
+        </motion.div>
+      )}
 
       {/* --- The explanation. Open already on a failure; a real control on a
           success. The left rule stays --accent rather than --danger even after a

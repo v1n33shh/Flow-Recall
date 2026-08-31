@@ -14,7 +14,7 @@ import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { buildConceptQueueItems, buildInitialQueue, nextEasierLevel, reconstructResolvedKeys } from "@/lib/studyQueue";
 import { getSavedDecks } from "@/lib/storage";
 import { hasMigratedSavedDecks, importDeck, migrateSavedDecks, recordReview } from "@/lib/recallStorage";
-import { unitIdFor, type RetrievalPath } from "@/lib/recallModel";
+import { unitIdFor, type Confidence, type RetrievalPath } from "@/lib/recallModel";
 import {
   createRetrievalClock,
   latencyFor,
@@ -264,7 +264,12 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // landed, rather than read here - both because that is the honest timestamp
   // and because reading the clock during render is exactly what the purity rule
   // exists to catch.
-  function resolve(item: QueueItem, outcome: ChallengeOutcome, resolvedAt: number) {
+  function resolve(
+    item: QueueItem,
+    outcome: ChallengeOutcome,
+    resolvedAt: number,
+    confidence?: Confidence,
+  ) {
     if (resolvedKeys.current.has(item.key)) return;
     resolvedKeys.current.add(item.key);
 
@@ -295,6 +300,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         // over. 0 means "not measured", which the engine reads as trustworthy
         // rather than suspect - the safe direction.
         latencyMs: latencyFor(enteredAt.current, item.key, resolvedAt),
+        confidence,
       }).catch((error) => console.error("recordReview failed", error));
     }
 
@@ -475,7 +481,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
               // and turn a long deliberation into a suspiciously fast answer.
               markEntered(enteredAt.current, item.key, Date.now());
             }}
-            onResolve={(outcome) => resolve(item, outcome, Date.now())}
+            onResolve={(outcome, confidence) => resolve(item, outcome, Date.now(), confidence)}
           />
         ))}
         <CompletionSlide deckId={deckId} total={totalConcepts} mastered={masteredIds.size} />

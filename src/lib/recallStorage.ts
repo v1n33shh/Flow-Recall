@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Deck } from "./types";
 import { coupleSibling, COUPLING_ON_LAPSE, COUPLING_ON_SUCCESS, desiredRetentionFor, intervalFor, nextState, AGAIN } from "./fsrs";
 import {
+  type Confidence,
   type KnowledgeUnit,
   type MemoryRecord,
   type RetrievalPath,
@@ -285,6 +286,9 @@ export async function recordReview(input: {
   outcome: "correct" | "incorrect" | "skipped";
   latencyMs: number;
   reviewedAt?: number;
+  /** Only ever present on a failed recognition answer the student answered the
+   * confidence question for - see Confidence in recallModel.ts. */
+  confidence?: Confidence;
 }): Promise<RecordedReview> {
   const reviewedAt = input.reviewedAt ?? Date.now();
 
@@ -386,6 +390,11 @@ export async function recordReview(input: {
     elapsedDays,
     stabilityBefore: previousState?.stability ?? null,
     stabilityAfter: advanced.stability,
+    // Spread rather than assigned, so a review nobody answered the question for
+    // stores no `confidence` key at all. `confidence: undefined` would serialise
+    // into IndexedDB as a present-but-empty field, and "not asked" has to stay
+    // distinguishable from "asked and answered" for masteryFor to be honest.
+    ...(input.confidence ? { confidence: input.confidence } : {}),
     // Stamped per review so the two unfitted coupling constants can be refitted
     // later against real data rather than defended on intuition forever.
     couplingOnSuccess: COUPLING_ON_SUCCESS,

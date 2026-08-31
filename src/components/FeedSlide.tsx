@@ -3,10 +3,9 @@
 import { useRef, useState } from "react";
 import { motion } from "motion/react";
 import type { ChallengeLevel, ChallengeOutcome, Concept } from "@/lib/types";
+import type { Confidence } from "@/lib/recallModel";
 import SwipeChallenge, { type SwipeChallengeHandle } from "./SwipeChallenge";
 import ClozeChallenge from "./ClozeChallenge";
-
-import type { Ref } from "react";
 
 type FeedSlideProps = {
   concept: Concept;
@@ -16,8 +15,9 @@ type FeedSlideProps = {
    *  one-shot materialisation sweep on first viewport entry. */
   isNew?: boolean;
   onEnter: () => void;
-  onResolve: (outcome: ChallengeOutcome) => void;
-  challengeRef?: Ref<SwipeChallengeHandle>;
+  onResolve: (outcome: ChallengeOutcome, confidence?: Confidence) => void;
+  /** A callback ref, not a `Ref` - see attachSwipe. */
+  challengeRef?: (handle: SwipeChallengeHandle | null) => void;
 };
 
 export default function FeedSlide({
@@ -34,6 +34,7 @@ export default function FeedSlide({
   // self-contained motion animation that plays and stays in its end state.
   const hasSwooped = useRef(false);
   const [swoopVisible, setSwoopVisible] = useState(false);
+  const swipeHandle = useRef<SwipeChallengeHandle | null>(null);
 
   function handleEnter() {
     onEnter();
@@ -46,14 +47,34 @@ export default function FeedSlide({
     }
   }
 
-  function handleAnswered(correct: boolean) {
-    onResolve(correct ? "correct" : "incorrect");
+  function handleAnswered(correct: boolean, confidence?: Confidence) {
+    onResolve(correct ? "correct" : "incorrect", confidence);
+  }
+
+  // Leaving the viewport is the feed's skip signal. A wrong swipe waiting on its
+  // confidence tap has not announced yet, so flush it first: without this, a real
+  // wrong answer would degrade into a skip, and a skip is deliberately never
+  // credited against a memory. The feed's resolvedKeys guard makes the trailing
+  // "skipped" a no-op whenever the flush announced.
+  function handleLeave() {
+    swipeHandle.current?.flushPending();
+    onResolve("skipped");
+  }
+
+  // The swipe's handle has two consumers: this slide, for the flush above, and
+  // the feed's index-keyed registry for desktop keyboard shortcuts. Declared as a
+  // callback ref rather than a React.Ref so both can be served - writing through
+  // to a `Ref`'s own `.current` is a prop mutation, which is exactly what
+  // react-hooks/immutability exists to stop.
+  function attachSwipe(handle: SwipeChallengeHandle | null) {
+    swipeHandle.current = handle;
+    challengeRef?.(handle);
   }
 
   return (
     <motion.section
       onViewportEnter={handleEnter}
-      onViewportLeave={() => onResolve("skipped")}
+      onViewportLeave={handleLeave}
       viewport={{ amount: 0.6 }}
       className="flex h-dvh w-full shrink-0 snap-start snap-always items-center justify-center px-5 sm:px-6"
       style={{
@@ -112,7 +133,7 @@ export default function FeedSlide({
         {level === 2 ? (
           <ClozeChallenge concept={concept} onAnswered={handleAnswered} />
         ) : (
-          <SwipeChallenge ref={challengeRef} concept={concept} onAnswered={handleAnswered} />
+          <SwipeChallenge ref={attachSwipe} concept={concept} onAnswered={handleAnswered} />
         )}
 
         <p className="mt-8 text-center text-sm text-muted-foreground">

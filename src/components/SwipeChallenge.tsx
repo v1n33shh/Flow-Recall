@@ -1,8 +1,9 @@
 "use client";
 
-import { useImperativeHandle, useState, type Ref } from "react";
+import { useImperativeHandle, useRef, useState, type Ref } from "react";
 import { motion, useMotionValue, useTransform, useAnimationControls, animate } from "motion/react";
 import type { Concept } from "@/lib/types";
+import type { Confidence } from "@/lib/recallModel";
 import { vibrateCorrect, vibrateIncorrect } from "@/lib/haptics";
 import ConceptDebrief from "./ConceptDebrief";
 
@@ -19,11 +20,20 @@ export type SwipeChallengeHandle = {
   reveal: () => void;
   /** Grade the card: `true` = Correct, `false` = Incorrect/Skip. */
   resolve: (correct: boolean) => void;
+  /** Announce a wrong answer that is still waiting on its confidence tap.
+   *
+   * A failure does not reach the parent until the student says whether they
+   * guessed, so a student who scrolls away mid-question would otherwise have a
+   * real wrong answer degrade into an uncredited skip - the feed treats leaving
+   * the viewport as a skip, and a skip is deliberately not allowed to decay a
+   * memory. The slide calls this before falling back to that skip, so the answer
+   * lands as the incorrect answer it was, with confidence simply absent. */
+  flushPending: () => void;
 };
 
 type SwipeChallengeProps = {
   concept: Concept;
-  onAnswered: (correct: boolean) => void;
+  onAnswered: (correct: boolean, confidence?: Confidence) => void;
   ref?: Ref<SwipeChallengeHandle>;
 };
 
@@ -56,6 +66,24 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
 
   const resolved = outcome !== null;
 
+  // A wrong answer is held back until the student answers the confidence
+  // question - see the Confidence docblock in recallModel.ts for why the answer
+  // to a failed two-option swipe is genuinely ambiguous without it. Correct
+  // answers announce immediately; nothing is asked of a student who was right.
+  const [awaitingConfidence, setAwaitingConfidence] = useState(false);
+  const [confidenceGiven, setConfidenceGiven] = useState<Confidence | null>(null);
+  // A ref, not state: flushPending can be called from the slide's viewport-leave
+  // handler in the same tick as a tap, and only one of the two may announce.
+  const announcedRef = useRef(false);
+
+  function announce(correct: boolean, confidence?: Confidence) {
+    if (announcedRef.current) return;
+    announcedRef.current = true;
+    setAwaitingConfidence(false);
+    if (confidence) setConfidenceGiven(confidence);
+    onAnswered(correct, confidence);
+  }
+
   // Snap the card back to center - shared by reveal and grade so a mid-drag
   // keyboard action doesn't leave the card stranded off-axis (and so the flip
   // happens dead-center rather than out at a swipe offset).
@@ -75,12 +103,14 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
     if (correct) {
       vibrateCorrect();
       cardControls.start({ scale: [1, 1.12, 1], transition: { duration: 0.35, ease: "easeOut" } });
+      announce(true);
     } else {
       vibrateIncorrect();
       cardControls.start({ x: [0, -10, 10, -10, 10, 0], transition: { duration: 0.4, ease: "easeInOut" } });
+      // Held, not announced. The card still flips and shakes right now, so the
+      // feedback is immediate either way - only the write waits.
+      setAwaitingConfidence(true);
     }
-
-    onAnswered(correct);
   }
 
   // Swipe/tap path: the user asserts the claim is true/false, graded against
@@ -101,6 +131,9 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
       recenter();
     },
     resolve: (correct: boolean) => grade(correct),
+    flushPending: () => {
+      if (awaitingConfidence) announce(false);
+    },
   }));
 
   return (
@@ -174,7 +207,19 @@ export default function SwipeChallenge({ concept, onAnswered, ref }: SwipeChalle
       {resolved ? (
         // `outcome === true` rather than `outcome`: `resolved` is derived from a
         // null check, which TypeScript cannot use to narrow `boolean | null` here.
-        <ConceptDebrief concept={concept} correct={outcome === true} />
+        <ConceptDebrief
+          concept={concept}
+          correct={outcome === true}
+          // Only while the question can still be recorded, plus after it has been
+          // answered so the acknowledgement stays on screen. Once flushPending
+          // has announced without it, the question disappears rather than
+          // pretending a tap would still count for something.
+          onConfidence={
+            awaitingConfidence || confidenceGiven !== null
+              ? (confidence) => announce(false, confidence)
+              : undefined
+          }
+        />
       ) : revealed ? (
         // Keyboard "reveal" state: the card has flipped to show the answer,
         // now awaiting a 1 / 2 self-grade.

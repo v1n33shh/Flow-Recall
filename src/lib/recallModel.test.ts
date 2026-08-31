@@ -323,3 +323,121 @@ describe("due selection", () => {
     expect(rows.map((r) => r.key)).toEqual(["a", "b"]);
   });
 });
+
+describe("masteryFor: high-confidence failures", () => {
+  const day = (n: number) => NOW - (30 - n) * MS_PER_DAY;
+
+  /** The three reviews that otherwise clear every `solid` condition: three
+   * successes, two formats, a delayed pass, and one on a production path. */
+  function solidRuns(): ReviewRecord[] {
+    return [
+      review({ path: "swipe", reviewedAt: day(0) }),
+      review({ path: "cloze", reviewedAt: day(1) }),
+      review({ path: "cloze", reviewedAt: day(20) }),
+    ];
+  }
+
+  it("keeps a unit off `solid` while a knew-it failure stands unanswered", () => {
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false, confidence: "knew-it" }),
+      ],
+      [memory({ lastReviewedAt: day(22) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(true);
+    expect(evidence.level).not.toBe("solid");
+    // Every other condition still holds - it is this one condition doing the work.
+    expect(evidence.hasDelayedSuccess).toBe(true);
+    expect(evidence.hasProductionSuccess).toBe(true);
+  });
+
+  it("clears it once that same format is passed again", () => {
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false, confidence: "knew-it" }),
+        review({ path: "swipe", reviewedAt: day(24) }),
+      ],
+      [memory({ lastReviewedAt: day(24) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(false);
+    expect(evidence.level).toBe("solid");
+  });
+
+  it("is not cleared by passing a DIFFERENT format", () => {
+    // The misconception is about how this concept is asked that way. A cloze
+    // success says nothing about a confidently wrong recognition judgement.
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false, confidence: "knew-it" }),
+        review({ path: "cloze", reviewedAt: day(24) }),
+      ],
+      [memory({ lastReviewedAt: day(24) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(true);
+    expect(evidence.level).not.toBe("solid");
+  });
+
+  it("is not cleared by guessing wrong again on that format", () => {
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false, confidence: "knew-it" }),
+        review({ path: "swipe", reviewedAt: day(24), grade: AGAIN, correct: false, confidence: "guessed" }),
+      ],
+      [memory({ lastReviewedAt: day(24) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(true);
+  });
+
+  it("treats a guessed failure as no evidence of a misconception at all", () => {
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false, confidence: "guessed" }),
+      ],
+      [memory({ lastReviewedAt: day(22) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(false);
+    expect(evidence.level).toBe("solid");
+  });
+
+  it("treats a missing confidence as 'not asked', never as a confident failure", () => {
+    // Every review written before this field existed, plus any failure the
+    // student scrolled away from. Reading those as knew-it would retroactively
+    // block solid across a whole existing history.
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({ path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false }),
+      ],
+      [memory({ lastReviewedAt: day(22) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(false);
+    expect(evidence.level).toBe("solid");
+  });
+
+  it("ignores an uncredited confident failure, as it ignores every uncredited row", () => {
+    const evidence = masteryFor(
+      [
+        ...solidRuns(),
+        review({
+          path: "swipe", reviewedAt: day(22), grade: AGAIN, correct: false,
+          confidence: "knew-it", credited: false,
+        }),
+      ],
+      [memory({ lastReviewedAt: day(22) })],
+      NOW,
+    );
+    expect(evidence.hasActiveConfidentFailure).toBe(false);
+    expect(evidence.level).toBe("solid");
+  });
+});

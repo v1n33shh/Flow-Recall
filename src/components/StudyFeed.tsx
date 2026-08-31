@@ -15,6 +15,12 @@ import { buildConceptQueueItems, buildInitialQueue, nextEasierLevel, reconstruct
 import { getSavedDecks } from "@/lib/storage";
 import { hasMigratedSavedDecks, importDeck, migrateSavedDecks, recordReview } from "@/lib/recallStorage";
 import { unitIdFor, type RetrievalPath } from "@/lib/recallModel";
+import {
+  createRetrievalClock,
+  latencyFor,
+  markEntered,
+  type RetrievalClock,
+} from "@/lib/retrievalClock";
 
 // How many slides ahead a failed/skipped concept gets requeued at an easier level.
 const RETRY_OFFSET = 3;
@@ -88,8 +94,9 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // When each slide came into view, so a resolution can be timed. Measured from
   // viewport entry rather than mount: the feed renders every slide up front, so
   // mount time would report how long the student has been in the session, not
-  // how long they spent on this card.
-  const enteredAt = useRef(new Map<number, number>());
+  // how long they spent on this card. Keyed by the item's own key, never by its
+  // index - the queue mutates underneath both - see lib/retrievalClock.ts.
+  const enteredAt = useRef<RetrievalClock>(createRetrievalClock());
 
   // Tracks roughly where the user is in the feed, so an async grading result
   // (chat challenge) can't requeue a retry behind where they've already scrolled.
@@ -275,16 +282,19 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     // engine is additive - if this throws, the session behaves exactly as it
     // did before the engine existed.
     if (userId) {
-      const startedAt = enteredAt.current.get(currentIndexRef.current);
       void recordReview({
         userId,
         unitId: unitIdFor(deckId, item.concept.id),
         path: PATH_BY_LANE[item.lane],
         outcome,
-        // 0 means "not measured", which the engine reads as trustworthy rather
-        // than suspect - the safe direction. Happens when a card resolves
-        // without ever having entered the viewport (an async grade landing late).
-        latencyMs: startedAt === undefined ? 0 : Math.max(0, resolvedAt - startedAt),
+        // Read by the RESOLVING card's own key, not by whatever is on screen.
+        // Cloze grading is an async fetch, so a student who scrolls while a
+        // verdict is pending would otherwise have this answer credited with a
+        // different card's latency - and on a production path a borrowed short
+        // latency grades EASY and inflates stability on a card they laboured
+        // over. 0 means "not measured", which the engine reads as trustworthy
+        // rather than suspect - the safe direction.
+        latencyMs: latencyFor(enteredAt.current, item.key, resolvedAt),
       }).catch((error) => console.error("recordReview failed", error));
     }
 
@@ -460,10 +470,10 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
             }}
             onEnter={() => {
               currentIndexRef.current = index;
-              // First entry only: scrolling back to a card the student already
-              // looked at must not restart its clock and turn a long
-              // deliberation into a suspiciously fast answer.
-              if (!enteredAt.current.has(index)) enteredAt.current.set(index, Date.now());
+              // First entry only (markEntered enforces it): scrolling back to a
+              // card the student already looked at must not restart its clock
+              // and turn a long deliberation into a suspiciously fast answer.
+              markEntered(enteredAt.current, item.key, Date.now());
             }}
             onResolve={(outcome) => resolve(item, outcome, Date.now())}
           />

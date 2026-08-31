@@ -4,21 +4,28 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State at **mid-session, 2026-08-31 (flashcard upgrade)**: `main` is at **`6abbcd5`**, **ahead of `origin/main` by
-four unpushed commits**. The recall engine described in the block below is **now committed** (`7d1c469`), and three
-commits sit on top of it: the latency-misattribution fix (`0949e01`), the shared post-answer debrief (`db1c116`),
-and the confidence signal (`6abbcd5`). 168 tests pass, `tsc --noEmit` clean, lint 0 errors / 46 warnings, both
-`npm run build` and `npm run build:apk` succeed. **Not yet verified on the device, and not yet pushed.** Work in
-progress against the plan at `~/.claude/plans/goofy-moseying-heron.md`; Move 2 (session builder + a
-*"Got 20 minutes?"* home block) is next. Run `git status -sb` first and trust it over this line; it has gone stale
-mid-session before.
+State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`2f08c0b`**, **ahead of
+`origin/main` by three unpushed commits**, working tree clean. Work against the plan at
+`~/.claude/plans/goofy-moseying-heron.md`. **Move 2 is now complete**: the session builder landed as
+`f8056db` and its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck
+handoff - as `2f08c0b`. Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`),
+A2 ask-this-card (`1ff2bc2`), and Move 4's generation fields - `misconception` (`8dccdbf`),
+`whyItMatters` / `sourceQuote` (`2afdb16`). 229 tests pass, `tsc --noEmit` clean, lint 0 errors / 46
+warnings, both `npm run build` and `npm run build:apk` succeed.
+
+**Two things are outstanding on it, in this order.** (1) **Device-verify Moves 1-2 together**, which the
+plan calls for and which has caught three bugs a test suite could not - the phone is on the clean
+shipping build, so this needs a `DEVTOOLS=1` reflash first (recipe under *The user's phone*, below), and
+a rebuild without it afterwards. (2) **Nothing is pushed.** Next new work per the revised sequencing is
+**A3 (teach it back)**, then A4 the concept map, then Move 5.
+
+Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-89e7eb0  Lift the delete sheet above the tab bar, where it was unreachable   <- HEAD, live
-8d7fc28  Rebuild the release APK so the download has account deletion
-96ce1d2  Let a user delete their account, and stop billing first
-880c8b3  Recapture the store screenshots, and add two the set was missing
-b9626df  Add the reader's Eye Filter, for reading for hours
+2f08c0b  Ask "got 20 minutes?" instead of handing back the deck list   <- HEAD, not pushed
+f8056db  Let the engine decide what to study tonight
+2afdb16  Make the provenance chip claim only as much as it can back
+19c3d27  Answer the question instead of refusing it, and get the flag right  <- origin/main
 ```
 
 ## ✅ Nothing is half-done. One thing is left, and it is not code.

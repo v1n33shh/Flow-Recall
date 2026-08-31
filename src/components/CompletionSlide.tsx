@@ -68,7 +68,10 @@ export default function CompletionSlide({
   total,
   mastered,
 }: {
-  deckId: string;
+  /** Null when the engine built this session across decks: there is no single deck
+   * to summarise, so the "your memory of this deck" block is simply not shown. A
+   * library-wide summary is the honest replacement and is a later move. */
+  deckId: string | null;
   total: number;
   mastered: number;
 }) {
@@ -94,7 +97,10 @@ export default function CompletionSlide({
     fireCelebration();
     void trackStreak();
     const userId = session?.user?.id;
-    if (userId) {
+    // deckId is null for an engine-built session, which spans decks and so has no
+    // single one to summarise - the block below is skipped rather than fed an id
+    // that would read as an empty deck.
+    if (userId && deckId) {
       // Best-effort: the celebration stands on its own if the engine has
       // nothing to say yet, or fails to answer.
       summariseDeck(userId, deckId)

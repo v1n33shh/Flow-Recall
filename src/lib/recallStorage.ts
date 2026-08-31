@@ -585,12 +585,20 @@ export async function saveAsk(input: {
  *
  * Only decks with no units are imported, rather than all of them every time, since
  * this runs on a screen the student may sit on. */
-export async function buildTodaySession(
+export type SessionInputs = {
+  units: KnowledgeUnit[];
+  memories: MemoryRecord[];
+  reviews: ReviewRecord[];
+};
+
+/** The three reads a session is built from, separated from the building so a caller
+ * that lets the student change the time budget can re-rank without re-scanning. The
+ * reviews store only grows, so re-reading it on every chip tap is the one part of
+ * this that would not stay cheap. */
+export async function readSessionInputs(
   userId: string,
   decks: readonly Deck[],
-  budgetMinutes: number,
-  now?: number,
-): Promise<SessionPlan> {
+): Promise<SessionInputs> {
   const existing = await listUnits(userId);
   const known = new Set(existing.map((u) => u.sourceDeckId));
   const missing = decks.filter((deck) => !known.has(deck.id));
@@ -603,7 +611,17 @@ export async function buildTodaySession(
     listMemories(userId),
     listAllReviews(userId),
   ]);
-  return buildSession({ units, memories, reviews, budgetMinutes, now });
+  return { units, memories, reviews };
+}
+
+export async function buildTodaySession(
+  userId: string,
+  decks: readonly Deck[],
+  budgetMinutes: number,
+  now?: number,
+): Promise<SessionPlan> {
+  const inputs = await readSessionInputs(userId, decks);
+  return buildSession({ ...inputs, budgetMinutes, now });
 }
 
 // ── React binding ────────────────────────────────────────────────────────────

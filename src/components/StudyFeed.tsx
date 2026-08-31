@@ -57,15 +57,32 @@ function GlowSpinner() {
   );
 }
 
-export default function StudyFeed({ deckId, concepts }: { deckId: string; concepts: Concept[] }) {
+export default function StudyFeed({
+  deckId,
+  concepts,
+  sessionItems,
+}: {
+  deckId: string;
+  concepts: Concept[];
+  /** Present when the engine built this session rather than the student picking a
+   * deck. A session spans decks, so it brings its own queue, each item carrying its
+   * own unitId, and it is deliberately EPHEMERAL: every answer is written to the
+   * review log the moment it lands, so rebuilding tomorrow's session from current
+   * memory state is strictly better than restoring a stale queue. */
+  sessionItems?: QueueItem[];
+}) {
   const router = useRouter();
+  const isSession = sessionItems !== undefined;
 
   // Read once - only the first render's value is used, by the lazy
   // initializers below. Computing it as a plain const (rather than inside
   // each initializer) avoids reading localStorage three separate times.
-  const savedProgress = getProgress(deckId);
+  // Never read in session mode: there is no deck whose progress this would be.
+  const savedProgress = isSession ? null : getProgress(deckId);
 
-  const [queue, setQueue] = useState<QueueItem[]>(() => savedProgress?.queue ?? buildInitialQueue(concepts));
+  const [queue, setQueue] = useState<QueueItem[]>(
+    () => sessionItems ?? savedProgress?.queue ?? buildInitialQueue(concepts),
+  );
   const [masteredIds, setMasteredIds] = useState<Set<string>>(() => new Set(savedProgress?.masteredIds ?? []));
 
   // A queue item can resolve twice (e.g. answered, then later scrolled past) -
@@ -119,7 +136,9 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // derive it from the restored queue (which already contains any appended
   // cards) rather than the smaller sessionStorage handoff in `concepts`.
   const [totalConcepts, setTotalConcepts] = useState<number>(() =>
-    savedProgress
+    sessionItems
+      ? new Set(sessionItems.map((item) => item.concept.id)).size
+      : savedProgress
       ? new Set([
           ...savedProgress.queue.map((item) => item.concept.id),
           ...(savedProgress.masteredIds ?? []),
@@ -170,13 +189,13 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // knowing about whichever deck happened to be studied first. Both are
   // best-effort: a failure here leaves the feed working exactly as it did.
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || isSession) return;
     const deck = getSavedDecks().find((d) => d.id === deckId);
     const work = deck ? importDeck(deck, userId) : Promise.resolve([]);
     void work
       .then(() => (hasMigratedSavedDecks() ? null : migrateSavedDecks(userId, getSavedDecks())))
       .catch((error) => console.error("recall engine import failed", error));
-  }, [userId, deckId]);
+  }, [userId, deckId, isSession]);
 
   // --- Infinite Recall Mode (Pro) ---------------------------------------
 
@@ -295,7 +314,8 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     if (userId) {
       void recordReview({
         userId,
-        unitId: unitIdFor(deckId, item.concept.id),
+        // A session item knows its own unit, because its deck is not this one.
+        unitId: item.unitId ?? unitIdFor(deckId, item.concept.id),
         path: pathForLevel(item.level),
         outcome,
         // Read by the RESOLVING card's own key, not by whatever is on screen.
@@ -360,6 +380,8 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
   // Auto-save on every change so closing the tab mid-session never loses
   // progress - resuming later restores the exact queue and mastery.
   useEffect(() => {
+    // A session is not resumed, it is rebuilt - see the sessionItems docblock.
+    if (isSession) return;
     saveProgress(deckId, {
       deckId,
       masteredIds: Array.from(masteredIds),
@@ -373,7 +395,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
     // correctLaneKeys, and a wrong or skipped one updates queue. Before
     // correctLaneKeys was a dep, a first-lane success changed neither and the
     // answer was silently lost on resume.
-  }, [deckId, masteredIds, queue, correctLaneKeys]);
+  }, [deckId, masteredIds, queue, correctLaneKeys, isSession]);
 
   // Anki-style desktop shortcuts. One listener for the whole feed's lifetime,
   // torn down on unmount so it never double-fires. It reads everything it
@@ -470,7 +492,7 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
           <FeedSlide
             key={item.key}
             isNew={item.isNew}
-            unitId={unitIdFor(deckId, item.concept.id)}
+            unitId={item.unitId ?? unitIdFor(deckId, item.concept.id)}
             concept={item.concept}
             level={item.level}
             attempt={item.attempt}
@@ -491,7 +513,11 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
             onResolve={(outcome, confidence) => resolve(item, outcome, Date.now(), confidence)}
           />
         ))}
-        <CompletionSlide deckId={deckId} total={totalConcepts} mastered={masteredIds.size} />
+        <CompletionSlide
+          deckId={isSession ? null : deckId}
+          total={totalConcepts}
+          mastered={masteredIds.size}
+        />
       </div>
 
       {/* Mid-session Pro nudge — shown once after card 15 for free users. */}
@@ -518,57 +544,61 @@ export default function StudyFeed({ deckId, concepts }: { deckId: string; concep
         )}
       </AnimatePresence>
 
-      {/* Infinite Recall Mode - floating accent CTA + inline error. */}
-      <div
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-2"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
-      >
-        <AnimatePresence>
-          {shuffleSuccess !== null && (
-            <motion.p
-              key="success"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-accent/40 bg-accent/10 px-5 py-2 text-center text-xs font-semibold text-accent backdrop-blur-md shadow-[0_0_20px_-4px_hsl(var(--accent)/0.5)]"
-            >
-              Swipe down — {shuffleSuccess} new cards await
-            </motion.p>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {shuffleError && (
-            <motion.p
-              key="error"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              className="pointer-events-auto mx-4 max-w-xs rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-center text-xs font-medium text-red-300 backdrop-blur-md"
-            >
-              {shuffleError}
-            </motion.p>
-          )}
-        </AnimatePresence>
-
-        <motion.button
-          type="button"
-          onClick={handleInfiniteRecall}
-          disabled={shuffling}
-          whileTap={{ scale: 0.96 }}
-          className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent shadow-[0_0_24px_-6px_hsl(var(--accent)/0.6)] backdrop-blur-md transition-all duration-200 hover:bg-accent/20 hover:shadow-[0_0_32px_-4px_hsl(var(--accent)/0.8)] active:scale-[0.98] disabled:cursor-wait"
+      {/* Infinite Recall Mode - floating accent CTA + inline error. Deck-scoped by
+          nature: it posts to /api/decks/[id]/shuffle and appends the new cards to a
+          localStorage deck, neither of which an engine-built session has. */}
+      {!isSession && (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-2"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1.5rem)" }}
         >
-          {shuffling ? (
-            <>
-              <GlowSpinner />
-              Generating new angles…
-            </>
-          ) : shuffleSuccess !== null ? (
-            `+${shuffleSuccess} cards added`
-          ) : (
-            "Infinite Recall Mode"
-          )}
-        </motion.button>
-      </div>
+          <AnimatePresence>
+            {shuffleSuccess !== null && (
+              <motion.p
+                key="success"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="pointer-events-auto mx-4 max-w-xs rounded-full border border-accent/40 bg-accent/10 px-5 py-2 text-center text-xs font-semibold text-accent backdrop-blur-md shadow-[0_0_20px_-4px_hsl(var(--accent)/0.5)]"
+              >
+                Swipe down — {shuffleSuccess} new cards await
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {shuffleError && (
+              <motion.p
+                key="error"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="pointer-events-auto mx-4 max-w-xs rounded-full border border-red-500/30 bg-red-500/10 px-4 py-2 text-center text-xs font-medium text-red-300 backdrop-blur-md"
+              >
+                {shuffleError}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
+          <motion.button
+            type="button"
+            onClick={handleInfiniteRecall}
+            disabled={shuffling}
+            whileTap={{ scale: 0.96 }}
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent shadow-[0_0_24px_-6px_hsl(var(--accent)/0.6)] backdrop-blur-md transition-all duration-200 hover:bg-accent/20 hover:shadow-[0_0_32px_-4px_hsl(var(--accent)/0.8)] active:scale-[0.98] disabled:cursor-wait"
+          >
+            {shuffling ? (
+              <>
+                <GlowSpinner />
+                Generating new angles…
+              </>
+            ) : shuffleSuccess !== null ? (
+              `+${shuffleSuccess} cards added`
+            ) : (
+              "Infinite Recall Mode"
+            )}
+          </motion.button>
+        </div>
+      )}
 
       {/* Free-plan upsell - the growth hook. */}
       <AnimatePresence>

@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
-import type { Concept, Deck, StudyProgress } from "./types";
+import type { Concept, Deck, QueueItem, StudyProgress } from "./types";
 
 const STUDY_DECK_STORAGE_KEY = "flowrecall:studyDeck";
+const STUDY_SESSION_STORAGE_KEY = "flowrecall:studySession";
 const SAVED_DECKS_STORAGE_KEY = "flowrecall:savedDecks";
 
 function progressStorageKey(deckId: string): string {
@@ -37,7 +38,43 @@ type StudyHandoff = { deckId: string; concepts: Concept[] };
  * that actually needs to survive a closed tab. */
 export function setStudyDeck(deckId: string, concepts: Concept[]) {
   window.sessionStorage.setItem(STUDY_DECK_STORAGE_KEY, JSON.stringify({ deckId, concepts }));
+  // The two handoffs are mutually exclusive and /study prefers the session one, so
+  // a leftover session would silently hijack every later "Study this deck" tap.
+  window.sessionStorage.removeItem(STUDY_SESSION_STORAGE_KEY);
   notifyLocalStorageUpdate();
+}
+
+/** Hands a session built by the engine off to the feed. Separate from the deck
+ * handoff because a session drawn from the whole library has no single deck: each
+ * item carries its own unitId instead. */
+export function setStudySession(items: QueueItem[]) {
+  window.sessionStorage.setItem(STUDY_SESSION_STORAGE_KEY, JSON.stringify(items));
+  window.sessionStorage.removeItem(STUDY_DECK_STORAGE_KEY);
+  notifyLocalStorageUpdate();
+}
+
+let cachedRawSession: string | null = null;
+let cachedSession: QueueItem[] | null = null;
+
+function getStudySession(): QueueItem[] | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(STUDY_SESSION_STORAGE_KEY);
+  if (raw === cachedRawSession) return cachedSession;
+  cachedRawSession = raw;
+  try {
+    const parsed = raw ? (JSON.parse(raw) as QueueItem[]) : null;
+    cachedSession = parsed && parsed.length > 0 ? parsed : null;
+  } catch {
+    cachedSession = null;
+  }
+  return cachedSession;
+}
+
+/** Same reference-stability rule as useStudyDeck: JSON.parse hands back a new array
+ * every call, and useSyncExternalStore compares by reference, so the raw string is
+ * what gets cached against. */
+export function useStudySession(): QueueItem[] | null {
+  return useSyncExternalStore(subscribeToStorage, getStudySession, () => null);
 }
 
 // useSyncExternalStore compares snapshots by reference, but JSON.parse

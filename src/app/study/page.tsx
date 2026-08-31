@@ -1,11 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useStudyDeck } from "@/lib/storage";
+import { useStudyDeck, useStudySession } from "@/lib/storage";
 import StudyFeed from "@/components/StudyFeed";
 
 export default function StudyPage() {
+  // The session handoff wins when both exist. setStudyDeck and setStudySession each
+  // clear the other, so "both" should not happen - preferring one explicitly means a
+  // leftover from an older build cannot produce a silently wrong session.
+  const session = useStudySession();
   const handoff = useStudyDeck();
+
+  if (session && session.length > 0) {
+    // deckId is unused in session mode (each item carries its own unitId) but the
+    // prop is still required, so it gets a name that is obvious in a stack trace
+    // rather than an empty string that would read as a real deck id.
+    return <StudyFeed deckId="__session__" concepts={[]} sessionItems={session} />;
+  }
 
   if (!handoff || handoff.concepts.length === 0) {
     return (

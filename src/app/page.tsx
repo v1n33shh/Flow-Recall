@@ -17,6 +17,7 @@ import {
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
+import TodaySession from "@/components/TodaySession";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
@@ -724,6 +725,11 @@ export default function Home() {
             Start ingesting notes
           </Link>
         </motion.div>
+
+        {/* The engine's answer to "what should I study?", above the grid that asks
+            the student to decide. Renders nothing when signed out or when there is
+            no memory to schedule against yet. */}
+        <TodaySession decks={decks} />
 
         {decks.length > 0 && (
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">

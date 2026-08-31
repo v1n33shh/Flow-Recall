@@ -4,11 +4,14 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State at **end of session, 2026-08-31 ~01:10 IST**: `main` and `origin/main` both at **`89e7eb0`**, working tree
-clean apart from untracked `_*.mjs` scratch. **Since then: two further commits landed (`24c7c61`, `52c9644`),
-and the recall-engine foundation is written but UNCOMMITTED — see the 2026-08-31 (recall engine) block
-immediately below.** Everything up to `52c9644` is pushed and verified live in production; the recall engine is
-not. Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
+State at **mid-session, 2026-08-31 (flashcard upgrade)**: `main` is at **`6abbcd5`**, **ahead of `origin/main` by
+four unpushed commits**. The recall engine described in the block below is **now committed** (`7d1c469`), and three
+commits sit on top of it: the latency-misattribution fix (`0949e01`), the shared post-answer debrief (`db1c116`),
+and the confidence signal (`6abbcd5`). 168 tests pass, `tsc --noEmit` clean, lint 0 errors / 46 warnings, both
+`npm run build` and `npm run build:apk` succeed. **Not yet verified on the device, and not yet pushed.** Work in
+progress against the plan at `~/.claude/plans/goofy-moseying-heron.md`; Move 2 (session builder + a
+*"Got 20 minutes?"* home block) is next. Run `git status -sb` first and trust it over this line; it has gone stale
+mid-session before.
 
 ```
 89e7eb0  Lift the delete sheet above the tab bar, where it was unreachable   <- HEAD, live
@@ -77,9 +80,11 @@ study feed. Fictional content, delete it freely.
 
 ---
 
-## 🟡 START HERE — 2026-08-31 (recall engine, phases 1-2): live on the device, uncommitted
+## 🟡 START HERE — 2026-08-31 (recall engine, phases 1-2): live on the device, committed as `7d1c469`
 
-**Working tree is dirty and nothing here is committed or pushed.** Run `git status -sb` before anything else.
+**This block described the work while it was still uncommitted; it is committed now** (`7d1c469`), along with
+three follow-up commits on top of it. Everything below remains an accurate description of what the engine does and
+why. Run `git status -sb` before anything else.
 Three new files plus a two-line change to the account screen. All of it is additive: the study feed, the reader,
 ingest and every route are untouched, and the app behaves exactly as it did before.
 

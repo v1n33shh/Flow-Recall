@@ -21,15 +21,15 @@ implementation as it now stands, name what is still missing against the best app
 premium-tier architecture for the rest - features that build understanding, not more deck-answering - and
 present it for approval before writing any of it. Code is pushed in one batch at the end of the build.
 
-State at **mid-session, 2026-09-02 (sync live, export fixed on the device)**: phase-3 Postgres sync is **committed**
-as `9d8a88a` - `recallSync.ts` and its 17 tests, `SyncEngine` mounted in the root layout, `/api/sync`,
-`/api/export` and the account screen's export control - and the APK-refresh commit sits on top of it.
+State at **end of session, 2026-09-02 (sync live, export fixed, concept map device-verified)**: phase-3
+Postgres sync is **committed** as `9d8a88a` - `recallSync.ts` and its 17 tests, `SyncEngine` mounted in the
+root layout, `/api/sync`, `/api/export` and the account screen's export control.
 
-`9d8a88a` and `0f9671c` **are pushed and deployed** - `/api/sync` and `/api/export` both answer 401 to an
-unauthenticated call in production rather than 404, and the phone's own launch sync succeeded against them.
-The export fix on top of them is committed and **not pushed yet**: this environment cannot push (HTTPS
-remote, no credential helper, no `gh`), so **run `git push` by hand**. Nothing in the APK depends on that
-push - the fix is client-side - but the web export path ships with it.
+**Everything through the concept map is pushed and deployed.** `/api/sync`, `/api/export` and
+`/api/concept-map` all answer an unauthenticated call with 401 in production rather than 404 - and
+`/api/concept-map` answers with this repo's own copy (*"You must be signed in to map a deck."*), so it is
+this code and not a generic gate. Note for next time: this environment cannot push (HTTPS remote, no
+credential helper, no `gh`), so **the push is always a `git push` by hand**.
 
 **The migration IS applied to production.** `20260902000000_add_recall_sync_tables`, via
 `prisma migrate deploy` on 2026-09-02 against the live Supabase instance - there is no staging database.
@@ -41,14 +41,13 @@ On the flashcard plan itself, **Move 2 is complete and device-verified**: the se
 its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck handoff (`2f08c0b`) -
 and the three bugs the device pass found (`0a336bd`). Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
 Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
-251 tests pass, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
+**273 tests pass**, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
 `npm run build:apk` succeed. All 45 warnings pre-date this work; the two the export control cleared
 (`useDataExport` and `Capacitor` both unused) are gone because it now calls them.
 
-**What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) is **done and device-verified**.
-Phase 2, **A4 the concept map**, is **committed as `ded772c` and not yet device-verified** - it needs
-`/api/concept-map` deployed before the phone can reach it, so push first, then map the real deck on the
-device. Phase 3 is **A3 teach-it-back**, not started. Move 3's extra formats and Move 5 come after both. The
+**What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) and Phase 2 (**A4 the concept
+map**) are both **done and device-verified** - `ded772c` plus the label fix in the commit below it. Phase 3 is
+**A3 teach-it-back**, not started. Move 3's extra formats and Move 5 come after both. The
 one non-code item is still the **$25 Play registration**, below.
 
 ### The concept map, as built (`ded772c`)
@@ -64,7 +63,7 @@ ID, and this is the only place that crossing happens - it drops any edge whose e
 a label two cards share, points at itself, invents a relation, or repeats one already kept),
 `groupForConcept`, and `learningPath` - Kahn over prerequisite edges only, **stable** (deck order breaks
 every tie, so the path does not reshuffle between visits) and **total** (a model-asserted cycle is broken at
-the earliest remaining concept rather than losing concepts). 19 tests; the suite is at **270**.
+the earliest remaining concept rather than losing concepts). 22 tests; the suite is at **273**.
 
 `relation` is a loose string in the zod response schema rather than an enum, deliberately: an enum fails the
 whole response over one invented `related_to`, and a partial map beats no map.
@@ -81,14 +80,77 @@ pinned model ever changes.
 `Deck.conceptMap` rides the sync that shipped in Phase 1, whose migration already carried the column, and a
 tombstone now strips the map along with the concepts.
 
+### What the concept-map device pass settled, 2026-09-02
+
+Driven over CDP on the phone against the **real deck**, not a fixture: *Cardiac cycle - lecture 4*, 3
+concepts, at the 360x768 viewport the app actually ships to.
+
+**It found a defect no test would have, and the defect was a lie rather than a crash.** Asked to map the
+deck, the model returned exactly one edge - *Frank-Starling Mechanism* **explains** *Stroke Volume
+Calculation*, which is correct, and correctly restrained for a 3-concept deck. It spelled the label
+**"Franks-Starling Mechanism"**. `validateEdges` dropped the edge, stored an empty map, and the sheet then
+told the student *"We looked, and this deck's ideas do not lean on each other in a way worth drawing."*
+One stray letter turned a right answer into a confident falsehood, and because `[]` is stored rather than
+`undefined`, the sheet read as authoritatively mapped.
+
+Root cause: `normalizeForCompare` splits on **whitespace**, so it strips a plural "s" from the end of a
+whitespace-delimited word only - and this "s" sat inside a hyphenated one. Fixed with `normalizeLabel` in
+`conceptGraph.ts`, which treats a hyphen, dash or slash as the word boundary it actually is before handing
+off. Both spellings then normalise to `frank starling mechanism` and match at distance zero. **Deliberately
+not fixed inside `normalizeForCompare`**: cloze grading compares a student's typed answer with that
+function, and loosening it there would change what counts as correct recall.
+
+**A bounded edit-distance fallback was written and then cut**, and the reasoning is in the file so it does
+not get re-added: no string metric distinguishes "the model misspelt a label it was shown" from "the model
+named a neighbouring concept this deck lacks". At two edits, *ADP Yield* resolves to *ATP Yield* and *Type I
+Error* to *Type II Error*. A missing edge costs a student one connection they can still see for themselves;
+an invented one teaches them something false and is indistinguishable from a real one. The test that pins
+this is `"drops a near label rather than guessing, because ATP and ADP are not each other"`.
+
+What the pass proved on the device, all at 360dp:
+
+- **The whole loop works from the phone.** Cross-origin call with the session cookie through CapacitorHttp,
+  200 in ~5.5s, edges saved to the deck row. Note for driving it again: Playwright's network events never
+  see these calls - CapacitorHttp patches `window.fetch` to go through native OkHttp, so record the call by
+  patching `fetch` in-page instead.
+- **Every edge names a concept in the deck.** Both ends resolved to real concept ids, nothing unresolved.
+- **The learning path is stable and total.** With a temporary prerequisite chain injected, the numbered grid
+  came out `01 Heart Sound Origin / 02 Frank-Starling Mechanism / 03 Stroke Volume Calculation` -
+  topological order with deck order breaking the tie - and was **byte-identical across three separate
+  visits**, every concept exactly once, no loop. Injected into `localStorage` only and **not** through
+  `saveConceptMap`, so `updatedAt` never moved and nothing fabricated could sync; restored byte-exactly
+  afterwards, verified by string equality.
+- **All three relation rows render as real bordered chips**, 120-159px wide, none overflowing 360dp, at
+  opacity 1 with a 1px border - no hover anywhere. Tapping a chip scrolled the target card into view
+  (`top -186` to `top 159`).
+- **The map syncs.** The server, asked for a full pull through the app's own session, returns the deck with
+  its `conceptMap` and a matching `updatedAt` - so mapping on the phone is already on the laptop.
+- **Nothing was disturbed.** Census before and after: 3 units, 6 memory, 14 reviews, unchanged.
+
+Two things this pass could **not** settle, both honest gaps:
+
+1. **The map's quality on this deck is not evidence.** The prompt's own worked examples are built from
+   *Preload*, *Frank-Starling Mechanism* and *Stroke Volume* - the same material as the only real deck on
+   the phone. The uncontaminated quality check is the neurotransmission one above, on a deck sharing nothing
+   with the prompt.
+2. **A pass whose every edge is discarded still tells the student the deck has no structure.** The fix makes
+   that rarer, not impossible. Telling the truth there needs a stored "we found edges and could not place
+   them" distinct from "we found none" - a schema and sync change, deliberately not smuggled into this build.
+   A 3-concept deck also never exercises batching; `MAP_BATCH_SIZE` is 40.
+
+The phone ends on a **shipping build with devtools off**: `59aaf678b1e3c71629e019c8f6f66150`, byte-identical
+to the committed `public/flowrecall-release.apk`, cert `e1f4352f...bc09` on both, zero devtools sockets and
+zero `adb` forwards left behind.
+
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-46ea904  Record what the device pass settled, and what it could not   <- HEAD, origin/main
-0a336bd  Fix the three things the device found, none of which a test would have
-9392e29  Bring the handoff's first block back to what the repo is
-2f08c0b  Ask "got 20 minutes?" instead of handing back the deck list
-f8056db  Let the engine decide what to study tonight
+HEAD     Keep the edge the model got right, and say why nothing looser
+266df2e  Record what the concept map is, and what it has not proved yet   <- origin/main
+ded772c  Turn a deck into a subject, not a pile of facts
+b8fb2b6  Deliver the export the way a phone can actually receive it
+0f9671c  Refresh the download so it carries the sync client
+9d8a88a  Keep the learning record somewhere other than one phone
 ```
 
 ### What the device pass settled, 2026-09-01

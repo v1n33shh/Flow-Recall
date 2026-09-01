@@ -41,6 +41,34 @@ describe("validateEdges", () => {
     ).toEqual([]);
   });
 
+  // The device pass asked the real model to map a real 3-concept deck and it
+  // answered "Franks-Starling Mechanism" - one stray letter, inside a hyphenated
+  // word, on the one relationship the deck actually has. Dropping that edge left
+  // the sheet telling the student these ideas "do not lean on each other", which
+  // is a confident falsehood the model had not made.
+  it("resolves a label the model misspelt inside a hyphenated word", () => {
+    const edges = validateEdges(
+      [{ from: "Franks-Starling Mechanism", to: "Stroke Volume", relation: "explains" }],
+      deck,
+    );
+    expect(edges).toEqual([{ from: "s", to: "v", relation: "explains" }]);
+  });
+
+  it("resolves a hyphen the model wrote as a space", () => {
+    const edges = validateEdges(
+      [{ from: "Frank Starling Mechanism", to: "Stroke Volume", relation: "explains" }],
+      deck,
+    );
+    expect(edges).toEqual([{ from: "s", to: "v", relation: "explains" }]);
+  });
+
+  it("drops a near label rather than guessing, because ATP and ADP are not each other", () => {
+    const atp = makeConcept("a1", "ATP Yield");
+    expect(
+      validateEdges([{ from: "ADP Yield", to: "Preload", relation: "explains" }], [...deck, atp]),
+    ).toEqual([]);
+  });
+
   it("drops an edge naming a label two cards share, rather than guessing", () => {
     const twin = makeConcept("p2", "Preload");
     const edges = validateEdges(

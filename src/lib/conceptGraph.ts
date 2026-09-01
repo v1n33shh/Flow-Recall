@@ -25,6 +25,33 @@ const RELATIONS: readonly ConceptRelation[] = ["prerequisite", "explains", "cont
  * thing the eye lands on. */
 export const MAX_PER_ROW = 4;
 
+/** A label as the model actually types it back, not as the deck stores it.
+ *
+ * `normalizeForCompare` splits on whitespace, so it only strips a plural "s" from
+ * the end of a whitespace-delimited word - and the device pass caught the model
+ * answering "Franks-Starling Mechanism" for this deck's "Frank-Starling
+ * Mechanism", where the stray "s" sits inside a hyphenated word. A hyphen, dash or
+ * slash IS a word boundary in a concept label, so treating it as one makes those
+ * the same label. Deliberately not fixed inside `normalizeForCompare`: cloze
+ * grading compares a student's typed answer with that function, and loosening it
+ * there would change what counts as correct recall. */
+function normalizeLabel(value: string): string {
+  return normalizeForCompare(value.replace(/[-–—/]+/g, " "));
+}
+
+/* No fuzzy fallback here, and that is a decision rather than an omission.
+ *
+ * The obvious next step after the misspelling above is a bounded edit distance, so
+ * any near-miss resolves. It was written, and it was cut: no string metric can tell
+ * "the model misspelt a label it was shown" from "the model named a neighbouring
+ * concept this deck does not contain", and the second is the failure this whole
+ * file exists to prevent. The cut is not theoretical - at two edits, "ADP Yield"
+ * resolves to "ATP Yield", and "Type I Error" to "Type II Error", each asserting a
+ * relationship between two concepts a student would be right to trust and wrong to.
+ * A missing edge costs a student one connection they can still see for themselves;
+ * an invented one teaches them something false, and they cannot tell which is which.
+ * Widen `normalizeLabel` when a real pass proves a class of miss - do not guess. */
+
 /** Resolves the model's label pairs into edges by concept id, dropping everything
  * it cannot vouch for.
  *
@@ -34,8 +61,9 @@ export const MAX_PER_ROW = 4;
  *
  * 1. **Either end is not in this deck.** The most common failure: asked how a
  *    deck's ideas relate, a model will happily reach for a neighbouring idea the
- *    deck never covered. Matched through `normalizeForCompare` so casing, a
- *    leading article and a plural "s" do not count as a different concept.
+ *    deck never covered. Matched through `normalizeLabel`, so casing, a leading
+ *    article, a hyphen and a plural "s" are not a different concept - but nothing
+ *    looser than that, for the reason given above it.
  * 2. **The label is ambiguous.** Two cards in one deck can carry the same label;
  *    an edge naming it would point at both, so it points at neither.
  * 3. **It is a self-edge.** Harmless to store and meaningless to show.
@@ -49,7 +77,7 @@ export function validateEdges(
 ): ConceptEdge[] {
   const byLabel = new Map<string, string | null>();
   for (const concept of concepts) {
-    const key = normalizeForCompare(concept.concept);
+    const key = normalizeLabel(concept.concept);
     if (!key) continue;
     // Second sighting poisons the entry rather than overwriting it: null means
     // "this label names more than one card", which is not resolvable.
@@ -63,8 +91,8 @@ export function validateEdges(
     const relation = RELATIONS.find((r) => r === edge.relation);
     if (!relation) continue;
 
-    const from = byLabel.get(normalizeForCompare(edge.from ?? ""));
-    const to = byLabel.get(normalizeForCompare(edge.to ?? ""));
+    const from = byLabel.get(normalizeLabel(edge.from ?? ""));
+    const to = byLabel.get(normalizeLabel(edge.to ?? ""));
     if (!from || !to || from === to) continue;
 
     const key =

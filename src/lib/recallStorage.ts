@@ -16,6 +16,9 @@ import {
   type MasteryEvidence,
 } from "./recallModel";
 import { buildSession, type SessionPlan } from "./sessionBuilder";
+import { planSync, rebuildMemory, replayDivergences, type SyncPayload } from "./recallSync";
+import { clearProgress, getAllDeckRows, getSyncCursor, mergeRemoteDecks, setSyncCursor } from "./storage";
+import { apiUrl, API_FETCH_CREDENTIALS } from "./apiUrl";
 
 // The recall engine's persistence, on the device.
 //
@@ -288,6 +291,15 @@ async function listAllReviews(userId: string): Promise<ReviewRecord[]> {
     tx.objectStore(REVIEWS_STORE).index(USER_INDEX).getAll(IDBKeyRange.only(userId)),
   );
   return rows.sort((a, b) => a.reviewedAt - b.reviewedAt);
+}
+
+async function listAllAsks(userId: string): Promise<AskRecord[]> {
+  const db = await openDb();
+  const tx = db.transaction(ASKS_STORE, "readonly");
+  const rows = await requestToPromise<AskRecord[]>(
+    tx.objectStore(ASKS_STORE).index(USER_INDEX).getAll(IDBKeyRange.only(userId)),
+  );
+  return rows.sort((a, b) => a.askedAt - b.askedAt);
 }
 
 // ── Writes ───────────────────────────────────────────────────────────────────
@@ -622,6 +634,220 @@ export async function buildTodaySession(
 ): Promise<SessionPlan> {
   const inputs = await readSessionInputs(userId, decks);
   return buildSession({ ...inputs, budgetMinutes, now });
+}
+
+// ── Sync ─────────────────────────────────────────────────────────────────────
+
+/** One reconcile: push what this device changed, pull what any other device did,
+ * then recompute scheduler state from the merged review log.
+ *
+ * Fire-and-forget by design, the same posture recordReview takes. A failed sync
+ * must never stall the feed or lose an answer - it only postpones durability to
+ * the next attempt, and because the cursor advances only on success, the next
+ * attempt re-sends everything this one tried to.
+ *
+ * `memory` is rebuilt rather than merged. It is a cache over `reviews` (see the
+ * MemoryRecord docblock), so recomputing it from the union removes the only state
+ * two devices could disagree about: there is no version of a memory row to pick
+ * between, only a log to replay. */
+export async function syncNow(userId: string): Promise<{ pushed: number; pulled: number } | null> {
+  if (typeof window === "undefined") return null;
+  const since = getSyncCursor(userId);
+
+  const [units, reviews, asks] = await Promise.all([
+    listUnits(userId),
+    listAllReviews(userId),
+    listAllAsks(userId),
+  ]);
+  // Decks are per device, not per account (see Deck.userId): only this account's
+  // go up, and a deck saved before owners were recorded counts as this account's,
+  // which is exactly how the library already treats it.
+  const decks = getAllDeckRows().filter((deck) => deck.userId === undefined || deck.userId === userId);
+  const local: SyncPayload = { decks, units, reviews, asks };
+
+  const { toPush } = planSync({ local, remote: emptyPayload(), since, now: Date.now() });
+
+  // Push in chunks the route will actually accept, then pull separately. A first
+  // sync pushes EVERYTHING (since is null, so planSync's cutoff is -Infinity), and
+  // sending it as one request was a wedge rather than a degradation: past the
+  // route's caps every attempt returned 400, so the cursor never advanced and the
+  // next attempt sent the same oversized body again, forever.
+  for (const chunk of pushChunks(toPush)) {
+    await postSync({ since, pull: false, payload: chunk });
+  }
+
+  // Pull until the server says there is nothing after this page. The cursor comes
+  // from `nextSince` rather than from `now`, because only the server knows which
+  // collections its page cut off - see the route. Advancing to `now` after a
+  // truncated page, which is what this used to do, filtered the rows it had not
+  // yet seen out of every future pull.
+  let cursor = since;
+  let complete = false;
+  const pulled = emptyPayload();
+  for (let page = 0; page < MAX_PULL_PAGES; page++) {
+    const remote = await postSync({ since: cursor, pull: true, payload: emptyPayload() });
+    // Rows come back without an owner (the server writes every row with the
+    // session's own id), so stamp it on before anything is written locally -
+    // every local index is keyed by userId.
+    pulled.decks.push(...remote.decks.map((deck) => ({ ...deck, userId })));
+    pulled.units.push(...remote.units.map((unit) => ({ ...unit, userId })));
+    pulled.reviews.push(...remote.reviews.map((review) => ({ ...review, userId })));
+    pulled.asks.push(...remote.asks.map((ask) => ({ ...ask, userId })));
+    cursor = remote.nextSince;
+    if (!remote.more) {
+      complete = true;
+      break;
+    }
+  }
+
+  const { toWrite, deckTombstones } = planSync({ local, remote: pulled, since, now: Date.now() });
+
+  mergeRemoteDecks(toWrite.decks);
+  // A deck deleted elsewhere takes its saved session with it, exactly as a local
+  // delete does.
+  for (const deckId of deckTombstones) clearProgress(deckId);
+
+  const pulledAnything =
+    toWrite.decks.length + toWrite.units.length + toWrite.reviews.length + toWrite.asks.length > 0;
+  if (pulledAnything) {
+    await writePulledRows(toWrite);
+    await rebuildMemoryStore(userId);
+  }
+
+  // Only on a pull that reached the end. A cursor advanced past an unfinished
+  // pull is the one failure here that is silent AND unrecoverable, so the cost of
+  // being wrong in this direction - re-pulling rows the merge then discards - is
+  // the cheap side of the trade.
+  if (complete && cursor !== null) setSyncCursor(userId, cursor);
+  else if (!complete) {
+    console.warn(
+      `recall: stopped pulling after ${MAX_PULL_PAGES} pages with more still waiting - ` +
+        "the cursor stays put, so the next sync resumes from the same place.",
+    );
+  }
+  // Only when something actually arrived. Notifying unconditionally would be a
+  // loop with a fuse on it: SyncEngine syncs on this event, and a sync that always
+  // fires it would schedule the next sync forever, on an idle device, for nothing.
+  if (pulledAnything) notifyRecallUpdate();
+  return { pushed: toPush.reviews.length, pulled: toWrite.reviews.length };
+}
+
+/** What one request carries up, well under /api/sync's own caps (500 decks, 5000
+ * units, 5000 reviews, 1000 asks).
+ *
+ * Decks and units are the small numbers here even though the route allows more of
+ * them, because both embed whole `Concept` objects - every explanation, every
+ * source quote - so a few hundred decks is megabytes of request body, and the
+ * ceiling that bites first is the platform's, not the route's. Reviews are a
+ * handful of numbers each and can go up in bulk. */
+const PUSH_CHUNK = { decks: 20, units: 500, reviews: 2000, asks: 500 } as const;
+
+/** How many pull pages one sync will walk before giving up and leaving the rest
+ * for the next one. At the route's page sizes this is more than a hundred thousand
+ * reviews; it exists so a server that always answers `more: true` cannot spin here
+ * forever. */
+const MAX_PULL_PAGES = 25;
+
+/** Splits a push into requests the route accepts. Every collection is sliced in
+ * parallel, so one request carries a slice of each rather than four separate
+ * passes - the route writes all four in one transaction either way. */
+function pushChunks(toPush: SyncPayload): SyncPayload[] {
+  const count = Math.max(
+    Math.ceil(toPush.decks.length / PUSH_CHUNK.decks),
+    Math.ceil(toPush.units.length / PUSH_CHUNK.units),
+    Math.ceil(toPush.reviews.length / PUSH_CHUNK.reviews),
+    Math.ceil(toPush.asks.length / PUSH_CHUNK.asks),
+  );
+  return Array.from({ length: count }, (_, i) => ({
+    decks: toPush.decks.slice(i * PUSH_CHUNK.decks, (i + 1) * PUSH_CHUNK.decks),
+    units: toPush.units.slice(i * PUSH_CHUNK.units, (i + 1) * PUSH_CHUNK.units),
+    reviews: toPush.reviews.slice(i * PUSH_CHUNK.reviews, (i + 1) * PUSH_CHUNK.reviews),
+    asks: toPush.asks.slice(i * PUSH_CHUNK.asks, (i + 1) * PUSH_CHUNK.asks),
+  }));
+}
+
+type SyncResponse = SyncPayload & { now: number; more: boolean; nextSince: number };
+
+/** One /api/sync round trip. Throws on anything but 200 so a failed sync leaves
+ * the cursor exactly where it was and the next attempt re-sends everything. */
+async function postSync(input: {
+  since: number | null;
+  pull: boolean;
+  payload: SyncPayload;
+}): Promise<SyncResponse> {
+  const response = await fetch(apiUrl("/api/sync"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: API_FETCH_CREDENTIALS,
+    body: JSON.stringify({
+      since: input.since,
+      pull: input.pull,
+      // The owner is never sent - see withoutOwner.
+      decks: input.payload.decks.map(withoutOwner),
+      units: input.payload.units.map(withoutOwner),
+      reviews: input.payload.reviews.map(withoutOwner),
+      asks: input.payload.asks.map(withoutOwner),
+    }),
+  });
+  if (!response.ok) throw new Error(`sync failed: ${response.status}`);
+  return (await response.json()) as SyncResponse;
+}
+
+function emptyPayload(): SyncPayload {
+  return { decks: [], units: [], reviews: [], asks: [] };
+}
+
+/** Drops the owner from a row on its way up. The server writes every row with the
+ * session's own user id, so sending one is at best redundant and at worst a claim
+ * to be someone else - and /api/sync's schema rejects it outright. */
+function withoutOwner<T extends { userId?: string }>(row: T): Omit<T, "userId"> {
+  const copy: T = { ...row };
+  delete copy.userId;
+  return copy;
+}
+
+/** Everything pulled, in one transaction per store. `put` rather than `add`: the
+ * merge has already decided these rows win, and a retry must not throw. */
+async function writePulledRows(rows: SyncPayload): Promise<void> {
+  if (rows.units.length === 0 && rows.reviews.length === 0 && rows.asks.length === 0) return;
+  const db = await openDb();
+  const tx = db.transaction([UNITS_STORE, REVIEWS_STORE, ASKS_STORE], "readwrite");
+  for (const unit of rows.units) tx.objectStore(UNITS_STORE).put(unit);
+  for (const review of rows.reviews) tx.objectStore(REVIEWS_STORE).put(review);
+  for (const ask of rows.asks) tx.objectStore(ASKS_STORE).put(ask);
+  await txDone(tx);
+}
+
+/** Replaces this user's memory rows with a replay of their whole review log.
+ *
+ * Also checks the replay against what each review recorded at the time and logs
+ * any divergence. That check is the difference between "sync rebuilt your
+ * schedule" and "sync rewrote your schedule", and it is nearly free: the stability
+ * each review produced is already stored on the row. */
+async function rebuildMemoryStore(userId: string): Promise<void> {
+  const [units, reviews] = await Promise.all([listUnits(userId), listAllReviews(userId)]);
+  const divergences = replayDivergences(reviews, units);
+  if (divergences.length > 0) {
+    console.error(
+      `recall: replaying the review log did not reproduce ${divergences.length} of ${reviews.length} ` +
+        "recorded stabilities - the scheduler and its replay have diverged.",
+      divergences.slice(0, 5),
+    );
+  }
+
+  const rebuilt = rebuildMemory(reviews, units);
+  const db = await openDb();
+  const tx = db.transaction(MEMORY_STORE, "readwrite");
+  const store = tx.objectStore(MEMORY_STORE);
+  // Only this user's rows: a shared device may hold another account's memory, and
+  // clearing the whole store would destroy it.
+  const mine = await requestToPromise<MemoryRecord[]>(
+    store.index(USER_INDEX).getAll(IDBKeyRange.only(userId)),
+  );
+  const keep = new Set(rebuilt.map((row) => row.key));
+  for (const row of mine) if (!keep.has(row.key)) store.delete(row.key);
+  for (const row of rebuilt) store.put(row);
+  await txDone(tx);
 }
 
 // ── React binding ────────────────────────────────────────────────────────────

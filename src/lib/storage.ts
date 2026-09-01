@@ -112,6 +112,30 @@ const EMPTY_DECKS: Deck[] = [];
 let cachedRawDecks: string | null = null;
 let cachedDecks: Deck[] = EMPTY_DECKS;
 
+let cachedRawAllDecks: string | null = null;
+let cachedAllDecks: Deck[] = EMPTY_DECKS;
+
+/** Every deck row as stored, tombstones included.
+ *
+ * This, not getSavedDecks, is what every WRITER below must build its next array
+ * from: getSavedDecks hides tombstones, so writing back its output would drop the
+ * record of a deletion and the next pull from another device would hand the deck
+ * straight back. Also what /api/sync pushes. */
+export function getAllDeckRows(): Deck[] {
+  if (typeof window === "undefined") return EMPTY_DECKS;
+  const raw = window.localStorage.getItem(SAVED_DECKS_STORAGE_KEY);
+  if (raw === cachedRawAllDecks) return cachedAllDecks;
+  cachedRawAllDecks = raw;
+  try {
+    cachedAllDecks = raw ? (JSON.parse(raw) as Deck[]) : EMPTY_DECKS;
+  } catch {
+    cachedAllDecks = EMPTY_DECKS;
+  }
+  return cachedAllDecks;
+}
+
+/** The decks the student actually has. Tombstones are filtered here and nowhere
+ * else, so nothing above this file needs to know they exist. */
 export function getSavedDecks(): Deck[] {
   if (typeof window === "undefined") return EMPTY_DECKS;
   const raw = window.localStorage.getItem(SAVED_DECKS_STORAGE_KEY);
@@ -119,11 +143,30 @@ export function getSavedDecks(): Deck[] {
 
   cachedRawDecks = raw;
   try {
-    cachedDecks = raw ? (JSON.parse(raw) as Deck[]) : EMPTY_DECKS;
+    const all = raw ? (JSON.parse(raw) as Deck[]) : EMPTY_DECKS;
+    const live = all.filter((deck) => deck.deletedAt === undefined || deck.deletedAt === null);
+    // Keep the stable empty reference when nothing is left, for the same
+    // render-loop reason EMPTY_DECKS exists at all.
+    cachedDecks = live.length === 0 ? EMPTY_DECKS : live;
   } catch {
     cachedDecks = EMPTY_DECKS;
   }
   return cachedDecks;
+}
+
+function persistDecks(next: Deck[]): void {
+  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  notifyLocalStorageUpdate();
+}
+
+/** Writes pulled decks in, by id. The caller has already decided which of these
+ * win (planSync in recallSync.ts); this only persists that decision. */
+export function mergeRemoteDecks(remote: readonly Deck[]): void {
+  if (remote.length === 0) return;
+  const byId = new Map(getAllDeckRows().map((deck) => [deck.id, deck]));
+  for (const deck of remote) byId.set(deck.id, deck);
+  // Newest first, matching saveDeck's own ordering.
+  persistDecks([...byId.values()].sort((a, b) => b.createdAt - a.createdAt));
 }
 
 /** Persists a freshly generated deck so it survives a page refresh. Newest
@@ -136,19 +179,21 @@ export function saveDeck(
   concepts: Concept[],
   pendingChunks: string[] = [],
   model?: string,
+  userId?: string,
 ): Deck {
+  const now = Date.now();
   const deck: Deck = {
     id: crypto.randomUUID(),
     title: title.trim() || "Untitled Notes",
-    createdAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
+    ...(userId ? { userId } : {}),
     concepts,
     ...(pendingChunks.length > 0 ? { pendingChunks } : {}),
     ...(model ? { model } : {}),
   };
 
-  const next = [deck, ...getSavedDecks()];
-  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
-  notifyLocalStorageUpdate();
+  persistDecks([deck, ...getAllDeckRows()]);
   return deck;
 }
 
@@ -160,17 +205,18 @@ export function appendConceptsToDeck(
   newConcepts: Concept[],
   remainingPendingChunks: string[],
 ): void {
-  const next = getSavedDecks().map((deck) =>
-    deck.id === deckId
-      ? {
-          ...deck,
-          concepts: [...deck.concepts, ...newConcepts],
-          pendingChunks: remainingPendingChunks.length > 0 ? remainingPendingChunks : undefined,
-        }
-      : deck,
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId
+        ? {
+            ...deck,
+            concepts: [...deck.concepts, ...newConcepts],
+            pendingChunks: remainingPendingChunks.length > 0 ? remainingPendingChunks : undefined,
+            updatedAt: Date.now(),
+          }
+        : deck,
+    ),
   );
-  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
-  notifyLocalStorageUpdate();
 }
 
 /** Appends freshly generated concepts (e.g. from Infinite Recall Mode) to an
@@ -180,18 +226,31 @@ export function appendConceptsToDeck(
  * source text, so shuffling and continuing a deck don't clobber each other. */
 export function addConceptsToDeck(deckId: string, newConcepts: Concept[]): void {
   if (newConcepts.length === 0) return;
-  const next = getSavedDecks().map((deck) =>
-    deck.id === deckId
-      ? { ...deck, concepts: [...deck.concepts, ...newConcepts] }
-      : deck,
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId
+        ? { ...deck, concepts: [...deck.concepts, ...newConcepts], updatedAt: Date.now() }
+        : deck,
+    ),
   );
-  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
-  notifyLocalStorageUpdate();
 }
 
+/** Deletes a deck by TOMBSTONING it, not by dropping the row.
+ *
+ * A row that simply vanishes cannot propagate: the next pull from another device
+ * would find a deck the server still has and hand it straight back, so a student
+ * who deleted something on their phone would watch it reappear. The tombstone is
+ * what travels. Concepts and leftover source text are stripped, so what remains is
+ * a few bytes rather than the whole deck. */
 export function deleteDeck(id: string): void {
-  const next = getSavedDecks().filter((deck) => deck.id !== id);
-  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  const now = Date.now();
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === id
+        ? { ...deck, concepts: [], pendingChunks: undefined, deletedAt: now, updatedAt: now }
+        : deck,
+    ),
+  );
   // A deleted deck's saved session progress is meaningless orphaned data -
   // clean it up too rather than leaking it in localStorage forever.
   window.localStorage.removeItem(progressStorageKey(id));
@@ -220,6 +279,30 @@ export function getProgress(deckId: string): StudyProgress | null {
   } catch {
     return null;
   }
+}
+
+// ── Sync cursor ──────────────────────────────────────────────────────────────
+//
+// Per user, because signing into a different account on the same device must not
+// inherit the previous one's position - it would skip straight past that account's
+// entire history and report nothing to pull. Swept by clearAllLocalUserData's
+// prefix walk along with everything else.
+
+function syncCursorKey(userId: string): string {
+  return `flowrecall:syncCursor:${userId}`;
+}
+
+/** null means "never synced", which is what makes the first sync push everything. */
+export function getSyncCursor(userId: string): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(syncCursorKey(userId));
+  if (raw === null) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function setSyncCursor(userId: string, cursor: number): void {
+  window.localStorage.setItem(syncCursorKey(userId), String(cursor));
 }
 
 /** Clears a session's saved progress - used when starting a fully-mastered

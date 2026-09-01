@@ -75,6 +75,11 @@ export type KnowledgeUnit = {
   importance: number;
   concept: Concept;
   createdAt: number;
+  /** Last local change, for sync's last-write-wins. Optional: units written
+   * before sync existed have none and fall back to createdAt. Nothing edits a
+   * unit today - importDeck rewrites it wholesale from the deck - so this exists
+   * for the card editor that will. */
+  updatedAt?: number;
 };
 
 /** FSRS state for one (unit x path), plus the bookkeeping the scheduler needs.

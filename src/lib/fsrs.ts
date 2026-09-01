@@ -276,14 +276,23 @@ export const COUPLING_ON_LAPSE = 0.6;
  *
  * Difficulty is intentionally left alone: it is a property of the concept, and
  * the direct review of any of its formats already updated it. Applying the
- * damped delta to difficulty as well would double-count the same evidence. */
+ * damped delta to difficulty as well would double-count the same evidence.
+ *
+ * `coupling` overrides the two module constants, and exists for exactly one
+ * caller: replaying the review log (see rebuildMemory in recallSync.ts). Every
+ * review row stamps the constants that were in force when it was written, which
+ * is what lets a replay reproduce history even after they are refitted - the
+ * whole reason they are stamped. Live callers omit it and get today's values. */
 export function coupleSibling(
   sibling: MemoryState,
   stabilityBefore: number,
   stabilityAfter: number,
   grade: Grade,
+  coupling_?: { onSuccess: number; onLapse: number },
 ): MemoryState {
-  const coupling = grade === AGAIN ? COUPLING_ON_LAPSE : COUPLING_ON_SUCCESS;
+  const onLapse = coupling_?.onLapse ?? COUPLING_ON_LAPSE;
+  const onSuccess = coupling_?.onSuccess ?? COUPLING_ON_SUCCESS;
+  const coupling = grade === AGAIN ? onLapse : onSuccess;
   const delta = (stabilityAfter - stabilityBefore) * coupling;
   return {
     stability: clamp(sibling.stability + delta, MIN_STABILITY, MAX_STABILITY),

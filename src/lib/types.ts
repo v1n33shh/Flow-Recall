@@ -63,6 +63,23 @@ export type Deck = {
    * falling back to the free model regardless of the user's actual plan.
    * Optional/undefined for decks saved before this field existed. */
   model?: string;
+  /** Last local change, for sync's last-write-wins. Optional because every deck
+   * saved before sync existed has none - such a deck falls back to createdAt,
+   * which is the honest reading: nothing has touched it since. */
+  updatedAt?: number;
+  /** Who this deck belongs to. Decks live in localStorage, which is per DEVICE
+   * rather than per account, so on a shared phone one account's library is
+   * already visible to the next - that is today's behaviour and this does not
+   * change it. What it prevents is that mistake becoming permanent: sync only
+   * pushes decks this account owns, so B never adopts A's decks server-side.
+   * Optional because decks saved before sync existed have no owner recorded, and
+   * those are treated as the current user's, exactly as they are today. */
+  userId?: string;
+  /** When this deck was deleted. A deleted deck is kept as a TOMBSTONE rather
+   * than removed, because a row that simply vanishes cannot propagate: the next
+   * pull from another device would hand it straight back. `getSavedDecks` filters
+   * these out, so nothing above storage.ts ever sees one. */
+  deletedAt?: number;
 };
 
 export type BookType = "epub" | "pdf" | "text";

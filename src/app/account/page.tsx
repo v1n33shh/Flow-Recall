@@ -55,6 +55,54 @@ export default function AccountPage() {
 // the app itself rather than only as a support request.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Data export. The counterweight to a subscription, and the honest way to see
+// what sync has actually stored: /api/export reads Postgres, not the device.
+// ---------------------------------------------------------------------------
+
+type ExportState = { busy: boolean; error: string | null };
+
+/** Downloads the account's whole learning record as one JSON file.
+ *
+ * Fetched and turned into a blob rather than linked with a plain
+ * `<a href download>`, because on the APK /api/export is CROSS-ORIGIN (see
+ * apiUrl) and an anchor would send no session cookie, so the download would be
+ * a 401 saved to the student's phone. A fetch with API_FETCH_CREDENTIALS is the
+ * only form that carries the session on both targets.
+ *
+ * Whether the Android WebView honours a blob download at all still needs a
+ * device check - it is the one part of this that a typecheck cannot answer. It
+ * surfaces the failure inline rather than doing nothing, so a WebView that
+ * refuses says so instead of looking like a dead button. */
+function useDataExport() {
+  const [state, setState] = useState<ExportState>({ busy: false, error: null });
+
+  async function run() {
+    setState({ busy: true, error: null });
+    try {
+      const response = await fetch(apiUrl("/api/export"), { credentials: API_FETCH_CREDENTIALS });
+      if (!response.ok) throw new Error(`export failed: ${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `flowrecall-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Revoked on a timer rather than immediately: some WebViews start the
+      // download asynchronously and read the blob after click() returns.
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setState({ busy: false, error: null });
+    } catch (error) {
+      console.error("export failed", error);
+      setState({ busy: false, error: "Could not prepare your export. Please try again." });
+    }
+  }
+
+  return { ...state, run };
+}
+
 type DeleteState = { busy: boolean; error: string | null };
 
 /** Order matters here and is the whole point of the hook.
@@ -185,6 +233,7 @@ function WebAccountCard() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const dataExport = useDataExport();
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/");
@@ -227,6 +276,19 @@ function WebAccountCard() {
 
       <button
         type="button"
+        onClick={() => {
+          if (!dataExport.busy) void dataExport.run();
+        }}
+        className="mt-6 self-center text-xs font-medium text-zinc-400 underline underline-offset-2 transition-colors hover:text-zinc-200"
+      >
+        {dataExport.busy ? "Preparing your export…" : "Download my data"}
+      </button>
+      {dataExport.error && (
+        <p className="mt-2 text-center text-xs text-red-400">{dataExport.error}</p>
+      )}
+
+      <button
+        type="button"
         onClick={() => setConfirmingDelete(true)}
         className="mt-6 self-center text-xs font-medium text-red-400 underline underline-offset-2 transition-colors hover:text-red-300"
       >
@@ -263,6 +325,21 @@ function CreditCardIcon() {
     <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-accent" aria-hidden="true">
       <rect x="3" y="6" width="18" height="12" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
       <path d="M3 10h18" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px] text-accent" aria-hidden="true">
+      <path
+        d="M12 4v10m0 0 4-4m-4 4-4-4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M5 17.5h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }
@@ -608,6 +685,7 @@ function NativeAccountScreen() {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [graceElapsed, setGraceElapsed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const dataExport = useDataExport();
 
   useEffect(() => {
     let mounted = true;
@@ -690,7 +768,16 @@ function NativeAccountScreen() {
           </p>
           <SettingsGroup>
             <SettingsRow icon={<CreditCardIcon />} label="Manage Subscription" href="/pricing" />
+            <SettingsRow
+              icon={<DownloadIcon />}
+              label={dataExport.busy ? "Preparing your export…" : "Download My Data"}
+              onClick={() => {
+                vibrateTap();
+                if (!dataExport.busy) void dataExport.run();
+              }}
+            />
           </SettingsGroup>
+          {dataExport.error && <p className="mt-2 px-1 text-xs text-red-400">{dataExport.error}</p>}
         </Reveal>
 
         <Reveal index={3}>

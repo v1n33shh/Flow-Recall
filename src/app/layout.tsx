@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
 import MobileAuthBridge from "@/components/MobileAuthBridge";
+import SyncEngine from "@/components/SyncEngine";
 import NativeAppClass from "@/components/NativeAppClass";
 import PageTransition from "@/components/PageTransition";
 import AppLoader from "@/components/AppLoader";
@@ -157,6 +158,7 @@ export default function RootLayout({
         >
           <NativeAppClass />
           <MobileAuthBridge />
+          <SyncEngine />
           <Navbar />
           <PageTransition>{children}</PageTransition>
           <MobileTabBar />

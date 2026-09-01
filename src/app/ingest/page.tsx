@@ -183,7 +183,13 @@ export default function IngestPage() {
       setConcepts(accumulated);
       // Auto-persist immediately so a refresh (even before the user clicks
       // "Start studying") never loses a freshly generated deck.
-      const deck = saveDeck(titleRef.current, accumulated, pendingChunks, selectedModel);
+      const deck = saveDeck(
+        titleRef.current,
+        accumulated,
+        pendingChunks,
+        selectedModel,
+        session?.user?.id,
+      );
       setSavedDeckId(deck.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -206,6 +212,7 @@ export default function IngestPage() {
           accumulated,
           [...chunks.slice(failedAtIndex), ...pendingChunks],
           selectedModel,
+          session?.user?.id,
         );
         setSavedDeckId(deck.id);
         setConcepts(accumulated);

@@ -72,6 +72,114 @@ model User {
   // calendar. currentStreak above stays the fast path for the navbar badge;
   // this is the detailed history the Streak modal renders.
   studyDays StudyDay[]
+
+  // The learning record, synced from the device (see src/lib/recallSync.ts and
+  // /api/sync). Cascade like studyDays: account deletion must take all of it.
+  decks    Deck[]
+  units    KnowledgeUnit[]
+  reviews  ReviewRecord[]
+  asks     AskRecord[]
+}
+
+// ── The synced learning record ───────────────────────────────────────────────
+//
+// Row-for-row mirrors of the client types (src/lib/types.ts, src/lib/recallModel.ts)
+// so the sync route has no translation layer to get wrong. Ids are supplied by the
+// device, never generated here: the client is where a deck or a review comes into
+// existence, and an id minted server-side would duplicate on the next push.
+//
+// Timestamps are DateTime here and epoch-ms numbers on the device; /api/sync
+// converts at the boundary and nowhere else.
+//
+// There is deliberately NO memory table. MemoryRecord is a cache over the review
+// log (its own docblock says so), so it is recomputed by rebuildMemory rather than
+// synced - which removes the only state two devices could disagree about.
+
+model Deck {
+  id     String @id
+  userId String
+  title  String
+  /** Concept[] verbatim. A blob rather than a Concept table because the client
+   * reads and writes a deck whole; the symmetry is what keeps the merge simple. */
+  concepts Json
+  /** Unprocessed source text for "Generate Next Section". */
+  pendingChunks Json?
+  model         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+  /** Tombstone. A deleted deck is kept, not removed: a row that vanishes cannot
+   * propagate, so the next pull from another device would hand it straight back. */
+  deletedAt DateTime?
+  /** ConceptEdge[] - how this deck's ideas relate (prerequisite / explains /
+   * contrast). Added with the table rather than in a later migration purely
+   * because this one had not been applied yet; nothing writes it until the
+   * concept map ships, and null means "never mapped", not "no relationships". */
+  conceptMap Json?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // id alone is already the primary key. This compound exists so /api/sync can
+  // upsert by (id, userId): a payload naming a deck id owned by someone else then
+  // fails the create on the primary key instead of silently overwriting their row.
+  @@unique([id, userId])
+  @@index([userId, updatedAt])
+}
+
+model KnowledgeUnit {
+  id         String   @id
+  userId     String
+  /** `sourceDeckId` on the device - same name, so the mirror stays literal. */
+  sourceDeckId String
+  label      String
+  importance Float
+  concept    Json
+  createdAt  DateTime
+  updatedAt  DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([id, userId])
+  @@index([userId, updatedAt])
+}
+
+/** One retrieval, as it happened. Append-only on the device and append-only here:
+ * never updated, never deleted. This is the asset the whole memory model can be
+ * rebuilt from, which is what makes the merge a union with no conflict to settle. */
+model ReviewRecord {
+  id                String   @id
+  userId            String
+  unitId            String
+  path              String
+  reviewedAt        DateTime
+  grade             Int
+  correct           Boolean
+  latencyMs         Int
+  credited          Boolean
+  elapsedDays       Float
+  stabilityBefore   Float?
+  stabilityAfter    Float
+  /** Absent means NOT ASKED, never "guessed" - see Confidence in recallModel.ts. */
+  confidence        String?
+  couplingOnSuccess Float
+  couplingOnLapse   Float
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, reviewedAt])
+}
+
+model AskRecord {
+  id             String   @id
+  userId         String
+  unitId         String
+  question       String
+  answer         String
+  beyondMaterial Boolean
+  askedAt        DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, askedAt])
 }
 
 // A single day on which a user studied. Upserted (one row per user per day) by

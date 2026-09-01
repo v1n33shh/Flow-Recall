@@ -1,0 +1,159 @@
+import { normalizeForCompare } from "./clozeMatch";
+import type { Concept, ConceptEdge, ConceptRelation } from "./types";
+
+// Turning a deck into a subject.
+//
+// A deck is a flat pile of isolated facts, and answering all of them still leaves
+// a student unable to say how any two connect. These are the pure functions over
+// the edges that fix that: no fetch, no IndexedDB, no window - so every rule below
+// is a test rather than an argument, the same split sessionBuilder.ts and
+// recallSync.ts already use. The IO is /api/concept-map and RevisionSheet.
+//
+// The model emits LABELS, because labels are all it is shown. Everything stored
+// and rendered downstream is by concept ID. validateEdges is the one place that
+// crossing happens, and it is deliberately strict: a relationship pointing at a
+// concept that is not in the deck is worse than no relationship at all, because a
+// student cannot tell an invented link from a real one.
+
+const RELATIONS: readonly ConceptRelation[] = ["prerequisite", "explains", "contrast"];
+
+/** How many entries one relation row shows for one concept.
+ *
+ * Not a storage limit - everything the model got right is kept, and a later graph
+ * view will want all of it. This is a reading limit: past four chips the row wraps
+ * to a third line on a 360dp screen and the concept's own text stops being the
+ * thing the eye lands on. */
+export const MAX_PER_ROW = 4;
+
+/** Resolves the model's label pairs into edges by concept id, dropping everything
+ * it cannot vouch for.
+ *
+ * Five ways an edge dies, all of them silent by design - a mapping pass that
+ * refuses to save because the model named one concept badly would leave the
+ * student with nothing:
+ *
+ * 1. **Either end is not in this deck.** The most common failure: asked how a
+ *    deck's ideas relate, a model will happily reach for a neighbouring idea the
+ *    deck never covered. Matched through `normalizeForCompare` so casing, a
+ *    leading article and a plural "s" do not count as a different concept.
+ * 2. **The label is ambiguous.** Two cards in one deck can carry the same label;
+ *    an edge naming it would point at both, so it points at neither.
+ * 3. **It is a self-edge.** Harmless to store and meaningless to show.
+ * 4. **The relation is not one of the three.** Models invent `related_to`.
+ * 5. **It duplicates an edge already kept.** `contrast` is symmetric, so A-B and
+ *    B-A are the same edge and collapse to one; direction is preserved for the
+ *    other two, where reversing it changes the claim. */
+export function validateEdges(
+  raw: readonly { from: string; to: string; relation: string }[],
+  concepts: readonly Concept[],
+): ConceptEdge[] {
+  const byLabel = new Map<string, string | null>();
+  for (const concept of concepts) {
+    const key = normalizeForCompare(concept.concept);
+    if (!key) continue;
+    // Second sighting poisons the entry rather than overwriting it: null means
+    // "this label names more than one card", which is not resolvable.
+    byLabel.set(key, byLabel.has(key) ? null : concept.id);
+  }
+
+  const kept: ConceptEdge[] = [];
+  const seen = new Set<string>();
+
+  for (const edge of raw) {
+    const relation = RELATIONS.find((r) => r === edge.relation);
+    if (!relation) continue;
+
+    const from = byLabel.get(normalizeForCompare(edge.from ?? ""));
+    const to = byLabel.get(normalizeForCompare(edge.to ?? ""));
+    if (!from || !to || from === to) continue;
+
+    const key =
+      relation === "contrast"
+        ? `contrast:${[from, to].sort().join("|")}`
+        : `${relation}:${from}|${to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    kept.push({ from, to, relation });
+  }
+
+  return kept;
+}
+
+/** The three rows one concept shows, in the direction a student reads them.
+ *
+ * `prerequisites` are the edges pointing AT this concept - the things to build on
+ * first - while `explains` are the ones pointing away from it. That asymmetry is
+ * the whole value of storing a direction: the same edge reads as "build on first"
+ * from one end and "this explains" from the other, and getting it backwards would
+ * teach the deck in reverse. `contrasts` is symmetric and takes either end. */
+export function groupForConcept(
+  conceptId: string,
+  edges: readonly ConceptEdge[],
+): { prerequisites: string[]; explains: string[]; contrasts: string[] } {
+  const row = (ids: string[]) => [...new Set(ids)].slice(0, MAX_PER_ROW);
+
+  return {
+    prerequisites: row(
+      edges.filter((e) => e.relation === "prerequisite" && e.to === conceptId).map((e) => e.from),
+    ),
+    explains: row(
+      edges.filter((e) => e.relation === "explains" && e.from === conceptId).map((e) => e.to),
+    ),
+    contrasts: row(
+      edges
+        .filter((e) => e.relation === "contrast" && (e.from === conceptId || e.to === conceptId))
+        .map((e) => (e.from === conceptId ? e.to : e.from)),
+    ),
+  };
+}
+
+/** The order to learn a deck in: every concept, with prerequisites before the
+ * things that need them.
+ *
+ * Kahn's algorithm over `prerequisite` edges only - `explains` and `contrast` say
+ * nothing about sequence, and treating them as order would put a consequence
+ * before its mechanism half the time.
+ *
+ * Two properties matter more than the algorithm:
+ *
+ * - **Stable.** Among everything currently unblocked it always takes the earliest
+ *   in deck order, so the same deck and edges produce the same path on every
+ *   render. A path that reshuffles between visits is not a path.
+ * - **Total.** A model can assert a cycle (A before B, B before A), and a
+ *   student must not lose concepts to it. When every remaining concept is
+ *   blocked, the earliest remaining one in deck order is emitted anyway, which
+ *   breaks the cycle deterministically and lets the rest drain. Every concept
+ *   comes out exactly once, cycles or not. */
+export function learningPath(
+  conceptIds: readonly string[],
+  edges: readonly ConceptEdge[],
+): string[] {
+  const order = [...new Set(conceptIds)];
+  const present = new Set(order);
+
+  const indegree = new Map(order.map((id) => [id, 0]));
+  const downstream = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.relation !== "prerequisite") continue;
+    if (!present.has(edge.from) || !present.has(edge.to)) continue;
+    indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+    downstream.set(edge.from, [...(downstream.get(edge.from) ?? []), edge.to]);
+  }
+
+  const path: string[] = [];
+  const done = new Set<string>();
+  while (path.length < order.length) {
+    const next =
+      order.find((id) => !done.has(id) && (indegree.get(id) ?? 0) === 0) ??
+      order.find((id) => !done.has(id));
+    if (next === undefined) break;
+
+    path.push(next);
+    done.add(next);
+    for (const to of downstream.get(next) ?? []) {
+      indegree.set(to, Math.max(0, (indegree.get(to) ?? 0) - 1));
+    }
+  }
+
+  return path;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
@@ -11,6 +11,8 @@ import { unitIdFor, type MasteryLevel } from "@/lib/recallModel";
 import { setStudyDeck } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
+import ConceptRelations from "./ConceptRelations";
+import DeckLearningPath, { useConceptMap } from "./DeckLearningPath";
 
 /** Read the deck instead of answering it.
  *
@@ -88,9 +90,20 @@ export default function RevisionSheet({
     };
   }, [userId, deckId]);
 
-  function levelOf(concept: Concept): MasteryLevel | null {
-    return mastery?.byUnit.get(unitIdFor(deckId, concept.id))?.level ?? null;
+  function levelForId(conceptId: string): MasteryLevel | null {
+    return mastery?.byUnit.get(unitIdFor(deckId, conceptId))?.level ?? null;
   }
+
+  function levelOf(concept: Concept): MasteryLevel | null {
+    return levelForId(concept.id);
+  }
+
+  const map = useConceptMap(deckId, concepts);
+  const labelById = useMemo(
+    () => new Map(concepts.map((concept) => [concept.id, concept.concept])),
+    [concepts],
+  );
+  const labelOf = (conceptId: string) => labelById.get(conceptId) ?? null;
 
   const visible = concepts.filter((concept) => {
     if (filter === "all") return true;
@@ -101,6 +114,32 @@ export default function RevisionSheet({
     if (filter === "solid") return level === "solid";
     return level !== "solid";
   });
+
+  /** Scrolls a related concept into view.
+   *
+   * `block: "center"` rather than the default: the sticky glass header owns the top
+   * of the viewport and would sit over a concept aligned to it.
+   *
+   * The filter is the trap here. A chip can point at a concept the current filter is
+   * hiding, and `scrollIntoView` on an element React has not rendered does nothing
+   * at all - a tap that silently accomplishes nothing. So drop the filter first, and
+   * scroll only once the row is actually back on the page. */
+  function jumpTo(conceptId: string) {
+    const scroll = () =>
+      document
+        .getElementById(`concept-${conceptId}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    const target = concepts.find((concept) => concept.id === conceptId);
+    if (target && !visible.includes(target)) {
+      setFilter("all");
+      // Two frames, not one: the first is the render that puts the row back, and the
+      // element only exists to be scrolled to in the frame after it.
+      requestAnimationFrame(() => requestAnimationFrame(scroll));
+      return;
+    }
+    scroll();
+  }
 
   function handleStudy() {
     vibrateTap();
@@ -175,6 +214,14 @@ export default function RevisionSheet({
         </div>
       </div>
 
+      <DeckLearningPath
+        concepts={concepts}
+        map={map}
+        labelOf={labelOf}
+        levelOf={levelForId}
+        onJump={jumpTo}
+      />
+
       {visible.length === 0 ? (
         <p className="mt-10 text-center text-sm text-muted-foreground">
           {filter === "solid"
@@ -194,6 +241,7 @@ export default function RevisionSheet({
             return (
               <motion.li
                 key={concept.id}
+                id={`concept-${concept.id}`}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
@@ -235,6 +283,19 @@ export default function RevisionSheet({
                   <p className="mt-3 border-t border-border pt-3 text-sm leading-relaxed text-foreground">
                     {concept.whyItMatters}
                   </p>
+                )}
+
+                {/* Where this concept sits among the others. Below the material and
+                    above the provenance, because it is only worth asking how an idea
+                    connects once you have read what the idea is. */}
+                {map.edges && (
+                  <ConceptRelations
+                    conceptId={concept.id}
+                    edges={map.edges}
+                    labelOf={labelOf}
+                    levelOf={levelForId}
+                    onJump={jumpTo}
+                  />
                 )}
 
                 {/* The sentence this card came from. Provenance is what stops a

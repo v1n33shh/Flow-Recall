@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Concept, Deck, QueueItem, StudyProgress } from "./types";
+import type { Concept, ConceptEdge, Deck, QueueItem, StudyProgress } from "./types";
 
 const STUDY_DECK_STORAGE_KEY = "flowrecall:studyDeck";
 const STUDY_SESSION_STORAGE_KEY = "flowrecall:studySession";
@@ -235,19 +235,41 @@ export function addConceptsToDeck(deckId: string, newConcepts: Concept[]): void 
   );
 }
 
+/** Records how a deck's concepts relate, replacing any previous map wholesale.
+ *
+ * Replace rather than merge, because a mapping pass looks at the whole deck at once:
+ * its answer supersedes one made when the deck was smaller, and merging would keep
+ * edges from a pass that never had the chance to reconsider them. Stamps `updatedAt`
+ * so sync carries the map to the account's other devices like any other deck edit.
+ * A no-op if the deck has since been deleted. */
+export function saveConceptMap(deckId: string, edges: readonly ConceptEdge[]): void {
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId ? { ...deck, conceptMap: [...edges], updatedAt: Date.now() } : deck,
+    ),
+  );
+}
+
 /** Deletes a deck by TOMBSTONING it, not by dropping the row.
  *
  * A row that simply vanishes cannot propagate: the next pull from another device
  * would find a deck the server still has and hand it straight back, so a student
  * who deleted something on their phone would watch it reappear. The tombstone is
- * what travels. Concepts and leftover source text are stripped, so what remains is
- * a few bytes rather than the whole deck. */
+ * what travels. Concepts, leftover source text and the concept map are all stripped,
+ * so what remains is a few bytes rather than the whole deck. */
 export function deleteDeck(id: string): void {
   const now = Date.now();
   persistDecks(
     getAllDeckRows().map((deck) =>
       deck.id === id
-        ? { ...deck, concepts: [], pendingChunks: undefined, deletedAt: now, updatedAt: now }
+        ? {
+            ...deck,
+            concepts: [],
+            pendingChunks: undefined,
+            conceptMap: undefined,
+            deletedAt: now,
+            updatedAt: now,
+          }
         : deck,
     ),
   );

@@ -46,6 +46,31 @@ export type Concept = {
   sourceQuote?: string;
 };
 
+/** How two of a deck's concepts relate.
+ *
+ * Three kinds, deliberately, and each one earns its row on the revision sheet:
+ * `prerequisite` orders the deck, `explains` joins a mechanism to what follows
+ * from it, and `contrast` names the pair a student actually mixes up. A fourth
+ * would have to justify a fourth row on a 360dp screen.
+ *
+ * Direction matters for the first two and not the third:
+ * - `prerequisite` - `from` has to be understood before `to`.
+ * - `explains` - `from` is the mechanism, `to` is the consequence.
+ * - `contrast` - symmetric; the pair is confusable in either order. */
+export type ConceptRelation = "prerequisite" | "explains" | "contrast";
+
+/** One relationship, by concept id.
+ *
+ * Ids, not the labels the model actually emits. Labels are neither unique nor
+ * stable - a deck can hold two cards with the same one - so an edge stored by
+ * label would point at both. `validateEdges` in conceptGraph.ts resolves labels to
+ * ids and is the only thing that should ever mint one of these. */
+export type ConceptEdge = {
+  from: string;
+  to: string;
+  relation: ConceptRelation;
+};
+
 /** A saved set of concepts, persisted in localStorage so a page refresh
  * doesn't lose a generated deck - see saveDeck/getSavedDecks in storage.ts. */
 export type Deck = {
@@ -80,6 +105,12 @@ export type Deck = {
    * pull from another device would hand it straight back. `getSavedDecks` filters
    * these out, so nothing above storage.ts ever sees one. */
   deletedAt?: number;
+  /** How this deck's concepts relate, from one pass over the finished deck (see
+   * /api/concept-map). **Absent means never mapped**, which is not the same as
+   * "no relationships" - so the revision sheet offers to map rather than showing
+   * an empty section. Ingest cannot produce these: it sees 1500 characters at a
+   * time and never has two chunks in front of it at once. */
+  conceptMap?: ConceptEdge[];
 };
 
 export type BookType = "epub" | "pdf" | "text";

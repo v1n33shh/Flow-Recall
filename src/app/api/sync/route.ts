@@ -47,6 +47,14 @@ const deckSchema = z.object({
   createdAt: timestamp,
   updatedAt: timestamp.optional(),
   deletedAt: timestamp.optional(),
+  // Shape-checked but not relation-checked: `validateEdges` on the client is what
+  // decides an edge is real, and it needs the deck's own concepts to do it. The
+  // server has no better view, so it stores what it is given rather than pretending
+  // to arbitrate.
+  conceptMap: z
+    .array(z.object({ from: z.string().max(200), to: z.string().max(200), relation: z.string().max(40) }))
+    .max(400)
+    .optional(),
 });
 
 const unitSchema = z.object({
@@ -144,6 +152,7 @@ export async function POST(request: Request) {
             createdAt: new Date(deck.createdAt),
             updatedAt: new Date(deck.updatedAt ?? deck.createdAt),
             deletedAt: deck.deletedAt === undefined ? null : new Date(deck.deletedAt),
+            conceptMap: deck.conceptMap ?? Prisma.DbNull,
           },
           update: {
             title: deck.title,
@@ -157,6 +166,9 @@ export async function POST(request: Request) {
             model: deck.model ?? null,
             updatedAt: new Date(deck.updatedAt ?? deck.createdAt),
             deletedAt: deck.deletedAt === undefined ? null : new Date(deck.deletedAt),
+            // Same DbNull reasoning as pendingChunks above: a deck whose map was
+            // cleared - by a delete's tombstone - has to be able to clear it here.
+            conceptMap: deck.conceptMap ?? Prisma.DbNull,
           },
         }),
       ),
@@ -248,6 +260,7 @@ export async function POST(request: Request) {
       title: deck.title,
       concepts: deck.concepts,
       pendingChunks: deck.pendingChunks ?? undefined,
+      conceptMap: deck.conceptMap ?? undefined,
       model: deck.model ?? undefined,
       createdAt: deck.createdAt.getTime(),
       updatedAt: deck.updatedAt.getTime(),

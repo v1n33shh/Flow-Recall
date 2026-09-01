@@ -4,20 +4,55 @@
 block was the current state on its own date and is now history, kept for the reasoning and the measurements, not
 as instructions. The first block is the only one describing the repo as it stands.
 
-State at **mid-session, 2026-09-01 (flashcard upgrade)**: `main` is at **`46ea904`** and **pushed** -
-`origin/main` matches it, working tree clean. (This commit, which corrects the line you are reading, is
-the one exception and sits one ahead until the next push.) Work against the plan at
-`~/.claude/plans/goofy-moseying-heron.md`. **Move 2 is complete and device-verified**: the session
-builder (`f8056db`), its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the
-cross-deck handoff (`2f08c0b`) - and the three bugs the device pass found (`0a336bd`). Shipped before
-it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
-Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
-234 tests pass, `tsc --noEmit` clean, lint 0 errors / 46 warnings, both `npm run build` and
-`npm run build:apk` succeed.
+## 🎯 The direction — make the flashcard section the reason students stay
 
-**Nothing is outstanding on the flashcard work.** Next new work per the revised sequencing is **A3
-(teach it back)**, then A4 the concept map, then Move 5. The one non-code item is still the **$25 Play
-registration**, below.
+The objective is for FlowRecall to be the **#1 educational app**, by taking the flashcard section to a
+premium, 9.5/10 level that surpasses Anki: not swiping with a nicer skin, but features that make a student
+understand the concept. The five-move plan is `~/.claude/plans/goofy-moseying-heron.md`; the current build's
+plan, sequenced out of it and approved 2026-09-02, is `~/.claude/plans/twinkly-shimmying-hennessy.md` -
+durability, then the concept map, then teach-it-back. Read the state block below for how far through it the
+repo actually is.
+
+**CRITICAL RULE: do not touch the reader.** It is finished and correct as it stands. Call its extraction
+library; never edit it. This upgrade is the flashcard section only.
+
+Before the next tranche of code the plan calls for a **Plan Mode pass**: analyse the flashcard
+implementation as it now stands, name what is still missing against the best app in the market, propose the
+premium-tier architecture for the rest - features that build understanding, not more deck-answering - and
+present it for approval before writing any of it. Code is pushed in one batch at the end of the build.
+
+State at **mid-session, 2026-09-02 (sync landed, push pending)**: phase-3 Postgres sync is **committed**
+as `9d8a88a` - `recallSync.ts` and its 17 tests, `SyncEngine` mounted in the root layout, `/api/sync`,
+`/api/export` and the account screen's export control - and the APK-refresh commit sits on top of it.
+
+**`main` is not pushed.** `origin/main` is still `46ea904`, and this environment cannot push: the remote is
+HTTPS, there is no credential helper and no `gh`. **Run `git push` by hand - nothing reaches Vercel until
+you do**, so `/api/sync` and `/api/export` are still 404 in production and `SyncEngine` still fails closed
+on every launch, exactly as it did before.
+
+**The migration IS applied to production.** `20260902000000_add_recall_sync_tables`, via
+`prisma migrate deploy` on 2026-09-02 against the live Supabase instance - there is no staging database.
+Verified afterwards: all four tables exist and `Deck.conceptMap` is queryable. So the schema is ahead of the
+deployed code, which is the safe direction - the tables are there before anything queries them. The
+`conceptMap` column is unused until the concept map ships; it rode along because after this migration the
+same column would have cost a second one.
+
+On the flashcard plan itself, **Move 2 is complete and device-verified**: the session builder (`f8056db`),
+its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck handoff (`2f08c0b`) -
+and the three bugs the device pass found (`0a336bd`). Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
+Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
+251 tests pass, `tsc --noEmit` clean, lint 0 errors / 47 warnings, both `npm run build` and
+`npm run build:apk` succeed. **One of those warnings is a loose end rather than noise:** `useDataExport` in
+`src/app/account/page.tsx` is defined and never called - the hook is written, cross-origin blob handling and
+all, but no control in the account page invokes it, so `/api/export` has no caller in the UI and shipped
+into the APK as dead code. The other 46 warnings pre-date this work.
+
+**What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) is done bar the push. Then
+**A4 the concept map, woven into the revision sheet** - three relation types (prerequisite / explains /
+contrast), edges from one whole-deck AI pass rather than at ingest (ingest sees 1500 characters at a time
+and could never relate two chunks), rendered as tappable chips plus a learning path, no new route and no new
+dependency. Then **A3 teach-it-back**. Move 3's extra formats and Move 5 are deliberately after both. The
+one non-code item is still the **$25 Play registration**, below.
 
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
@@ -50,8 +85,36 @@ concept solid and inside target, which the fixture cannot be without writing fak
 the one thing this pass would not do. The `resting` count itself is covered in `sessionBuilder.test.ts`.
 
 The phone ends on a **clean shipping build**, md5 `425f9337146952afc2bc9fd8e035ebc9`, no devtools
-socket, adb forwards cleared. Note this is **newer than the committed `public/flowrecall-release.apk`**,
-which still predates Move 2 - refresh that binary when the download should carry this work.
+socket, adb forwards cleared. That build was newer than the committed `public/flowrecall-release.apk`,
+which predated Move 2; **the download has since been refreshed** - next section.
+
+### The download APK, refreshed 2026-09-02
+
+`public/flowrecall-release.apk` is md5 `8dc2e4dfa9984397a35bc6f67b53bb8d`, 6,352,095 bytes, built from
+`9d8a88a` - so it carries **Move 2 and everything before it, plus the sync client and the account screen's
+Download My Data control**. Recipe: `npm run build:apk && (cd android && ./gradlew assembleRelease)` with
+**no** `DEVTOOLS=1`, then copy `android/app/build/outputs/apk/release/app-release.apk` into `/public`.
+(An earlier build this session, `326f53cb…`, was the same thing without the export control; it was never
+installed anywhere and is superseded.)
+
+Checked rather than assumed: `webContentsDebuggingEnabled: false` in the packaged `capacitor.config.json`;
+signer SHA-256 `e1f4352f…bc09`, the same key as every prior build, so it installs in place and the library
+survives; the build script's guard fired (`Excluded flowrecall-release.apk (6.0 MB)`), so this APK does not
+contain its own ancestor; the Move 2 home block is in the bundle - `"Nothing needs you tonight"` and
+`"minutes?"` are both there; and so is the export control (`"Download My Data"`, `"/api/export"`). Note that
+grepping the bundle for the whole phrase *"Got 20 minutes"* finds nothing and proves nothing: the string is
+`Got ${budget} minutes?`, a template.
+
+**Not device-verified.** This binary has never been installed or driven on the phone; that still holds
+`425f9337…`, confirmed by `md5sum` on `base.apk` over adb this session. And until `main` is pushed and Vercel
+deploys, `SyncEngine` fails its sync on every launch and every background. That costs the student nothing -
+the feed and scheduler run entirely off IndexedDB, the push cursor only advances on success, and no local row
+is written or deleted unless a pull actually returns rows - but the sync in this APK does nothing until that
+push lands. The database is already waiting for it.
+
+`versionCode` is still **1**, deliberately: nothing has been uploaded to Play, so 1 is still the right number
+for the first upload. A same-`versionCode` APK installs over the old one as a reinstall, so the download
+works today regardless.
 
 ## ✅ Nothing is half-done. One thing is left, and it is not code.
 
@@ -98,8 +161,18 @@ The only check never performed is a byte compare of the restored copy against
 
 ### The user's phone, as left
 
-On the **clean shipping build**, md5 `dcb36846c3648562ac2fd7838bd7f60f`, byte-identical to the committed
-`public/flowrecall-release.apk`. `webContentsDebuggingEnabled: false`, **zero devtools sockets**, adb forwards
+On the **clean shipping build** left by the 2026-09-01 device pass, md5 `425f9337146952afc2bc9fd8e035ebc9`.
+It is **no longer byte-identical to the committed `public/flowrecall-release.apk`**, which is now the newer
+`8dc2e4df…` refreshed on 2026-09-02 and never installed here.
+The phone itself, read over adb rather than remembered: **OPPO CPH2001, Android 11 (SDK 30)**, 1080x2400 at
+480dpi - so a **360 x 800 dp** viewport, which is the budget every layout decision has to fit - and 7.8 GB
+RAM. Installed `app.flowrecall.android` is `versionCode 1` / `versionName 1.0`, minSdk 24, targetSdk 36,
+first installed 2026-08-23, last updated 2026-09-01 03:42. Not debuggable, `ALLOW_BACKUP` on. It asks for
+**INTERNET and VIBRATE only** - worth keeping that lean for the Play listing. The APK is 6.35 MB: 6.96 MB of
+`classes.dex` and 6.66 MB of `assets/public` before compression.
+
+USB debugging was off at the start of the session and the device dropped off the bus twice mid-inspection, so
+expect to re-authorise it. `webContentsDebuggingEnabled: false`, **zero devtools sockets**, adb forwards
 cleared. So there is **no WebView access until a devtools build is flashed again** -
 `DEVTOOLS=1 npm run build:apk && cd android && ./gradlew assembleRelease`, then `adb install -r`. Same signing
 key either way, so it is always an in-place upgrade and the library survives.

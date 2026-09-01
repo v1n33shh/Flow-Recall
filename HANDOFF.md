@@ -45,12 +45,41 @@ Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sour
 `npm run build:apk` succeed. All 45 warnings pre-date this work; the two the export control cleared
 (`useDataExport` and `Capacitor` both unused) are gone because it now calls them.
 
-**What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) is done bar the push. Then
-**A4 the concept map, woven into the revision sheet** - three relation types (prerequisite / explains /
-contrast), edges from one whole-deck AI pass rather than at ingest (ingest sees 1500 characters at a time
-and could never relate two chunks), rendered as tappable chips plus a learning path, no new route and no new
-dependency. Then **A3 teach-it-back**. Move 3's extra formats and Move 5 are deliberately after both. The
+**What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) is **done and device-verified**.
+Phase 2, **A4 the concept map**, is **committed as `ded772c` and not yet device-verified** - it needs
+`/api/concept-map` deployed before the phone can reach it, so push first, then map the real deck on the
+device. Phase 3 is **A3 teach-it-back**, not started. Move 3's extra formats and Move 5 come after both. The
 one non-code item is still the **$25 Play registration**, below.
+
+### The concept map, as built (`ded772c`)
+
+Three relation types and no more, each earning one row on the revision sheet: **prerequisite** (*Build on
+first*), **explains** (*This explains*), **contrast** (*Don't confuse*). Direction matters for the first two
+and not the third, and the same edge deliberately reads differently from each end - "build on first" looking
+one way, "this explains" looking the other. Getting that backwards would teach a deck in reverse, which is
+why the prompt spends most of its length on direction with worked examples, the way the ingest prompt had to.
+
+`src/lib/conceptGraph.ts` is the pure half: `validateEdges` (the model emits LABELS, everything stored is by
+ID, and this is the only place that crossing happens - it drops any edge whose end is not in the deck, names
+a label two cards share, points at itself, invents a relation, or repeats one already kept),
+`groupForConcept`, and `learningPath` - Kahn over prerequisite edges only, **stable** (deck order breaks
+every tie, so the path does not reshuffle between visits) and **total** (a model-asserted cycle is broken at
+the earliest remaining concept rather than losing concepts). 19 tests; the suite is at **270**.
+
+`relation` is a loose string in the zod response schema rather than an enum, deliberately: an enum fails the
+whole response over one invented `related_to`, and a partial map beats no map.
+
+**Checked against the real Groq model**, on a neurotransmission deck chosen specifically because it shares
+nothing with the prompt's own worked examples: 6 edges returned, **all 6 kept**, every direction right - the
+sodium-potassium pump *explains* the resting potential, threshold *precedes* the action potential, and the
+absolute and relative refractory periods came back as the *contrast*, which is the pair students actually
+trip on. It also stayed restrained: 6 edges for 6 concepts, not 30. That check lived in a throwaway
+`__livecheck.test.ts` and was deleted - the committed suite stays offline. Re-run it the same way
+(`import "dotenv/config"`, `buildConceptMapPrompt` and the schema are exported for exactly this) if the
+pinned model ever changes.
+
+`Deck.conceptMap` rides the sync that shipped in Phase 1, whose migration already carried the column, and a
+tombstone now strips the map along with the concepts.
 
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 

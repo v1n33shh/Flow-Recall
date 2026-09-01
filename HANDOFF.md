@@ -21,31 +21,29 @@ implementation as it now stands, name what is still missing against the best app
 premium-tier architecture for the rest - features that build understanding, not more deck-answering - and
 present it for approval before writing any of it. Code is pushed in one batch at the end of the build.
 
-State at **mid-session, 2026-09-02 (sync landed, push pending)**: phase-3 Postgres sync is **committed**
+State at **mid-session, 2026-09-02 (sync live, export fixed on the device)**: phase-3 Postgres sync is **committed**
 as `9d8a88a` - `recallSync.ts` and its 17 tests, `SyncEngine` mounted in the root layout, `/api/sync`,
 `/api/export` and the account screen's export control - and the APK-refresh commit sits on top of it.
 
-**`main` is not pushed.** `origin/main` is still `46ea904`, and this environment cannot push: the remote is
-HTTPS, there is no credential helper and no `gh`. **Run `git push` by hand - nothing reaches Vercel until
-you do**, so `/api/sync` and `/api/export` are still 404 in production and `SyncEngine` still fails closed
-on every launch, exactly as it did before.
+`9d8a88a` and `0f9671c` **are pushed and deployed** - `/api/sync` and `/api/export` both answer 401 to an
+unauthenticated call in production rather than 404, and the phone's own launch sync succeeded against them.
+The export fix on top of them is committed and **not pushed yet**: this environment cannot push (HTTPS
+remote, no credential helper, no `gh`), so **run `git push` by hand**. Nothing in the APK depends on that
+push - the fix is client-side - but the web export path ships with it.
 
 **The migration IS applied to production.** `20260902000000_add_recall_sync_tables`, via
 `prisma migrate deploy` on 2026-09-02 against the live Supabase instance - there is no staging database.
-Verified afterwards: all four tables exist and `Deck.conceptMap` is queryable. So the schema is ahead of the
-deployed code, which is the safe direction - the tables are there before anything queries them. The
-`conceptMap` column is unused until the concept map ships; it rode along because after this migration the
-same column would have cost a second one.
+Verified afterwards: all four tables exist and `Deck.conceptMap` is queryable, and the phone has since
+written real rows into three of them. The `conceptMap` column is unused until the concept map ships; it rode
+along because after this migration the same column would have cost a second one.
 
 On the flashcard plan itself, **Move 2 is complete and device-verified**: the session builder (`f8056db`),
 its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck handoff (`2f08c0b`) -
 and the three bugs the device pass found (`0a336bd`). Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
 Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
-251 tests pass, `tsc --noEmit` clean, lint 0 errors / 47 warnings, both `npm run build` and
-`npm run build:apk` succeed. **One of those warnings is a loose end rather than noise:** `useDataExport` in
-`src/app/account/page.tsx` is defined and never called - the hook is written, cross-origin blob handling and
-all, but no control in the account page invokes it, so `/api/export` has no caller in the UI and shipped
-into the APK as dead code. The other 46 warnings pre-date this work.
+251 tests pass, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
+`npm run build:apk` succeed. All 45 warnings pre-date this work; the two the export control cleared
+(`useDataExport` and `Capacitor` both unused) are gone because it now calls them.
 
 **What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) is done bar the push. Then
 **A4 the concept map, woven into the revision sheet** - three relation types (prerequisite / explains /
@@ -88,14 +86,55 @@ The phone ends on a **clean shipping build**, md5 `425f9337146952afc2bc9fd8e035e
 socket, adb forwards cleared. That build was newer than the committed `public/flowrecall-release.apk`,
 which predated Move 2; **the download has since been refreshed** - next section.
 
+### What the device pass settled, 2026-09-02
+
+Driven on the phone over CDP after installing a devtools build. Three things came out of it that no test
+would have.
+
+**Sync works end to end.** With `/api/sync` deployed, the launch sync fired and succeeded on its own:
+`flowrecall:syncCursor:<userId>` appeared in localStorage (the cursor only advances on success), and
+Postgres then held **1 deck, 3 units, 14 reviews, 4 asks** for that account - matching the device census
+exactly, 3 units and 14 reviews on both sides. The 6 memory records are deliberately absent server-side;
+they are recomputed by `rebuildMemory`. The learning record is now recoverable from the server, which it
+has never been before.
+
+**The export button was a dead button that looked like it worked, and is fixed.** `/api/export` from
+inside the WebView returns **200, application/json, 16,600 bytes** - the route was never the problem. The
+`<a download>` + blob URL delivery is **silently dropped by the Android WebView** (Chrome 150): nothing
+in `/sdcard/Download`, nothing in the app's own dirs, no `DownloadManager` entry in logcat, and a minimal
+blob probe failed identically - so it is the mechanism, not the payload. The label returned to normal with
+no error, because only a failed *fetch* was ever surfaced. On native it now writes the file with
+`@capacitor/filesystem` to `Directory.Cache` and hands it to the share sheet via `@capacitor/share`
+(two new deps, `cap sync` reports 6 plugins). Verified: `ChooserActivity` takes focus with
+`flowrecall-export-2026-09-02.json` attached, and dismissing the sheet reports no false failure. The web
+path is untouched.
+
+**The export filename was a day behind.** `toISOString().slice(0, 10)` is UTC, so exporting at 03:50 IST
+produced a file stamped with the previous day. It builds the stamp from local getters now, and the device
+confirmed `2026-09-02` against `adb shell date`.
+
+**Also confirmed on the real 360x800dp screen:** the Move 2 home block reads *"Got 20 minutes?"* with the
+10m/20m/40m chips, *"3 slipping - 3 nearly gone"* and *"Start 3 cards - ~1 min"*; the Account screen shows
+**Download My Data** under Manage Subscription, a 56px row.
+
+**The library grew and survived.** Census after the upgrade: **4 books** - the two Osho titles plus an ACT
+textbook and *Principles of Neural Science*, both added by the user since the last handoff - and **3
+highlights**, up from 1. Engine store unchanged at 3 units / 14 reviews / 6 memories. Every install this
+session was `adb install -r` on the same key, so all of it was an in-place upgrade.
+
+`npm audit` reports 24 pre-existing vulnerabilities (4 critical, mostly `@auth/core`). **Neither new
+plugin contributed any of them** - checked before and after. Not addressed here; a NextAuth beta bump is
+its own piece of work.
+
 ### The download APK, refreshed 2026-09-02
 
-`public/flowrecall-release.apk` is md5 `8dc2e4dfa9984397a35bc6f67b53bb8d`, 6,352,095 bytes, built from
-`9d8a88a` - so it carries **Move 2 and everything before it, plus the sync client and the account screen's
-Download My Data control**. Recipe: `npm run build:apk && (cd android && ./gradlew assembleRelease)` with
-**no** `DEVTOOLS=1`, then copy `android/app/build/outputs/apk/release/app-release.apk` into `/public`.
-(An earlier build this session, `326f53cb…`, was the same thing without the export control; it was never
-installed anywhere and is superseded.)
+`public/flowrecall-release.apk` is md5 `75d5af6e0ed258bd6048fa53f99ee0f3`, and **this is also what the phone
+is running** - the first time the download and the device have matched since Move 2. It carries Move 2 and
+everything before it, the sync client, and the export control with its native share-sheet delivery. Recipe:
+`npm run build:apk && (cd android && ./gradlew assembleRelease)` with **no** `DEVTOOLS=1`, then copy
+`android/app/build/outputs/apk/release/app-release.apk` into `/public`. Superseded builds from this session,
+none of them worth going back to: `326f53cb…` (no export control), `8dc2e4df…` (export control, broken
+delivery), `8acba78d…` / `939a68db…` / the devtools rebuilds.
 
 Checked rather than assumed: `webContentsDebuggingEnabled: false` in the packaged `capacitor.config.json`;
 signer SHA-256 `e1f4352f…bc09`, the same key as every prior build, so it installs in place and the library
@@ -105,12 +144,8 @@ contain its own ancestor; the Move 2 home block is in the bundle - `"Nothing nee
 grepping the bundle for the whole phrase *"Got 20 minutes"* finds nothing and proves nothing: the string is
 `Got ${budget} minutes?`, a template.
 
-**Not device-verified.** This binary has never been installed or driven on the phone; that still holds
-`425f9337…`, confirmed by `md5sum` on `base.apk` over adb this session. And until `main` is pushed and Vercel
-deploys, `SyncEngine` fails its sync on every launch and every background. That costs the student nothing -
-the feed and scheduler run entirely off IndexedDB, the push cursor only advances on success, and no local row
-is written or deleted unless a pull actually returns rows - but the sync in this APK does nothing until that
-push lands. The database is already waiting for it.
+**Device-verified**, unlike every APK before it this session - see the device pass above. Installed with
+`adb install -r`, cert `e1f4352f…bc09` on both sides, so the library came through untouched.
 
 `versionCode` is still **1**, deliberately: nothing has been uploaded to Play, so 1 is still the right number
 for the first upload. A same-`versionCode` APK installs over the old one as a reinstall, so the download
@@ -161,9 +196,9 @@ The only check never performed is a byte compare of the restored copy against
 
 ### The user's phone, as left
 
-On the **clean shipping build** left by the 2026-09-01 device pass, md5 `425f9337146952afc2bc9fd8e035ebc9`.
-It is **no longer byte-identical to the committed `public/flowrecall-release.apk`**, which is now the newer
-`8dc2e4df…` refreshed on 2026-09-02 and never installed here.
+On the **clean shipping build** left by the 2026-09-02 pass, md5 `75d5af6e0ed258bd6048fa53f99ee0f3`, which
+is **byte-identical to the committed `public/flowrecall-release.apk`**. (It held `425f9337…` at the start of
+that session, verified over adb; that build predated the sync client.)
 The phone itself, read over adb rather than remembered: **OPPO CPH2001, Android 11 (SDK 30)**, 1080x2400 at
 480dpi - so a **360 x 800 dp** viewport, which is the budget every layout decision has to fit - and 7.8 GB
 RAM. Installed `app.flowrecall.android` is `versionCode 1` / `versionName 1.0`, minSdk 24, targetSdk 36,

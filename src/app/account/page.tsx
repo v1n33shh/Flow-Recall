@@ -7,6 +7,8 @@ import { getSession, signOut, useSession } from "next-auth/react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Capacitor } from "@capacitor/core";
 import { Browser } from "@capacitor/browser";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import SignOutButton from "@/components/SignOutButton";
 import GoogleIcon from "@/components/GoogleIcon";
 import LogoMark from "@/components/LogoMark";
@@ -62,39 +64,81 @@ export default function AccountPage() {
 
 type ExportState = { busy: boolean; error: string | null };
 
-/** Downloads the account's whole learning record as one JSON file.
+/** Hands the account's whole learning record over as one JSON file.
  *
- * Fetched and turned into a blob rather than linked with a plain
- * `<a href download>`, because on the APK /api/export is CROSS-ORIGIN (see
- * apiUrl) and an anchor would send no session cookie, so the download would be
- * a 401 saved to the student's phone. A fetch with API_FETCH_CREDENTIALS is the
- * only form that carries the session on both targets.
+ * Fetched rather than linked with a plain `<a href download>`, because on the APK
+ * /api/export is CROSS-ORIGIN (see apiUrl) and an anchor would send no session
+ * cookie, so the download would be a 401 saved to the student's phone. A fetch
+ * with API_FETCH_CREDENTIALS is the only form that carries the session on both
+ * targets.
  *
- * Whether the Android WebView honours a blob download at all still needs a
- * device check - it is the one part of this that a typecheck cannot answer. It
- * surfaces the failure inline rather than doing nothing, so a WebView that
- * refuses says so instead of looking like a dead button. */
+ * **Two delivery paths, because the device settled what a typecheck could not.**
+ * The anchor-plus-blob dance works in a browser and is silently dropped by the
+ * Android WebView: driven on a real phone (OPPO CPH2001, Android 11, WebView
+ * Chrome 150) the fetch returned 200 and 16.6 KB, the anchor click dispatched,
+ * and nothing was written anywhere on the device - not /sdcard/Download, not the
+ * app's own dirs, with no DownloadManager entry in logcat. A minimal blob probe
+ * failed the same way, so it is the mechanism and not the payload. That failure
+ * mode is the worst kind: the button looked like it worked.
+ *
+ * So on native the file is written with Filesystem and handed to the system
+ * share sheet, which is the right destination on a phone anyway - Drive, Files,
+ * or the student's own chat - and which reports its own failure. `Directory.Cache`
+ * rather than `Documents`: on Android 10+ the public Documents folder needs
+ * legacy external storage, and the share sheet takes a FileProvider URI from the
+ * app's own dirs happily. The web path is untouched. */
 function useDataExport() {
   const [state, setState] = useState<ExportState>({ busy: false, error: null });
 
   async function run() {
     setState({ busy: true, error: null });
+    // Local date, not `toISOString().slice(0, 10)`. The device pass exported at
+    // 03:50 IST and got a file stamped with the PREVIOUS day, because ISO is UTC.
+    // The filename is for the student, so it should say the day they are having.
+    const now = new Date();
+    const stamp = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+    const name = `flowrecall-export-${stamp}.json`;
     try {
       const response = await fetch(apiUrl("/api/export"), { credentials: API_FETCH_CREDENTIALS });
       if (!response.ok) throw new Error(`export failed: ${response.status}`);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `flowrecall-export-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      // Revoked on a timer rather than immediately: some WebViews start the
-      // download asynchronously and read the blob after click() returns.
-      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+
+      if (Capacitor.isNativePlatform()) {
+        // Read as text, not a Blob: writeFile only accepts Blob data on web.
+        const { uri } = await Filesystem.writeFile({
+          path: name,
+          data: await response.text(),
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+        await Share.share({
+          title: "Your FlowRecall data",
+          files: [uri],
+          dialogTitle: "Save or send your export",
+        });
+      } else {
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        // Revoked on a timer rather than immediately: some browsers start the
+        // download asynchronously and read the blob after click() returns.
+        window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      }
       setState({ busy: false, error: null });
     } catch (error) {
+      // Dismissing the share sheet rejects. That is not a failure and must not
+      // be reported as one - the file is written either way.
+      if (error instanceof Error && /cancel|dismiss/i.test(error.message)) {
+        setState({ busy: false, error: null });
+        return;
+      }
       console.error("export failed", error);
       setState({ busy: false, error: "Could not prepare your export. Please try again." });
     }

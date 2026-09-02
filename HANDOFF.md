@@ -41,14 +41,17 @@ On the flashcard plan itself, **Move 2 is complete and device-verified**: the se
 its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck handoff (`2f08c0b`) -
 and the three bugs the device pass found (`0a336bd`). Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
 Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
-**286 tests pass**, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
+**287 tests pass**, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
 `npm run build:apk` succeed. All 45 warnings pre-date this work; the two the export control cleared
 (`useDataExport` and `Capacitor` both unused) are gone because it now calls them.
 
 **What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) and Phase 2 (**A4 the concept
 map**) are both **done and device-verified** - `ded772c` plus the label fix in the commit below it. Phase 3,
-**A3 teach-it-back**, is **committed as `be6e9c7`**, device-verified as far as it can be before deploying, and
-waiting on a migration and a push - see its own section below. After it: Move 3's extra formats and Move 5. Move 3's extra formats and Move 5 come after both. The
+**A3 teach-it-back**, is **committed and device-verified end to end** - an attempt written on the phone is in
+Postgres. All three phases of `twinkly-shimmying-hennessy.md` are now closed. Next up: **Move 5** is the
+strongest candidate - `retrievability` (`src/lib/fsrs.ts:83`) and `useRecallMemories`
+(`src/lib/recallStorage.ts`) are both written with zero consumers, which is what the home memory block and the
+exam-day projection need. Move 3's extra feed formats come after. Move 3's extra formats and Move 5 come after both. The
 one non-code item is still the **$25 Play registration**, below.
 
 ### The concept map, as built (`ded772c`)
@@ -125,7 +128,9 @@ and hit-testable with `maxLength` 1200, and submitting against the not-yet-deplo
 returns 404 and shows *"Couldn't read your explanation. Please try again."* **while keeping
 the draft** - a student never loses what they wrote to a failed call.
 
-**Two things gate the rest, in this order and no other:**
+**Both gates are cleared.** The migration was applied on 2026-09-02 (`migrate status` reports 6 of 6, and
+the row counts were identical either side of it: 1 deck, 3 units, 14 reviews, 4 asks), and the push followed.
+The order below is kept because it is the order any future collection has to follow:
 
 1. **Apply `20260902120000_add_teach_back_records`.** Purely additive - one CREATE TABLE,
    one index, one FK, on a table that does not exist yet; verified byte-identical to what
@@ -137,10 +142,53 @@ the draft** - a student never loses what they wrote to a failed call.
    route silently drops the unknown `teachBacks` key (zod strips it), and the client reads
    an absent collection as "nothing new".
 
-Until both are done the phone is deliberately back on the **last shipping build**
-(`59aaf678b1e3c71629e019c8f6f66150`), not a devtools one, and `public/flowrecall-release.apk`
-is deliberately NOT refreshed - a download whose "Explain it back" button 404s would be
-worse than one without the feature.
+Between the commit and the deploy the phone was deliberately kept on the previous shipping
+build and the download deliberately NOT refreshed - a download whose "Explain it back"
+button 404s is worse than one without the feature. Both are current again now.
+
+### What the teach-back device pass settled, 2026-09-02
+
+Driven over CDP on the phone against the real *Frank-Starling Mechanism* card, with an
+attempt written to carry four things at once: one point the material states, one omission,
+one claim that CONTRADICTS the stated mechanism ("the stretch makes the cell release more
+calcium"), and one claim that is TRUE but absent from the card (the two ventricles matching
+outputs). Round trip 5.3s.
+
+Three of the four landed first time. `correct` credited the stretch, the stronger
+contraction and pumping out the extra volume; `missing` named the actin-myosin overlap, the
+cross-bridge count and the filament alignment - the card's actual answer; and the
+beyond-material claim was correctly **left alone**, which is the discrimination that
+decides whether this feature is fair.
+
+**The fourth found a defect.** The `wrong` entry came back as *"You correctly said the
+mechanism is stretch itself rather than calcium release"* - the right finding, worded as
+praise, rendered under a heading that tells the student **Your material says otherwise**.
+It also inverts what they wrote: they said calcium, not stretch. Cause, which is the useful
+part: the prompt's JSON example showed `"wrong":[]`, an EMPTY array, so the only entry
+template the model had to copy was the `correct` list's *"You correctly said ..."*. The
+list that most needed a worked example was the one given none.
+
+Fixed by giving `wrong` a real example entry and requiring the shape *"You said X; the
+material says Y"*, with an explicit ban on praise wording in that list. Re-checked against
+the real model **5 runs out of 5**: every run worded it as a correction, caught the calcium
+claim, left the beyond-material claim alone, and named the overlap in `missing`. A test
+pins the example so `"wrong":[]` cannot come back.
+
+The rest of the pass, all at 360dp:
+
+- **All three rows render** with their labels and 3 / 3 / 1 entries, nothing overflowing.
+- **The collapsed pill counts the history** - *"Your explanations (1)"* at 168px on the card
+  that has one, *"Explain it back"* on the two that do not.
+- **The attempt reached Postgres.** A foreground sync, then a full pull through the app's own
+  session: `teachBacks: 1`, same 375-character attempt, same 3 / 3 / 1 lists, same timestamp.
+- **The review log is untouched** - census before and after: units 3, memory 6, reviews 14.
+
+The prompt fix is **server-side only**, so it needs the push and not a new APK.
+
+The phone ends on a **shipping build with devtools off**:
+`96170aa23e894a128823f685e8172672`, byte-identical to the refreshed
+`public/flowrecall-release.apk`, cert `e1f4352f...bc09`, zero devtools sockets and zero
+`adb` forwards left behind.
 
 ### What the concept-map device pass settled, 2026-09-02
 
@@ -207,9 +255,11 @@ zero `adb` forwards left behind.
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-HEAD     Let a student explain it back, and be told what they missed
+HEAD     Stop the wrong list from congratulating a student on being wrong
+b991715  Record what teach-it-back is, and the order the rest has to happen in   <- origin/main
+be6e9c7  Let a student explain it back, and be told what they missed
 878b9ac  Keep the edge the model got right, and say why nothing looser
-266df2e  Record what the concept map is, and what it has not proved yet   <- origin/main
+266df2e  Record what the concept map is, and what it has not proved yet
 ded772c  Turn a deck into a subject, not a pile of facts
 b8fb2b6  Deliver the export the way a phone can actually receive it
 0f9671c  Refresh the download so it carries the sync client

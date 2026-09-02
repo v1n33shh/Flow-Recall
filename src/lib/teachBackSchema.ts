@@ -95,6 +95,11 @@ export function buildTeachBackPrompt(input: TeachBackRequest): string {
     '   - Vaguer or less complete than the material is NOT wrong - that is "missing".',
     "   - A claim the material simply does not mention is NOT wrong. You cannot mark a",
     "     student wrong for knowing something their own card did not happen to cover.",
+    "   Each entry names what THEY claimed and then what the material says instead:",
+    '   "You said the stretch releases more calcium; the material says the mechanism is',
+    '   filament overlap." NEVER word an entry in this list as praise - it appears to the',
+    '   student under a heading telling them their material says otherwise, and "you',
+    '   correctly said" there reads as a contradiction of itself.',
     "",
     "RULES:",
     "- One short sentence per entry. Six entries maximum per list, and fewer is better.",
@@ -104,7 +109,8 @@ export function buildTeachBackPrompt(input: TeachBackRequest): string {
     '  the material\'s key points in "missing", and empty "wrong". Do not scold.',
     "",
     "Respond with ONLY raw JSON - no markdown, no code blocks:",
-    '{"correct":["You correctly said ..."],"missing":["The material also says ..."],"wrong":[]}',
+    '{"correct":["You correctly said ..."],"missing":["The material also says ..."],' +
+      '"wrong":["You said ...; the material says ..."]}',
   ]
     .filter(Boolean)
     .join("\n");

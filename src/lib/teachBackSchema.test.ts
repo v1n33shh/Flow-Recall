@@ -96,6 +96,18 @@ describe("buildTeachBackPrompt", () => {
     expect(prompt).toContain("it is NOT missing");
   });
 
+  // The device pass got back a `wrong` entry reading "You correctly said the mechanism
+  // is stretch rather than calcium release" - the right finding, worded as praise, under
+  // a heading telling the student their material says otherwise. Cause: the JSON example
+  // showed an EMPTY wrong array, so the only entry template the model had to copy was
+  // the correct list's.
+  it("shows the wrong list a worked entry, not an empty array to guess from", () => {
+    const prompt = buildTeachBackPrompt(teachBackRequestSchema.parse(request));
+    expect(prompt).not.toContain('"wrong":[]}');
+    expect(prompt).toContain('"wrong":["You said ...; the material says ..."]');
+    expect(prompt).toContain("NEVER word an entry in this list as praise");
+  });
+
   it("asks for no score, since the lists are the feedback", () => {
     expect(buildTeachBackPrompt(teachBackRequestSchema.parse(request))).toContain(
       "No score, no grade",

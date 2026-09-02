@@ -43,8 +43,9 @@ tranche's own plan asked for by name and never got.
 | Server state | same, and it holds the concept map and both teach-backs |
 
 Every row above was re-run on 2026-09-02 after the tranche landed **except the last two**, which
-are the previous session's census carried forward — `adb` is not on PATH in this environment, so
-nothing about the phone was re-measured. No source file is newer than the APK or the AAB sitting on
+are the previous session's census carried forward: **no device was attached this session**, so
+nothing about the phone was re-measured. (`adb` works but is not on PATH — it is at
+`~/Android/Sdk/platform-tools/adb`.) No source file is newer than the APK or the AAB sitting on
 disk, so both of them do carry the committed code.
 
 **The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
@@ -74,7 +75,8 @@ people have accepted the invite, so:
    swallowing `<a download>` blob URLs — the API said 200 and the file never existed. Also worth
    an eye while there: *Fix this card* is a new control on the revision sheet at 360dp, and
    `ConceptEditor` writes to five `textarea`s (see the CDP note about React inputs before
-   automating it).
+   automating it). Nothing is blocking this but the cable — `adb` is installed, at
+   `~/Android/Sdk/platform-tools/adb`, and no device was attached.
 2. **Upload the AAB.** It builds and is signed with the upload key:
    `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
    before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's

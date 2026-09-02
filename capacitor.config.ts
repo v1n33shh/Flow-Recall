@@ -8,8 +8,33 @@ const config: CapacitorConfig = {
   // origin share a scheme - avoids mixed-content quirks in the WebView.
   server: {
     androidScheme: 'https',
+    // Where Capacitor sends the WebView when minWebViewVersion below is not met.
+    // WITHOUT THIS, minWebViewVersion does almost nothing: Bridge.java only
+    // redirects when getErrorUrl() is non-null, and otherwise logs
+    // MINIMUM_ANDROID_WEBVIEW_ERROR and carries straight on into the app - which
+    // on an old WebView means the broken render this is here to prevent. Served
+    // from webDir, so the file lives in public/ and Next copies it into out/.
+    errorPath: 'webview-too-old.html',
   },
   android: {
+    // Measured, not chosen. The shipped stylesheet
+    // (out/_next/static/chunks/*.css, 95,832 bytes at the time of writing)
+    // contains 225 color-mix() and 16 lab() declarations, because Tailwind v4
+    // emits color-mix() for every opacity modifier - bg-surface/60, text-accent/70
+    // and the like, which is most of this UI. color-mix() is Chrome 111.
+    //
+    // Capacitor's own default floor is 60 (Bridge.DEFAULT_ANDROID_WEBVIEW_VERSION),
+    // and an unsupported color-mix() invalidates the whole declaration rather than
+    // degrading, so between 60 and 110 the app installs, boots, passes the check
+    // and renders with every translucent surface, border and overlay silently
+    // gone. Raising minSdkVersion would NOT fix that: the WebView updates through
+    // Play independently of the OS, so a current Android phone with updates
+    // disabled fails and an Android 7 phone with a fresh WebView is fine. The
+    // version of the browser is the thing to gate on, so it is the thing gated.
+    //
+    // If Tailwind is ever upgraded or replaced, re-measure before trusting this
+    // number: grep the built CSS for the newest feature it emits.
+    minWebViewVersion: 111,
     // Off by default: a shipped release must not expose its WebView to
     // chrome://inspect. `DEVTOOLS=1 npm run build:apk` turns it on for a local
     // release build so an actual release (not a debug build, which installs

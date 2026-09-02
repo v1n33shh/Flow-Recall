@@ -23,13 +23,14 @@ import {
  * Structurally /api/ask - same auth gate, same lenient parse, same validate-then-
  * return - with one deliberate difference: the limit.
  *
- * /api/ask and /api/concept-map both spend from `definitionsUsed`, the FREE lifetime
- * bucket of 20. This route uses `isOverDailyCap` instead, the same abuse ceiling
- * /api/cloze-grade uses (200 a day, FREE and PRO alike). A lifetime 20 would make
- * this feature useless at exactly the moment it is worth something: a student
- * working through a hard chapter explains ten concepts back in one sitting, and
- * telling them they have spent half their account on it teaches them to stop. It
- * also needs no migration.
+ * /api/ask and /api/concept-map both spend from `definitionsUsed`, the FREE bucket
+ * of FREE_LOOKUPS_PER_MONTH (60 a month, and 20 for life before that). This route
+ * uses `isOverDailyCap` instead, the same abuse ceiling /api/cloze-grade uses (200 a
+ * day, FREE and PRO alike). Drawing on a monthly allowance shared with reader
+ * definitions and concept mapping would make this feature useless at exactly the
+ * moment it is worth something: a student working through a hard chapter explains
+ * ten concepts back in one sitting, and telling them that cost them a sixth of the
+ * month's lookups teaches them to stop.
  *
  * The cost of that choice, stated plainly because it is real: this shares one
  * counter with cloze grading, so a student who spends 150 of their day here has 50

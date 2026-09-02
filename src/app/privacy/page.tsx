@@ -41,9 +41,9 @@ export default function PrivacyPolicyPage() {
         </p>
         <p>
           <strong className="text-foreground">Usage and gamification data.</strong> We store your
-          subscription plan, study streak, the dates you studied, and lifetime usage counters
-          (like how many decks or AI definitions you&apos;ve generated) so features like streaks,
-          quotas, and Pro entitlements work correctly.
+          subscription plan, study streak, the dates you studied, and usage counters (like how
+          many decks or AI definitions you&apos;ve generated this month) so features like
+          streaks, quotas, and Pro entitlements work correctly.
         </p>
         <p>
           <strong className="text-foreground">Payment information.</strong> If you upgrade to Pro,

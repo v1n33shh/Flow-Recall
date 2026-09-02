@@ -23,23 +23,29 @@ library; never edit it. This upgrade is the flashcard section only.
 
 ## State right now
 
-**`main` == `origin/main` == `0099119`, and there is a large UNCOMMITTED tranche on top of
-it** — the four phases described under *The launch tranche* below. Everything in it passes; none of
-it is committed, deliberately, because it changes what a FREE account gets and that is worth
-reviewing before it lands. `git status` is the honest picture.
+**`main` == `origin/main` == `50fcd83`, plus one local commit `c8517c1` that is not pushed yet.**
+The tranche the previous session left uncommitted is committed and pushed; it went up as a single
+`WIP:` commit whose subject names two of its three features, so *The launch tranche* below is the
+account of it that the commit message is not. `c8517c1` adds the allowance race tests that
+tranche's own plan asked for by name and never got.
 
 | | |
 |---|---|
-| Tests | **375 passing**, 26 files — 21 pure-node, and for the first time 5 that render components |
+| Tests | **389 passing**, 27 files — 23 pure-node (two of them round-trip to real Postgres) and 4 that render components |
 | Typecheck | `npx tsc --noEmit` clean |
-| Lint | **0 errors / 45 warnings** (all 45 pre-date today) |
-| Builds | `npm run build` and `npm run build:apk` + `gradlew assembleRelease` both pass |
-| Migrations | **8 of 8 applied** to production Supabase — `prisma migrate status` says "up to date" |
-| Phone | shipping build carrying the launch tranche, devtools **off**, md5 `5cb8593c21a6b7a5285a87155933bd80` |
-| Download | `public/flowrecall-release.apk` refreshed, byte-identical to the phone, cert `e1f4352f…bc09` |
-| Play | **AAB builds and is signed with the upload key** — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
+| Lint | **0 errors / 45 warnings** (all 45 pre-date the tranche) |
+| Builds | `npm run build` and `npm run build:apk` both pass; `cap sync` finds all 7 plugins including `local-notifications` |
+| Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
+| Phone | shipping build carrying the tranche, devtools **off**, md5 `5cb8593c21a6b7a5285a87155933bd80` |
+| Download | `public/flowrecall-release.apk`, byte-identical to the phone, cert `e1f4352f…bc09` |
+| Play | **AAB builds and is signed with the upload key**, `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
+
+Every row above was re-run on 2026-09-02 after the tranche landed **except the last two**, which
+are the previous session's census carried forward — `adb` is not on PATH in this environment, so
+nothing about the phone was re-measured. No source file is newer than the APK or the AAB sitting on
+disk, so both of them do carry the committed code.
 
 **The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
 deploy had tripped IP-scoped bot protection, and every request from this machine *and from the
@@ -59,9 +65,16 @@ one, so it must run a closed test with **12 testers opted in continuously for 14
 may even apply for production access. That clock starts only once a build is uploaded and 12 real
 people have accepted the invite, so:
 
-1. **Review and commit the launch tranche** (below). It is the thing that makes a closed test worth
-   running — without it a tester generates one deck, hits a wall, and never sees the concept map,
-   teach-it-back or the projection.
+1. **Verify the tranche on the phone — none of it has been.** The bytes are installed there (the
+   download and the phone are the same file), but the monthly rollover, the card editor and the
+   reminder have only ever run in tests and a desktop browser. The reminder has an explicit
+   completion bar it has not met: **Phase 4 is not done until a notification has been seen on the
+   phone with the app closed.** Every call in `notifications.ts` resolves successfully whether or
+   not `POST_NOTIFICATIONS` was ever granted, which is the same failure shape as the WebView
+   swallowing `<a download>` blob URLs — the API said 200 and the file never existed. Also worth
+   an eye while there: *Fix this card* is a new control on the revision sheet at 360dp, and
+   `ConceptEditor` writes to five `textarea`s (see the CDP note about React inputs before
+   automating it).
 2. **Upload the AAB.** It builds and is signed with the upload key:
    `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
    before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's
@@ -77,6 +90,18 @@ people have accepted the invite, so:
    privacy rules — name "Unknown", no email, no status bar or shade.
 5. **Recruit the 12 testers.** Nothing in code shortens this, and it is the critical path.
 
+One item from the tranche's own verification list is still open, and it is cheap: **generate on a
+real FREE account until the cap bites and confirm the 403 reaches the paywall copy.** `c8517c1`
+now pins the database half deterministically — the rollover, the two concurrent races, the
+NULL-marker rows the migration left behind — but it exercises `claimDeckAllowance` directly, not
+`/api/ingest`, so nothing yet proves the route's own cheap pre-check, the client's
+`timezoneOffsetMinutes`, and the new paywall wording line up end to end.
+
+Still undecided from Phase 0: **`android:allowBackup="true"`** (`AndroidManifest.xml:4`) means
+Android may back the on-device library up to the student's Drive. Either declare it on the Data
+Safety form or set it false deliberately — it should not be answered by whichever the default
+happened to be.
+
 ### Then, in priority order
 
 - **MCQ (Move 3).** The swipe is a 50/50 guess and mastery leans on one production path. The last
@@ -87,8 +112,9 @@ people have accepted the invite, so:
 
 ### Known, unaddressed, and worth a decision
 
-`npm audit` reports **4 critical / 18 high**, none of them introduced by the launch tranche. Two
-matter for a store launch specifically: a **pdf.js arbitrary-JS-execution on opening a malicious
+`npm audit` reports **4 critical / 17 high / 3 moderate** (re-measured 2026-09-02; the tranche's one
+new dependency, `@capacitor/local-notifications`, adds none of them). The criticals are `@auth/core`
+and the two packages that depend on it, plus `tar`. Two matter for a store launch specifically: a **pdf.js arbitrary-JS-execution on opening a malicious
 PDF** (this app's entire input is user-supplied PDFs) and a **Next.js middleware/proxy bypass in App
 Router**. Also `@auth/core`'s homoglyph email-normalisation bypass. Upgrading these is its own
 tranche and should happen before, not after, strangers are invited to upload files.
@@ -134,8 +160,10 @@ Postgres — the server's `updatedAt` was unchanged afterwards, and the census h
 - **A release APK is not bit-reproducible.** A fresh no-devtools build of the same commit came out
   `8590ed36…` against the committed download's `2de67e50…`, same cert. So "confirm the phone's md5
   matches `public/flowrecall-release.apk`" means **installing that committed file**, not building a
-  fresh one and hoping. The phone now carries `2de67e50c5c925376673cf168334a537` byte-for-byte,
-  zero `webview_devtools_remote` sockets, no `adb forward` left behind.
+  fresh one and hoping. The phone ended that verification on
+  `2de67e50c5c925376673cf168334a537` byte-for-byte, zero `webview_devtools_remote` sockets, no
+  `adb forward` left behind — since superseded by the tranche build `5cb8593c…` in the table
+  above, which is the current answer to "what is on the phone".
 
 ---
 
@@ -361,16 +389,156 @@ filename also used `toISOString()`, so a 03:50 IST export was stamped with the p
 
 ---
 
-## Uncommitted Session Work (Wound down due to token limit)
+## The launch tranche (`50fcd83`, `c8517c1`)
 
-In the session following the above handoff, a massive amount of new functionality was built and remains uncommitted in the working tree. The primary additions are:
+Four phases from `~/.claude/plans/shimmying-sparking-dewdrop.md`, whose premise is that the
+five-move roadmap is essentially finished and that what stands between this app and a student who
+is not you is not on that roadmap at all. Anki is free, fully editable and reminds you; FlowRecall
+beat it on everything requiring understanding and lost on those three rows plus not being
+installable. This closes them. It landed as a single `WIP:` commit whose subject names two of the
+three features, so the third — the card editor — is documented nowhere but here.
 
-1. **Monetization / Quota Upgrade:** The free tier AI lookup allowance (definitions, asks, concept maps) was changed from a lifetime cap to a recurring monthly allowance (`FREE_LOOKUPS_PER_MONTH`). `prisma/schema.prisma` was updated with `lookupsResetAt` and the enforcement logic was moved to a new `freeQuota.ts` system.
-2. **Local Study Reminders:** Added `@capacitor/local-notifications` to schedule on-device push notifications for study reminders. This includes `ReminderScheduler.tsx`, `StudyReminderSettings.tsx`, and `notifications.ts`.
-3. **Android Configuration:** Updated `AndroidManifest.xml` and Capacitor gradle settings to support the new local notifications.
+### Phase 1 — free study, metered generation
 
-**Next Steps for New Session:**
-1. Read the uncommitted changes in the working tree to familiarize yourself with the exact implementation details of the new Free Quota and Local Notifications systems.
-2. Run any necessary tests (`vitest` or testing library tests added today).
-3. If the features are complete, commit them to git and push them.
-4. Continue with the next phase of the Flowrecall masterplan.
+`FREE_DECKS_PER_MONTH = 3` and `FREE_LOOKUPS_PER_MONTH = 60`, replacing **one deck for life** and
+**20 lookups for life**. The old caps meant a tester generated one deck, hit a wall, and never
+reached the concept map, teach-it-back or the projection — which is to say never reached a single
+reason to prefer this to Anki. 60 comes from arithmetic rather than roundness: mapping one
+120-concept deck costs ⌈120/40⌉ = 3 lookups on its own, and every word looked up in the reader
+spends one more. FREE stays pinned to Groq, so the generosity is in the count, not the model, which
+is what PRO still sells.
+
+**The split between `freeQuota.ts` and `freeQuotaDb.ts` is not tidiness.** The ingest page renders
+`FREE_DECKS_PER_MONTH` in its paywall copy, and it is a client component in the Capacitor static
+export where `src/app/api` is moved aside — so the file holding the constants may not import
+prisma. Same division `clozeGradeRateLimit.ts` already has.
+
+Decks needed **no migration**: the columns are still named `decksGeneratedToday` and
+`lastDeckGeneratedDate`, a stale per-day name now carried through two pivots. Lookups had no date
+column at all, so `lookupsResetAt` is the tranche's one schema change — nullable, additive, no
+backfill, no index, and safe to apply ahead of the deploy because nothing read it until the code
+shipped. It is applied to production.
+
+**The claim is two statements, and the shape matters.** A conditional `updateMany` resets the
+count *and writes the marker it just tested*, then a second conditional `updateMany` increments
+under `{ lt: allowance }`. Both money-losing failures are concurrent, and the second is the one
+worth staring at: the daily cap's unconditional reset-to-1 would hand each of two racers at a
+month boundary its own fresh month. Because this reset is idempotent and leaves the row non-stale,
+the first to commit closes the window. `c8517c1` pins both races against real Postgres — the
+guarantee lives in the row lock and the re-evaluated `WHERE`, not in this repo's code, so a mock
+could not have shown it.
+
+Claims happen **after** a successful generation, never before, so a model failure does not cost a
+student a deck. The price of that ordering is that a lost race has already spent real money, which
+is why every caller checks the return value instead of assuming it.
+
+**One deliberate asymmetry, and it will look like a bug.** Decks roll over on the *student's*
+calendar month (`ingest/page.tsx` sends `getTimezoneOffset()`); lookups roll over on **UTC**. Not
+an oversight: `/api/define`'s only caller is the reader's `DefinitionPopover`, which is finished
+work and is not to be edited to add an offset to its request, and one counter cannot carry three
+different month boundaries without the three routes disagreeing about whether it is stale. A
+student in IST gets their lookups back at 05:30 on the 1st rather than midnight. A test asserts it
+so nobody quietly "fixes" it.
+
+Rows from the old regime carry a spent count with `lookupsResetAt` NULL. NULL must **not** read as
+a new month — that would hand a fresh allowance to anyone whose marker failed to write — so the old
+count stands and the first successful claim stamps the month the rollover measures from. Also
+pinned by test.
+
+### Phase 2 — the first tests that render anything
+
+`vitest.config.ts` is now two projects: `node` for `*.test.ts` (23 files, 20s timeout because
+`clozeGradeRateLimit.test.ts` and now `freeQuotaDb.test.ts` make real round-trips to remote
+Postgres) and `dom` for `*.test.tsx` under jsdom (4 files). Split by extension rather than
+directory so a component's test still sits beside it.
+
+The four seeded are the ones carrying logic and having none: `ConceptDebrief`, `DeckExamDate`,
+`ConceptRelations`, `ConceptEditor`. The case for them is that **every UI defect this project has
+ever found came off the phone by hand**, including a correct concept-map edge silently discarded
+and a `wrong` list congratulating a student on being wrong — both reachable from a render assertion
+in milliseconds.
+
+### Phase 3 — fix or delete a single card
+
+The trust hole a tester is guaranteed to hit: generation is not perfect, this repo has already
+caught a cloze whose answer could not fill its own blank, and until now the engine would drill a
+wrong card forever with no escape but deleting the whole deck. `ConceptEditor` opens from a
+**Fix this card** button on the revision sheet — a real bordered control, not a hover affordance,
+which does not exist on a phone.
+
+**Editing keeps the concept id, and therefore the entire history.** Memory rows are keyed
+`deckId::conceptId`, so a correction leaves every review, memory row and saved question attached.
+That is right for what this is *for*: a student who fixes a typo has not stopped knowing the
+concept, and resetting their evidence would punish them for the model's mistake. The docblock says
+so, because the tempting "fix" is to mint a new id.
+
+**Deleting cleans up more thoroughly than deleting a deck does.** `forgetUnit` drops the unit and
+its memory rows in one transaction and **keeps the reviews, asks and teach-backs** — the review log
+is the one asset the whole memory model can be rebuilt from and cannot be regenerated, and a
+teach-back attempt is the student's own writing. Nothing reads a review whose unit is gone.
+`deleteConcept` also prunes `conceptMap` edges naming the card, because `DeckLearningPath` orders
+the deck from stored edges and a dangling one would put a deleted concept into the numbered path.
+(`deleteDeck` still leaks its units — a known cost, documented; one leak is a cost, two would be a
+habit.)
+
+**The rescue case is a real feature, not a side effect.** `importDeck` filters on
+`pathsFor(concept).length > 0`, so a card whose cloze lost its `_____` was never scheduled at all.
+The editor prints what the card *will* be asked as, live, from the draft — and says "this card
+wasn't being asked before" when an edit brings one back into the schedule. The mirror case had to
+be handled explicitly: `importDeck` uses `put()` and never deletes, so a save that removes the last
+path calls `forgetUnit` itself or the engine keeps scheduling the pre-edit text forever.
+
+Deleting is two taps rather than a `confirm()`, which in a WebView is jarring and can be suppressed
+outright. `RevisionSheet` now reads the live deck row through `useSavedDecks` instead of the study
+handoff prop, so a corrected or deleted card is correct or gone immediately.
+
+### Phase 4 — study reminders
+
+`@capacitor/local-notifications@8.3.1`. The largest retention lever available, and the engine has
+held the data all along — only delivery was missing.
+
+**Silence is the product here too.** `reminderFor` returns null when the session the engine would
+build right now is empty, and null means **cancel, not skip**: skipping would leave yesterday's
+pending notification to fire tonight about cards already answered. A nightly buzz on an evening
+with nothing due would also contradict `MemoryOverview` on the same screen, which prints the number
+of concepts the app has deliberately decided not to ask about. Text priority is exam date, then
+concepts nearly gone, then slipping, then "Ready when you are" — every number one the home screen
+already shows, so the notification cannot promise something the screen then denies.
+
+One fixed `REMINDER_ID` so rescheduling replaces rather than appends: `ReminderScheduler` re-runs on
+every `recall-engine-update`, which fires after each answer and each sync pull, so without it a
+long session would queue a dozen notifications for the same evening. `nextReminderAt` is built from
+local date parts and is strictly in the future, so it lands on the wall-clock hour the student
+picked across a DST change. The preference is **localStorage, not the account** — a notification is
+delivered by one device to one person in one timezone, and syncing it would mean a laptop buzzing at
+an hour chosen on a phone five zones away. Permission is requested from the settings toggle and
+nowhere else; asking on launch is how an app gets denied permanently.
+
+**`SCHEDULE_EXACT_ALARM` is removed from the merged manifest** with `tools:node="remove"`. It is
+Play policy-restricted and expects a feature that genuinely needs exact timing; a nightly nudge is
+not that, and requesting it invites a review question with no good answer. Checked in the plugin's
+source rather than assumed: without the permission `canScheduleExactAlarms` returns false on API
+31+, and it falls back to `setAndAllowWhileIdle`, which still wakes the device from doze. A few
+minutes of drift, no `SecurityException`.
+
+### What this tranche has NOT proved
+
+- **No part of it has been exercised on the phone.** The tranche build is installed there
+  (`5cb8593c…`), but the rollover, the card editor and the reminder have only run in tests and a
+  desktop browser.
+- **The reminder has never been seen arriving.** This is the phase's own completion bar, and the
+  reason it is written as a bar: on API 33+ every call in `notifications.ts` resolves successfully
+  whether or not `POST_NOTIFICATIONS` was granted, so a resolved promise is not evidence. Same
+  failure shape as the WebView swallowing `<a download>`.
+- **Nothing has run the cap end to end through `/api/ingest`.** `c8517c1` pins the database half
+  deterministically; the route's own pre-check, the client's `timezoneOffsetMinutes` and the new
+  paywall wording have not been proved to line up against a real FREE account.
+- **`ConceptEditor` has never been driven at 360dp.** Five `textarea`s in a card inside a scrolling
+  list, on the phone this app ships on.
+
+### Stale elsewhere because of this tranche
+
+Both fixed in the same pass as this update, and recorded because a false comment is worse than
+none: `/api/teach-back`'s docblock still described `definitionsUsed` as a lifetime bucket of 20
+while arguing against drawing on it, and `src/app/privacy/page.tsx` still called the usage counters
+"lifetime" — a page whose whole purpose is that the Play Data Safety form gets filled *from it*.

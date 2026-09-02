@@ -23,21 +23,22 @@ library; never edit it. This upgrade is the flashcard section only.
 
 ## State right now
 
-**`main` == `origin/main` == `50fcd83`, plus one local commit `c8517c1` that is not pushed yet.**
-The tranche the previous session left uncommitted is committed and pushed; it went up as a single
-`WIP:` commit whose subject names two of its three features, so *The launch tranche* below is the
-account of it that the commit message is not. `c8517c1` adds the allowance race tests that
-tranche's own plan asked for by name and never got.
+**`origin/main` == `50fcd83`. `main` is EIGHT commits ahead and none of them are pushed** —
+`c8517c1` through `51d2758`. Two tranches sit in there: the allowance race tests the launch
+tranche's own plan asked for by name, and the **compatibility tranche** (*Making it survive a
+phone that is not yours*, below) which is what a closed test needs before strangers install it.
+Also inert in there: Phase 1 of the mock-paper plan, which no route imports.
 
 | | |
 |---|---|
-| Tests | **389 passing**, 27 files — 23 pure-node (two of them round-trip to real Postgres) and 4 that render components |
+| Tests | **410 passing**, 28 files — 24 pure-node (two of them round-trip to real Postgres) and 4 that render components |
 | Typecheck | `npx tsc --noEmit` clean |
 | Lint | **0 errors / 45 warnings** (all 45 pre-date the tranche) |
 | Builds | `npm run build` and `npm run build:apk` both pass; `cap sync` finds all 7 plugins including `local-notifications` |
 | Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
-| Phone | shipping build carrying the tranche, devtools **off**, md5 `5cb8593c21a6b7a5285a87155933bd80` |
+| Phone | shipping build carrying **both** tranches, devtools **off**, md5 `cd1302f1c389b5fc6b98cf59195b3485` |
 | Download | `public/flowrecall-release.apk`, byte-identical to the phone, cert `e1f4352f…bc09` |
+| Emulator | `fr36` AVD, **API 36**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`, then `adb connect localhost:5555` — it does NOT auto-appear in `adb devices` |
 | Play | **AAB builds and is signed with the upload key**, `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
@@ -66,6 +67,18 @@ one, so it must run a closed test with **12 testers opted in continuously for 14
 may even apply for production access. That clock starts only once a build is uploaded and 12 real
 people have accepted the invite, so:
 
+0. **Diagnose the back-navigation anomaly on API 36 — the one open risk in the code.**
+   `BackButtonBridge` was added today because nothing handled back at all and it closed the app
+   from wherever a student stood. On the phone it is right: from Account, back returns Home; at the
+   root it exits. On the **API 36 emulator** it is not: from three history entries (`/` → `/ingest`
+   → `/account`) the first back stayed in the app and the **second exited**, where two in-app backs
+   were expected. That smells like a double-pop — `router.back()` plus something else consuming the
+   same press — but the WebView's URL cannot be read without devtools, so anything past that is
+   speculation. `DEVTOOLS=1 npm run build:apk` + `gradlew assembleRelease`, install on the
+   **emulator** (harmless there, no library to lose), and log `history.length` and
+   `location.pathname` at each press. Back is used on every screen by every tester, so this is
+   worth more than anything else outstanding.
+
 1. **Verify the tranche on the phone — none of it has been.** The bytes are installed there (the
    download and the phone are the same file), but the monthly rollover, the card editor and the
    reminder have only ever run in tests and a desktop browser. The reminder has an explicit
@@ -91,6 +104,16 @@ people have accepted the invite, so:
    graphic. Launcher icons are already complete at every density. Screenshots follow the standing
    privacy rules — name "Unknown", no email, no status bar or shade.
 5. **Recruit the 12 testers.** Nothing in code shortens this, and it is the critical path.
+
+**The notification permission still has not been exercised, and it needs an account.**
+`StudyReminderSettings` renders only on the signed-in account screen — signed out, the Account tab
+shows "Welcome to FlowRecall". So the API 33+ runtime dialog, the whole reason the emulator exists,
+is unreachable without credentials, and the AOSP image has no Play Services so Google sign-in is
+out. Register a throwaway email/password account from the emulator (a real row in production,
+deletable through the app's own Danger Zone) or use an existing test login. Worth knowing before
+deciding how much this matters: a fresh API 36 install reports
+`POST_NOTIFICATION: ignore` — **denied by default**, which is what every tester starts from, so the
+request path is genuinely load-bearing rather than decorative.
 
 One item from the tranche's own verification list is still open, and it is cheap: **generate on a
 real FREE account until the cap bites and confirm the 403 reaches the paywall copy.** `c8517c1`
@@ -388,6 +411,56 @@ Also today, before all three: the **export button** was wired and made to work o
 200 and 16,600 bytes and nothing reached the filesystem. Now `@capacitor/filesystem` +
 `@capacitor/share`, device-verified by `ChooserActivity` taking focus with the file attached. Its
 filename also used `toISOString()`, so a 03:50 IST export was stamped with the previous day.
+
+---
+
+## Making it survive a phone that is not yours (`1d59452` … `51d2758`)
+
+The compatibility tranche. Its premise: the app targets SDK 36, installs from API 24, and had only
+ever run on one Android 11 handset. Everything below was found by looking rather than reasoning,
+and three of the five would have arrived as tester screenshots.
+
+**The CSS needed Chrome 111 and the app installed on Android 7.** The shipped stylesheet carries
+**225 `color-mix()`** and 16 `lab()` declarations, because Tailwind v4 emits `color-mix()` for every
+opacity modifier — most of this UI. Capacitor's floor was its default 60. Between 60 and 110 the app
+installed, booted, passed the check and rendered with every translucent surface, border and overlay
+**silently unpainted** — an unsupported `color-mix()` invalidates the whole declaration rather than
+degrading. Raising `minSdkVersion` would not have fixed it: WebView updates through Play
+independently of the OS. Now `minWebViewVersion: 111` plus `server.errorPath`, which is the half
+that is easy to omit — `Bridge.java` only redirects when `getErrorUrl()` is non-null and otherwise
+logs and carries on into the broken render. `public/webview-too-old.html` is written in deliberately
+2017-era CSS because it is the page whose job is to render on the browser that cannot render the
+app. **Verified by raising the floor to 999 against the phone's WebView 150** and seeing the page.
+
+**Android 15+ framed the app in two white bands.** Enforced edge-to-edge at targetSdk 35+ makes the
+system bars transparent, and `AppTheme.NoActionBar`'s `DayNight` parent resolves to LIGHT in light
+mode, so the window background showed through as near-white either side of a black app. Fixing the
+background then hid the icons: `dumpsys window` still said `LIGHT_STATUS_BARS`, and the status strip
+measured **5/255**. `android:windowLightStatusBar` does not take, because it is read at window
+creation and this window is created under the splash theme then swapped via `postSplashScreenTheme`
+— a `setTheme()`, which does not re-apply decor attributes. `WindowInsetsControllerCompat` in
+`MainActivity.onCreate` does. Measured through all three states: white/dark glyphs → `#050505`/5 →
+`#050505`/255.
+
+**Nothing handled back.** No `backButton` listener anywhere, no `onBackPressed` in `BridgeActivity`,
+against 11 `router.push` sites — so back finished the Activity from wherever the student was.
+`BackButtonBridge` registers one listener, which is what takes the decision away from the platform;
+`canGoBack` is read from the WebView at press time, and at the first entry it exits rather than
+trapping anyone. **See item 0 of *Do this next* — the API 36 behaviour is not yet right.**
+
+**Portrait-locked and resizing declined**, because every layout was measured at 360dp and Play was
+offering landscape, split-screen and freeform. Narrows rather than closes it: Android 16 ignores
+`resizeableActivity="false"` on large screens at SDK 36.
+
+**`allowBackup` is now a decision.** Kept true — auto-backup is the only thing carrying a student's
+IndexedDB library across a phone swap when they have not signed in — declared on the Data Safety
+form, with the note that the real fix is Restore Credentials, which Play requires by April 2027.
+
+**And the mock paper's Phase 1 is in there too** (`02fa6f2`), inert: `paperPlan.ts` chooses what a
+paper examines and what each question is worth, `paperSchema.ts` is what the model may return. No
+route imports either, so it cannot affect a build. The plan it belongs to is
+`~/.claude/plans/golden-painting-tiger.md`, which was later overwritten by the launch-readiness plan
+— the paper's design survives in `02fa6f2`'s commit message and in those two files' docblocks.
 
 ---
 

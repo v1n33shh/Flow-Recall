@@ -9,10 +9,40 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
+    <!-- windowBackground, and the two "light bar" flags, exist because of what
+         Android 15+ does to a targetSdk 36 app: edge-to-edge is ENFORCED, the
+         status and navigation bars become transparent, and whatever sits behind
+         them shows through. The parent here is DayNight, which resolves to the
+         LIGHT variant whenever the system is in light mode - so on API 36 this
+         app rendered as its own black UI framed by two near-white bands, one at
+         the clock and one at the gesture bar. It looked correct on Android 11
+         only because the platform still painted opaque bars there and tinted
+         them from colorPrimaryDark; that path is gone at 35+.
+
+         Measured on an API 36 emulator at 1080x2400/480dpi, not reasoned about:
+         the bands were white before these three lines and match the app after.
+
+         #050505 is globals.css's own background token (see @color/splashBackground,
+         which documents the same requirement for the splash handoff), so the bars
+         match the web layer rather than the platform default. The two light-bar
+         flags are false because the icons have to read against that near-black:
+         left at their default they came out dark, which against #050505 would be
+         invisible rather than merely wrong.
+
+         The known limit, stated rather than discovered later: this is fixed dark,
+         while the app's own light theme is opt-in via a class in globals.css. A
+         student who switches the app to light mode gets near-black bars around
+         near-white content. Better than the reverse - the app is dark by default
+         and almost always used that way - and the real fix is for the web layer
+         to paint the full viewport and own the inset areas itself, which
+         viewportFit: "cover" and env(safe-area-inset-*) already set up. -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/splashBackground</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 

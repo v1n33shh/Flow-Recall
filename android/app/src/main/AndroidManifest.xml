@@ -1,19 +1,45 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <!-- allowBackup is a DECISION, not the default it happens to match. Android
+         auto-backup is currently the only thing that rescues a student's
+         on-device library when they change phones - the IndexedDB deck store,
+         reviews and reading positions live in the app's own data directory and
+         nothing else carries them across a device swap unless they signed in
+         first. So it stays on, and the transfer is declared on the Play Data
+         Safety form. The real fix is the Restore Credentials API, which Play
+         requires by April 2027 anyway; this is the stopgap that costs nothing.
+
+         enableOnBackInvokedCallback: predictive back is the platform default for
+         apps targeting SDK 35+, and this app targets 36. Declaring it makes the
+         app's participation explicit instead of version-dependent, and it is what
+         lets the gesture draw its animation rather than snapping. The handler
+         itself is src/components/BackButtonBridge.tsx - without a registered
+         listener, back closes the app from wherever the student happens to be. -->
     <application
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <!-- Portrait-locked, and resizing declined, for the closed test. Every
+             layout in this app was designed and measured at 360dp portrait; with
+             no orientation declared, Play offers it in landscape, split-screen and
+             freeform, none of which has ever been rendered once. This narrows that
+             untested surface rather than closing it: Android 16 IGNORES
+             resizeableActivity="false" on large screens for apps targeting SDK 36,
+             so a tablet can still resize the app. Tablets are their own piece of
+             work, done deliberately, not discovered from a tester's screenshot. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:resizeableActivity="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

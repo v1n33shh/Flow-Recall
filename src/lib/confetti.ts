@@ -1,20 +1,6 @@
 // Electric Azure / white tones for the celebration on the matte black bg.
 const CELEBRATION_COLORS = ["#3B82F6", "#60A5FA", "#ffffff", "#93C5FD", "#2563EB"];
 
-/** Small burst from the bottom of the screen - for a single Level 3 correct answer. */
-export async function fireSmallBurst() {
-  const { default: confetti } = await import("canvas-confetti");
-  confetti({
-    particleCount: 40,
-    angle: 90,
-    spread: 60,
-    startVelocity: 45,
-    origin: { x: 0.5, y: 1 },
-    colors: CELEBRATION_COLORS,
-    disableForReducedMotion: true,
-  });
-}
-
 /** Sustained fireworks from both edges of the screen - for finishing the deck. */
 export async function fireCelebration() {
   const { default: confetti } = await import("canvas-confetti");

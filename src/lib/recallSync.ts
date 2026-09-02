@@ -6,6 +6,7 @@ import {
   nextState,
 } from "./fsrs";
 import {
+  daysUntilExam,
   memoryKey,
   type KnowledgeUnit,
   type MemoryRecord,
@@ -49,8 +50,14 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export function rebuildMemory(
   reviews: readonly ReviewRecord[],
   units: readonly KnowledgeUnit[],
+  /** The decks these units came from, for their exam dates. Optional, and omitting
+   * it means every retention target falls in the away-from-exam band - which is
+   * exactly what this did before exam dates existed. Passing them matters because
+   * this runs after EVERY sync pull: without the dates, a rebuild would quietly
+   * undo `applyExamDateToMemory` and relax a deck whose paper is next week. */
+  decks: readonly Deck[] = [],
 ): MemoryRecord[] {
-  return replay(reviews, units).memory;
+  return replay(reviews, units, 1e-9, decks).memory;
 }
 
 /** Every review whose replayed stability does not match what was recorded at the
@@ -66,6 +73,9 @@ export function replayDivergences(
   units: readonly KnowledgeUnit[],
   tolerance = 1e-9,
 ): { reviewId: string; recorded: number; replayed: number }[] {
+  // No decks passed on purpose: this compares recorded against replayed STABILITY,
+  // and stability does not depend on the retention target at all - only `dueAt`
+  // does. An exam date can therefore never make this self-check cry wolf.
   return replay(reviews, units, tolerance).divergences;
 }
 
@@ -73,13 +83,23 @@ function replay(
   reviews: readonly ReviewRecord[],
   units: readonly KnowledgeUnit[],
   tolerance = 1e-9,
+  decks: readonly Deck[] = [],
 ): { memory: MemoryRecord[]; divergences: { reviewId: string; recorded: number; replayed: number }[] } {
   const importance = new Map(units.map((unit) => [unit.id, unit.importance]));
+  // Resolved to unitId up front so the per-review loop stays a single map lookup
+  // rather than a deck search per row - a year of study is tens of thousands of rows.
+  const examByDeck = new Map(decks.map((deck) => [deck.id, daysUntilExam(deck.examDate)]));
+  const examByUnit = new Map(
+    units.map((unit) => [unit.id, examByDeck.get(unit.sourceDeckId) ?? null]),
+  );
   const state = new Map<string, MemoryRecord>();
   const divergences: { reviewId: string; recorded: number; replayed: number }[] = [];
 
   for (const review of orderedForReplay(reviews)) {
-    const desiredRetention = desiredRetentionFor(importance.get(review.unitId) ?? 0.5, null);
+    const desiredRetention = desiredRetentionFor(
+      importance.get(review.unitId) ?? 0.5,
+      examByUnit.get(review.unitId) ?? null,
+    );
     const key = memoryKey(review.userId, review.unitId, review.path);
     const existing = state.get(key);
     const previous = existing ? { stability: existing.stability, difficulty: existing.difficulty } : null;

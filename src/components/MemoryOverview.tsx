@@ -1,7 +1,9 @@
 "use client";
 
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { useSession } from "next-auth/react";
+import type { Deck } from "@/lib/types";
+import { soonestExamDate } from "@/lib/recallModel";
 import { useMemoryOverview } from "@/lib/recallStorage";
 
 /** What you will still know later - the number no other flashcard app can print.
@@ -19,16 +21,18 @@ import { useMemoryOverview } from "@/lib/recallStorage";
  * it records nothing; with a library nobody has answered yet, "0 of 94" is
  * arithmetically true and reads as an accusation, so the block waits. */
 
-export default function MemoryOverview() {
+export default function MemoryOverview({ decks }: { decks: readonly Deck[] }) {
   const { data: session } = useSession();
   const userId = session?.user?.id;
+  const reduceMotion = useReducedMotion();
 
-  // No exam date exists yet, so this is always the fallback week. Phase 2's
-  // per-deck exam date is the argument this hook already takes.
-  const { overview, loading } = useMemoryOverview(userId, null);
-  // `horizonDays` comes from the read rather than from `Date.now()` here, so the
-  // caption can never name a different horizon than the number was computed for.
-  const { summary, expected, total, horizonDays: days } = overview;
+  // Resolved without reading the clock - a component may not - so "is that exam still
+  // ahead" is decided inside the hook, where it can be.
+  const { overview, loading } = useMemoryOverview(userId, soonestExamDate(decks));
+  // Both the horizon and its label come from the read rather than from `Date.now()`
+  // here, so the caption can never name a different day than the number was computed
+  // for.
+  const { summary, expected, total, horizonDays: days, anchoredToExam } = overview;
 
   // `met` is a unit with no credited success, so this is "has anything actually
   // been answered" rather than "does a library exist".
@@ -43,7 +47,7 @@ export default function MemoryOverview() {
 
   return (
     <motion.section
-      initial={{ opacity: 0, y: 12 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 280, damping: 26 }}
       aria-labelledby="memory-heading"
@@ -53,7 +57,9 @@ export default function MemoryOverview() {
         id="memory-heading"
         className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
       >
-        In {days} {days === 1 ? "day" : "days"}
+        {anchoredToExam
+          ? `On exam day (${days} ${days === 1 ? "day" : "days"})`
+          : `In ${days} ${days === 1 ? "day" : "days"}`}
       </p>
 
       <p className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums text-foreground">

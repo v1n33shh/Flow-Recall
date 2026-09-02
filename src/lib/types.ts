@@ -111,6 +111,18 @@ export type Deck = {
    * an empty section. Ingest cannot produce these: it sees 1500 characters at a
    * time and never has two chunks in front of it at once. */
   conceptMap?: ConceptEdge[];
+  /** Local midnight of the day this deck is examined, if the student set one.
+   *
+   * Feeds `daysUntilExam` in `desiredRetentionFor`, which has always accepted that
+   * argument and never received it - inside 21 days it raises this deck's retention
+   * floor to 0.95, so the engine genuinely drills harder as the paper approaches.
+   * Also what the home projection anchors to instead of a fixed horizon.
+   *
+   * Stored as a timestamp rather than a date string so it sorts and subtracts
+   * without parsing, and normalised to LOCAL midnight: a student who says "the 14th"
+   * means their own 14th, and UTC midnight is the previous evening for half the
+   * world. Absent means no exam, which is not the same as an exam in the past. */
+  examDate?: number;
 };
 
 export type BookType = "epub" | "pdf" | "text";

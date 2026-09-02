@@ -10,6 +10,7 @@ import {
   gradeFor,
   masteryFor,
   memoryKey,
+  daysUntilExam,
   masteryOver,
   pathsFor,
   projectedRecall,
@@ -20,7 +21,14 @@ import {
 } from "./recallModel";
 import { buildSession, type SessionPlan } from "./sessionBuilder";
 import { planSync, rebuildMemory, replayDivergences, type SyncPayload } from "./recallSync";
-import { clearProgress, getAllDeckRows, getSyncCursor, mergeRemoteDecks, setSyncCursor } from "./storage";
+import {
+  clearProgress,
+  getAllDeckRows,
+  getSavedDecks,
+  getSyncCursor,
+  mergeRemoteDecks,
+  setSyncCursor,
+} from "./storage";
 import { apiUrl, API_FETCH_CREDENTIALS } from "./apiUrl";
 
 export type { DeckMastery, DeckSummary } from "./recallModel";
@@ -255,6 +263,20 @@ async function listAllAsks(userId: string): Promise<AskRecord[]> {
   return rows.sort((a, b) => a.askedAt - b.askedAt);
 }
 
+/** Days-until-exam per deck, for every deck on this device.
+ *
+ * One synchronous localStorage read rather than one per unit: recordReview runs on
+ * every answer, and a student can hold a dozen decks. `null` is never stored here -
+ * a deck with no exam is simply absent, so a caller reads `?? null`. */
+function examDaysByDeck(now: number): Map<string, number> {
+  const days = new Map<string, number>();
+  for (const deck of getAllDeckRows()) {
+    const until = daysUntilExam(deck.examDate, now);
+    if (until !== null) days.set(deck.id, until);
+  }
+  return days;
+}
+
 // ── Writes ───────────────────────────────────────────────────────────────────
 
 /** Copies a deck's concepts in as knowledge units, without touching the deck.
@@ -319,6 +341,12 @@ export async function recordReview(input: {
   const fastThresholdMs = fastAnswerThreshold(await recentLatencies(input.userId, input.path));
   const graded = gradeFor(input.outcome, input.latencyMs, { path: input.path, fastThresholdMs });
 
+  // Exam dates read BEFORE the transaction opens. localStorage is synchronous so
+  // reading it inside would be safe, but keeping the transaction body to nothing
+  // but IndexedDB requests is the rule that makes it obviously safe rather than
+  // safe-if-you-check.
+  const examDays = examDaysByDeck(reviewedAt);
+
   const db = await openDb();
   const tx = db.transaction([UNITS_STORE, MEMORY_STORE, REVIEWS_STORE], "readwrite");
   const unitsStore = tx.objectStore(UNITS_STORE);
@@ -331,9 +359,13 @@ export async function recordReview(input: {
   // (a fetch, a timer) would let the transaction auto-commit underneath us.
   const unit = await requestToPromise<KnowledgeUnit | undefined>(unitsStore.get(input.unitId));
   const importance = unit?.importance ?? 0.5;
-  // No exam target exists yet, so this is always the away-from-exam band. The
-  // ExamTarget lookup slots in here without touching anything else.
-  const desiredRetention = desiredRetentionFor(importance, null);
+  // An exam inside three weeks raises this deck's floor to 0.95, so the engine
+  // drills harder as the paper approaches. `null` for a deck with no exam, and for
+  // a unit whose deck has gone - which is the away-from-exam band, as before.
+  const desiredRetention = desiredRetentionFor(
+    importance,
+    unit ? (examDays.get(unit.sourceDeckId) ?? null) : null,
+  );
 
   const key = memoryKey(input.userId, input.unitId, input.path);
   const existing = await requestToPromise<MemoryRecord | undefined>(memoryStore.get(key));
@@ -670,6 +702,57 @@ export async function buildTodaySession(
   return buildSession({ ...inputs, budgetMinutes, now });
 }
 
+/** Brings a deck's existing memory rows into line with its exam date.
+ *
+ * Needed because a memory row carries the retention target that was in force when
+ * it was last written. Without this, setting an exam date would only tighten
+ * concepts the student happened to answer AFTERWARDS - so a student who set the date
+ * and then studied would be drilled harder, and one who set it and looked at the
+ * home screen would see nothing change at all. Clearing a date runs the same sweep
+ * in reverse, because a deck whose exam has been cancelled must relax again.
+ *
+ * `dueAt` is recomputed from `lastReviewedAt` rather than from now, exactly as
+ * recordReview and the sync replay do: the interval is a property of the memory, not
+ * of when somebody happened to open a settings control.
+ *
+ * Returns how many rows moved, which is what the device pass measures. */
+export async function applyExamDateToMemory(
+  userId: string,
+  deckId: string,
+  now = Date.now(),
+): Promise<number> {
+  const examDays = examDaysByDeck(now).get(deckId) ?? null;
+  const units = new Map(
+    (await listUnits(userId)).filter((u) => u.sourceDeckId === deckId).map((u) => [u.id, u]),
+  );
+  if (units.size === 0) return 0;
+
+  const db = await openDb();
+  const tx = db.transaction(MEMORY_STORE, "readwrite");
+  const store = tx.objectStore(MEMORY_STORE);
+  const mine = await requestToPromise<MemoryRecord[]>(
+    store.index(USER_INDEX).getAll(IDBKeyRange.only(userId)),
+  );
+
+  let moved = 0;
+  for (const memory of mine) {
+    const unit = units.get(memory.unitId);
+    if (!unit) continue;
+    const desiredRetention = desiredRetentionFor(unit.importance, examDays);
+    const dueAt =
+      memory.lastReviewedAt + intervalFor(memory.stability, desiredRetention) * MS_PER_DAY;
+    // Skipped when nothing actually changes, so a no-op sweep does not rewrite every
+    // row and wake every listener for a repaint that says the same thing.
+    if (desiredRetention === memory.desiredRetention && dueAt === memory.dueAt) continue;
+    store.put({ ...memory, desiredRetention, dueAt } satisfies MemoryRecord);
+    moved += 1;
+  }
+
+  await txDone(tx);
+  if (moved > 0) notifyRecallUpdate();
+  return moved;
+}
+
 // ── Sync ─────────────────────────────────────────────────────────────────────
 
 /** One reconcile: push what this device changed, pull what any other device did,
@@ -892,7 +975,11 @@ async function rebuildMemoryStore(userId: string): Promise<void> {
     );
   }
 
-  const rebuilt = rebuildMemory(reviews, units);
+  // Decks passed so a rebuild keeps whatever exam dates are currently set. This runs
+  // after every pull, so omitting them would relax a deck whose paper is next week
+  // the moment the student's phone synced - the one way this feature could silently
+  // undo itself.
+  const rebuilt = rebuildMemory(reviews, units, getAllDeckRows());
   const db = await openDb();
   const tx = db.transaction(MEMORY_STORE, "readwrite");
   const store = tx.objectStore(MEMORY_STORE);
@@ -936,6 +1023,10 @@ export type MemoryOverview = {
    * comes to disagree with the number above it. */
   atMs: number;
   horizonDays: number;
+  /** True when the projection is anchored to a real exam rather than the fallback
+   * week, so the UI can say "on exam day" instead of "in 7 days" without deciding
+   * for itself which one the number was computed for. */
+  anchoredToExam: boolean;
 };
 
 const EMPTY_OVERVIEW: MemoryOverview = {
@@ -944,18 +1035,28 @@ const EMPTY_OVERVIEW: MemoryOverview = {
   total: 0,
   atMs: 0,
   horizonDays: PROJECTION_FALLBACK_DAYS,
+  anchoredToExam: false,
 };
 
 export async function readMemoryOverview(
   userId: string,
   atMs: number,
   now = Date.now(),
+  anchoredToExam = false,
 ): Promise<MemoryOverview> {
-  const [units, memories, reviews] = await Promise.all([
+  const [allUnits, memories, reviews] = await Promise.all([
     listUnits(userId),
     listMemories(userId),
     listAllReviews(userId),
   ]);
+
+  // Deleting a deck tombstones the row and leaves its units in IndexedDB, so an
+  // account-wide count over every unit would keep charging the student for concepts
+  // they threw away - "61 of 94" when their library holds 40. `getSavedDecks` is the
+  // live list; anything whose deck is gone is dropped here.
+  const live = new Set(getSavedDecks().map((deck) => deck.id));
+  const units = allUnits.filter((unit) => live.has(unit.sourceDeckId));
+
   const { summary } = masteryOver(units, memories, reviews, () => true);
   const { expected, total } = projectedRecall(units, memories, atMs);
   return {
@@ -964,6 +1065,7 @@ export async function readMemoryOverview(
     total,
     atMs,
     horizonDays: Math.max(1, Math.round((atMs - now) / MS_PER_DAY)),
+    anchoredToExam,
   };
 }
 
@@ -979,11 +1081,13 @@ export async function readMemoryOverview(
  * because a projection could not be computed. */
 export function useMemoryOverview(
   userId: string | undefined,
-  /** The exam being studied for, or `null` for the fallback week. A fixed
-   * timestamp or null rather than the instant to project to, deliberately:
-   * `Date.now() + a week` is a new number on every render, which would make this
-   * effect re-subscribe forever. The instant is computed at read time instead,
-   * which is also the honest moment to compute it. */
+  /** The soonest exam date across the student's decks, past or future, or `null`.
+   *
+   * A fixed timestamp rather than the instant to project to, deliberately:
+   * `Date.now() + a week` is a new number on every render and would make this effect
+   * re-subscribe forever. Whether that exam is still AHEAD is decided at read time,
+   * below - a component may not read the clock while rendering, and an exam already
+   * sat must fall back to the week rather than projecting into the past. */
   examDate: number | null,
 ): { overview: MemoryOverview; loading: boolean } {
   const [loaded, setLoaded] = useState<{ userId: string; overview: MemoryOverview } | null>(null);
@@ -994,8 +1098,13 @@ export function useMemoryOverview(
 
     function refresh() {
       if (!userId) return;
-      const atMs = examDate ?? Date.now() + PROJECTION_FALLBACK_DAYS * MS_PER_DAY;
-      readMemoryOverview(userId, atMs)
+      const now = Date.now();
+      const untilExam = daysUntilExam(examDate ?? undefined, now);
+      const ahead = untilExam !== null && untilExam >= 0;
+      const atMs = ahead
+        ? (examDate as number)
+        : now + PROJECTION_FALLBACK_DAYS * MS_PER_DAY;
+      readMemoryOverview(userId, atMs, now, ahead)
         .then((overview) => {
           if (!cancelled) setLoaded({ userId, overview });
         })

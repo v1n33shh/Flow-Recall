@@ -124,6 +124,12 @@ model Deck {
    * concept map ships, and null means "never mapped", not "no relationships".
    */
   conceptMap    Json?
+  /**
+   * Local midnight of the day this deck is examined, if the student set one. Feeds
+   * daysUntilExam in desiredRetentionFor, which raises the retention floor to 0.95
+   * inside 21 days. NULL means no exam, which is not the same as one in the past.
+   */
+  examDate      DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

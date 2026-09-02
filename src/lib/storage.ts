@@ -250,6 +250,26 @@ export function saveConceptMap(deckId: string, edges: readonly ConceptEdge[]): v
   );
 }
 
+/** Sets or clears the day this deck is examined.
+ *
+ * Stamps `updatedAt` so sync carries it, exactly as saveConceptMap does. Pass `null`
+ * to clear - a deck with no exam is not the same as a deck whose exam has passed,
+ * and the caller needs to be able to say so.
+ *
+ * Does NOT touch scheduling state on its own: existing memory rows carry the
+ * retention target that was in force when they were last written, so the caller
+ * follows this with `applyExamDateToMemory` (recallStorage.ts) to bring them into
+ * line. Split that way because this module knows nothing about IndexedDB. */
+export function setDeckExamDate(deckId: string, examDate: number | null): void {
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId
+        ? { ...deck, examDate: examDate ?? undefined, updatedAt: Date.now() }
+        : deck,
+    ),
+  );
+}
+
 /** Deletes a deck by TOMBSTONING it, not by dropping the row.
  *
  * A row that simply vanishes cannot propagate: the next pull from another device

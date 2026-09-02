@@ -336,3 +336,50 @@ describe("planSync", () => {
   });
 });
 
+describe("rebuildMemory and exam dates", () => {
+  const MS = 24 * 60 * 60 * 1000;
+
+  it("relaxes to the away-from-exam band when no decks are passed", () => {
+    const rebuilt = rebuildMemory([review()], [unit()]);
+    expect(rebuilt).toHaveLength(1);
+    expect(rebuilt[0].desiredRetention).toBeLessThan(0.95);
+  });
+
+  // The regression this whole argument exists for: rebuildMemory runs after EVERY
+  // sync pull, so a rebuild that did not know the exam date would quietly relax a
+  // deck whose paper is next week - undoing applyExamDateToMemory on the next
+  // foreground sync, invisibly, on the student's own device.
+  it("keeps an exam-raised target instead of reverting it on the next pull", () => {
+    const soon: Deck = { ...deck(), examDate: Date.now() + 5 * MS };
+    const rebuilt = rebuildMemory([review()], [unit()], [soon]);
+    expect(rebuilt[0].desiredRetention).toBeCloseTo(0.95, 10);
+  });
+
+  it("tightens the interval as well as the target, so the card actually comes back sooner", () => {
+    const soon: Deck = { ...deck(), examDate: Date.now() + 5 * MS };
+    const relaxed = rebuildMemory([review()], [unit()])[0];
+    const drilled = rebuildMemory([review()], [unit()], [soon])[0];
+    expect(drilled.stability).toBeCloseTo(relaxed.stability, 12);
+    expect(drilled.dueAt).toBeLessThan(relaxed.dueAt);
+  });
+
+  it("leaves a deck whose exam has passed in the relaxed band", () => {
+    const over: Deck = { ...deck(), examDate: Date.now() - 5 * MS };
+    expect(rebuildMemory([review()], [unit()], [over])[0].desiredRetention).toBeLessThan(0.95);
+  });
+
+  // Stability is what the self-check compares and it does not depend on the retention
+  // target, so an exam date can never change the verdict - which is what makes it safe
+  // to pass decks to the rebuild and not to the checker. Asserted as "identical either
+  // way" rather than "empty", because whether a given fixture diverges is beside the
+  // point being made here.
+  it("gives the same divergence verdict whether or not an exam date is set", () => {
+    const soon: Deck = { ...deck(), examDate: Date.now() + 5 * MS };
+    const withoutExam = rebuildMemory([review()], [unit()]);
+    const withExam = rebuildMemory([review()], [unit()], [soon]);
+    expect(withExam.map((m) => m.stability)).toEqual(withoutExam.map((m) => m.stability));
+    expect(replayDivergences([review()], [unit()])).toEqual(
+      replayDivergences([review()], [unit()], 1e-9),
+    );
+  });
+});

@@ -56,6 +56,9 @@ const deckSchema = z.object({
     .array(z.object({ from: z.string().max(200), to: z.string().max(200), relation: z.string().max(40) }))
     .max(400)
     .optional(),
+  /** Local midnight of the exam day. Optional, and absent means no exam - which
+   * is not the same as an exam in the past, so it must stay distinguishable. */
+  examDate: timestamp.optional(),
 });
 
 const unitSchema = z.object({
@@ -172,6 +175,7 @@ export async function POST(request: Request) {
             updatedAt: new Date(deck.updatedAt ?? deck.createdAt),
             deletedAt: deck.deletedAt === undefined ? null : new Date(deck.deletedAt),
             conceptMap: deck.conceptMap ?? Prisma.DbNull,
+            examDate: deck.examDate === undefined ? null : new Date(deck.examDate),
           },
           update: {
             title: deck.title,
@@ -188,6 +192,10 @@ export async function POST(request: Request) {
             // Same DbNull reasoning as pendingChunks above: a deck whose map was
             // cleared - by a delete's tombstone - has to be able to clear it here.
             conceptMap: deck.conceptMap ?? Prisma.DbNull,
+            // Explicit null rather than `?? undefined` for the same reason: clearing
+            // an exam date has to reach the server, or the paper stays on the
+            // calendar forever on every other device.
+            examDate: deck.examDate === undefined ? null : new Date(deck.examDate),
           },
         }),
       ),
@@ -294,6 +302,7 @@ export async function POST(request: Request) {
       concepts: deck.concepts,
       pendingChunks: deck.pendingChunks ?? undefined,
       conceptMap: deck.conceptMap ?? undefined,
+      examDate: deck.examDate ? deck.examDate.getTime() : undefined,
       model: deck.model ?? undefined,
       createdAt: deck.createdAt.getTime(),
       updatedAt: deck.updatedAt.getTime(),

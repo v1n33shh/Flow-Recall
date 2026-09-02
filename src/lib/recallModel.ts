@@ -456,6 +456,49 @@ export function currentRetrievability(memory: MemoryRecord, now = Date.now()): n
   return retrievabilityAt(memory, now);
 }
 
+/** Local midnight of the day a timestamp falls in.
+ *
+ * Plain local getters, deliberately, unlike localDay.ts's offset-shifted versions:
+ * that module exists because a SERVER cannot know the student's timezone, and this
+ * one only ever runs on their own device, where the local getters are already right.
+ * An exam date is a calendar day rather than an instant - "the 14th" means their
+ * 14th, and storing 00:00 UTC would put it on the 13th for half the world. */
+export function localMidnight(at: number | Date): number {
+  const d = new Date(at);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** Whole days from today to the exam, or `null` when there is no exam.
+ *
+ * Both ends are local midnights, so the difference is exact whole days with no
+ * partial-day drift. Zero means the exam is TODAY and is inside the band that
+ * raises the retention floor; a negative number means the paper is behind them and
+ * falls outside it, which is why this returns a signed number rather than clamping
+ * at zero - see desiredRetentionFor. */
+export function daysUntilExam(examDate: number | undefined, now = Date.now()): number | null {
+  if (examDate === undefined) return null;
+  return Math.round((localMidnight(examDate) - localMidnight(now)) / MS_PER_DAY);
+}
+
+/** The soonest exam date across every deck, or `null` if none has one.
+ *
+ * Deliberately clock-free, and that is not a stylistic choice: a React component
+ * must not read the clock while rendering, so "which exam" is resolved purely here
+ * and "is it still ahead" is decided by `daysUntilExam` wherever the clock is
+ * actually allowed - inside an effect.
+ *
+ * Soonest rather than furthest because a paper next week is what a student is worried
+ * about; anchoring a projection to a term-end exam would flatter every number in
+ * between. */
+export function soonestExamDate(decks: readonly Deck[]): number | null {
+  let soonest: number | null = null;
+  for (const deck of decks) {
+    if (deck.examDate === undefined) continue;
+    soonest = soonest === null ? deck.examDate : Math.min(soonest, deck.examDate);
+  }
+  return soonest;
+}
+
 /** Recall probability for one memory at an arbitrary instant, past or future.
  *
  * `currentRetrievability` above is this with `atMs` pinned to now. It exists

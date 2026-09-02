@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AGAIN, EASY, GOOD, type Grade } from "./fsrs";
+import { AGAIN, EASY, GOOD, desiredRetentionFor, type Grade } from "./fsrs";
 import {
   type MemoryRecord,
   type RetrievalPath,
   type ReviewRecord,
   currentRetrievability,
+  daysUntilExam,
   dueFirst,
   fastAnswerThreshold,
   gradeFor,
@@ -14,6 +15,7 @@ import {
   masteryFor,
   masteryOver,
   memoryKey,
+  soonestExamDate,
   pathsFor,
   projectedRecall,
   retrievabilityAt,
@@ -442,6 +444,67 @@ describe("masteryFor: high-confidence failures", () => {
     );
     expect(evidence.hasActiveConfidentFailure).toBe(false);
     expect(evidence.level).toBe("solid");
+  });
+});
+
+describe("daysUntilExam", () => {
+  const noon = new Date(2026, 8, 2, 12, 0, 0).getTime();
+  const localDay = (y: number, m: number, d: number) => new Date(y, m, d).getTime();
+
+  it("is null when no exam is set, which is not the same as one in the past", () => {
+    expect(daysUntilExam(undefined, noon)).toBeNull();
+  });
+
+  // Zero, not -1: an exam TODAY is maximally inside the band that raises the
+  // retention floor, and measuring from the current instant rather than from local
+  // midnight would read this afternoon's paper as yesterday's.
+  it("is 0 for an exam today, whatever time of day it is asked", () => {
+    expect(daysUntilExam(localDay(2026, 8, 2), noon)).toBe(0);
+    expect(daysUntilExam(localDay(2026, 8, 2), new Date(2026, 8, 2, 23, 59).getTime())).toBe(0);
+  });
+
+  it("counts whole days forward and backward", () => {
+    expect(daysUntilExam(localDay(2026, 8, 23), noon)).toBe(21);
+    expect(daysUntilExam(localDay(2026, 8, 24), noon)).toBe(22);
+    expect(daysUntilExam(localDay(2026, 8, 1), noon)).toBe(-1);
+  });
+
+  // The two ends of the band desiredRetentionFor cares about, asserted together so
+  // an off-by-one here cannot silently stop the floor from ever applying.
+  it("lands inside the retention band exactly where fsrs expects", () => {
+    expect(desiredRetentionFor(0, daysUntilExam(localDay(2026, 8, 23), noon))).toBeCloseTo(0.95, 10);
+    expect(desiredRetentionFor(0, daysUntilExam(localDay(2026, 8, 24), noon))).toBeLessThan(0.95);
+    expect(desiredRetentionFor(0, daysUntilExam(localDay(2026, 8, 1), noon))).toBeLessThan(0.95);
+  });
+});
+
+describe("soonestExamDate", () => {
+  const withExam = (id: string, at?: number): Deck => ({
+    id,
+    title: id,
+    createdAt: NOW,
+    concepts: [],
+    examDate: at,
+  });
+
+  it("is null when nothing has an exam", () => {
+    expect(soonestExamDate([withExam("a"), withExam("b")])).toBeNull();
+  });
+
+  // Soonest, because the paper next week is the one a student is worried about -
+  // anchoring to a term-end exam would flatter every number between now and it.
+  it("takes the soonest of several", () => {
+    const soon = new Date(2026, 8, 9).getTime();
+    const later = new Date(2026, 8, 30).getTime();
+    expect(soonestExamDate([withExam("a", later), withExam("b", soon)])).toBe(soon);
+  });
+
+  // Reads no clock on purpose: a component cannot read one while rendering, so
+  // "which exam" is resolved here and "is it still ahead" by daysUntilExam.
+  it("returns a date already sat, leaving that judgement to daysUntilExam", () => {
+    const past = new Date(2026, 7, 20).getTime();
+    expect(soonestExamDate([withExam("a", past)])).toBe(past);
+    expect(daysUntilExam(past, new Date(2026, 8, 2, 12).getTime())).toBeLessThan(0);
   });
 });
 

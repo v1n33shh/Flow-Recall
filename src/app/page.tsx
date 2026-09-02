@@ -17,6 +17,7 @@ import {
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
+import DeckExamDate from "@/components/DeckExamDate";
 import MemoryOverview from "@/components/MemoryOverview";
 import TodaySession from "@/components/TodaySession";
 
@@ -735,7 +736,7 @@ export default function Home() {
         {/* What they will still know later, under what to do tonight. Deliberately
             second: the session offer is the action, and this is the reason it is
             worth taking - a number that only moves because they took it. */}
-        <MemoryOverview />
+        <MemoryOverview decks={decks} />
 
         {decks.length > 0 && (
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">
@@ -810,6 +811,11 @@ export default function Home() {
                         Read
                       </button>
                     </div>
+
+                    {/* When the paper is. Not a label - inside three weeks it lifts this
+                        deck's retention floor to 0.95, so every interval in it shortens
+                        and the home projection anchors to a real date. */}
+                    <DeckExamDate deck={deck} />
 
                     {deck.pendingChunks && deck.pendingChunks.length > 0 && (
                       <>

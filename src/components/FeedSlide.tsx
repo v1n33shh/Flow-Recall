@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import type { ChallengeLevel, ChallengeOutcome, Concept } from "@/lib/types";
 import type { Confidence } from "@/lib/recallModel";
 import SwipeChallenge, { type SwipeChallengeHandle } from "./SwipeChallenge";
@@ -40,15 +40,33 @@ export default function FeedSlide({
   const hasSwooped = useRef(false);
   const [swoopVisible, setSwoopVisible] = useState(false);
   const swipeHandle = useRef<SwipeChallengeHandle | null>(null);
+  // Held so it can be cancelled: a slide the student scrolls past inside the 900ms
+  // would otherwise setState on an unmounted component, and the feed unmounts slides
+  // constantly.
+  const swoopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The "Generated" badge used to spring in on mount, which happens while the slide
+  // is still off-screen - so the one animation meant to say "this was made for you"
+  // played to nobody every time. It waits for the viewport now, like the sweep does.
+  const [entered, setEntered] = useState(false);
+  // Nothing in the feed consulted this before, on a screen that animates every slide.
+  const reduceMotion = useReducedMotion();
+
+  useEffect(
+    () => () => {
+      if (swoopTimer.current !== null) clearTimeout(swoopTimer.current);
+    },
+    [],
+  );
 
   function handleEnter() {
     onEnter();
-    if (isNew && !hasSwooped.current) {
+    setEntered(true);
+    if (isNew && !hasSwooped.current && !reduceMotion) {
       hasSwooped.current = true;
       setSwoopVisible(true);
       // Hide the sweep element after animation completes so it can't
       // accidentally re-trigger if the component re-renders.
-      setTimeout(() => setSwoopVisible(false), 900);
+      swoopTimer.current = setTimeout(() => setSwoopVisible(false), 900);
     }
   }
 
@@ -149,8 +167,8 @@ export default function FeedSlide({
                Spring-pops in and glows to mark AI-generated content. */}
           {isNew && (
             <motion.span
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={reduceMotion ? false : { opacity: 0, scale: 0.6 }}
+              animate={entered || reduceMotion ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.6 }}
               transition={{ type: "spring", stiffness: 380, damping: 18, delay: 0.05 }}
               className="rounded-full border border-accent/50 bg-accent/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-accent shadow-[0_0_12px_-2px_hsl(var(--accent)/0.6)]"
             >

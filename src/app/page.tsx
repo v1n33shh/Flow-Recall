@@ -17,6 +17,7 @@ import {
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
+import MemoryOverview from "@/components/MemoryOverview";
 import TodaySession from "@/components/TodaySession";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
@@ -730,6 +731,11 @@ export default function Home() {
             the student to decide. Renders nothing when signed out or when there is
             no memory to schedule against yet. */}
         <TodaySession decks={decks} />
+
+        {/* What they will still know later, under what to do tonight. Deliberately
+            second: the session offer is the action, and this is the reason it is
+            worth taking - a number that only moves because they took it. */}
+        <MemoryOverview />
 
         {decks.length > 0 && (
           <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">

@@ -174,45 +174,14 @@ export default function CompletionSlide({
           </motion.div>
         )}
 
-        {/* Session accuracy card */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, type: "spring", stiffness: 280, damping: 24 }}
-          className="grid w-full grid-cols-2 gap-3"
-        >
-          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
-            <span className="text-2xl font-bold tabular-nums text-foreground">{cleared}</span>
-            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Cleared
-            </span>
-          </div>
-          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
-            <span
-              className={`text-2xl font-bold tabular-nums ${
-                accuracy >= 80
-                  ? "text-emerald-400"
-                  : accuracy >= 50
-                  ? "text-amber-400"
-                  : "text-rose-400"
-              }`}
-            >
-              {accuracy}%
-            </span>
-            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Accuracy
-            </span>
-          </div>
-        </motion.div>
-
-        {/* What the recall engine knows — the part that outlives this session.
-             "Cleared" above is about tonight; this is about whether the
-             knowledge is actually durable. */}
+        {/* What the recall engine knows — the part that outlives this session, and
+             the first thing shown for exactly that reason. The accuracy card below
+             is about tonight; this is about whether the knowledge is durable. */}
         {memoryOfDeck && memoryOfDeck.units > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, type: "spring", stiffness: 280, damping: 24 }}
+            transition={{ delay: 0.15, type: "spring", stiffness: 280, damping: 24 }}
             className="w-full rounded-2xl border border-border bg-foreground/[0.03] p-4 text-left"
           >
             <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
@@ -227,7 +196,7 @@ export default function CompletionSlide({
                 </span>
               </span>
               <span className="flex flex-col">
-                <span className="text-2xl font-bold tabular-nums text-amber-400">{memoryOfDeck.fading}</span>
+                <span className="text-2xl font-bold tabular-nums text-pending">{memoryOfDeck.fading}</span>
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Fading
                 </span>
@@ -249,6 +218,39 @@ export default function CompletionSlide({
             </p>
           </motion.div>
         )}
+
+        {/* Tonight's score, deliberately SECOND. It used to lead, which taught the
+             student that the session was the point - and the whole thesis of the
+             engine is that the block above it is. */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, type: "spring", stiffness: 280, damping: 24 }}
+          className="grid w-full grid-cols-2 gap-3"
+        >
+          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
+            <span className="text-2xl font-bold tabular-nums text-foreground">{cleared}</span>
+            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Cleared
+            </span>
+          </div>
+          <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
+            <span
+              className={`text-2xl font-bold tabular-nums ${
+                accuracy >= 80
+                  ? "text-success"
+                  : accuracy >= 50
+                    ? "text-pending"
+                    : "text-danger"
+              }`}
+            >
+              {accuracy}%
+            </span>
+            <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Accuracy
+            </span>
+          </div>
+        </motion.div>
 
         {/* Pro upsell — only for free users, at peak dopamine */}
         {!isPro && status === "authenticated" && (

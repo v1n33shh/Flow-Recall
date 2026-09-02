@@ -361,13 +361,159 @@ export function masteryFor(
   return { ...evidence, level: "familiar" };
 }
 
+/** What a session actually achieved, for the completion screen.
+ *
+ * Deliberately a single pass over two indexed reads rather than one query per
+ * concept: a deck can hold a hundred-odd units, and the completion screen must
+ * not fire a hundred IndexedDB transactions while the student is looking at it.
+ *
+ * `resting` is the number worth showing most: concepts the engine has decided
+ * NOT to ask about, which is the one thing no flashcard app tells anyone. */
+export type DeckSummary = {
+  units: number;
+  solid: number;
+  fading: number;
+  holding: number;
+  familiar: number;
+  met: number;
+  /** Solid and comfortably inside its retention target - nothing to do here. */
+  resting: number;
+};
+
+/** Everything a deck-level view needs about mastery, from one pass.
+ *
+ * `byUnit` is what a per-concept surface (the revision sheet) needs and what
+ * `masteryOf` cannot supply affordably: called per concept it would fire two
+ * IndexedDB transactions per card, so a 60-concept deck would open 120 while the
+ * student waited. `units` comes back too, keyed by id, so a caller can render in
+ * its own order without a second read. */
+export type DeckMastery = {
+  summary: DeckSummary;
+  byUnit: Map<string, MasteryEvidence>;
+  units: Map<string, KnowledgeUnit>;
+  /** unitIds with nothing currently due - `resting`, per unit rather than counted. */
+  resting: Set<string>;
+};
+
+/** The one pass, over whichever units the caller cares about.
+ *
+ * Deck-scoped and account-wide views differ by a single predicate, so they share
+ * this rather than each keeping their own copy of the grouping - a second copy is
+ * how the two would drift into disagreeing about what `resting` means. */
+export function masteryOver(
+  allUnits: readonly KnowledgeUnit[],
+  memories: readonly MemoryRecord[],
+  reviews: readonly ReviewRecord[],
+  include: (unit: KnowledgeUnit) => boolean,
+): DeckMastery {
+  const units = new Map(allUnits.filter(include).map((u) => [u.id, u]));
+  const memoriesByUnit = new Map<string, MemoryRecord[]>();
+  for (const m of memories) {
+    if (!units.has(m.unitId)) continue;
+    const list = memoriesByUnit.get(m.unitId);
+    if (list) list.push(m);
+    else memoriesByUnit.set(m.unitId, [m]);
+  }
+  const reviewsByUnit = new Map<string, ReviewRecord[]>();
+  for (const r of reviews) {
+    if (!units.has(r.unitId)) continue;
+    const list = reviewsByUnit.get(r.unitId);
+    if (list) list.push(r);
+    else reviewsByUnit.set(r.unitId, [r]);
+  }
+
+  const summary: DeckSummary = {
+    units: units.size,
+    solid: 0,
+    fading: 0,
+    holding: 0,
+    familiar: 0,
+    met: 0,
+    resting: 0,
+  };
+  const byUnit = new Map<string, MasteryEvidence>();
+  const resting = new Set<string>();
+
+  for (const unitId of units.keys()) {
+    const unitMemories = memoriesByUnit.get(unitId) ?? [];
+    const evidence = masteryFor(reviewsByUnit.get(unitId) ?? [], unitMemories);
+    byUnit.set(unitId, evidence);
+    summary[evidence.level] += 1;
+    if (evidence.level === "solid" && unitMemories.length > 0 && !unitMemories.some((m) => isDue(m))) {
+      summary.resting += 1;
+      resting.add(unitId);
+    }
+  }
+
+  return { summary, byUnit, units, resting };
+}
+
 // ── Due selection ────────────────────────────────────────────────────────────
 
 /** Current recall probability for one memory. The scheduler's view of "how much
  * is at risk here right now". */
 export function currentRetrievability(memory: MemoryRecord, now = Date.now()): number {
+  return retrievabilityAt(memory, now);
+}
+
+/** Recall probability for one memory at an arbitrary instant, past or future.
+ *
+ * `currentRetrievability` above is this with `atMs` pinned to now. It exists
+ * separately so a projection does not have to reach into fsrs.ts and convert
+ * milliseconds into elapsed days itself - the unit conversion is exactly the sort
+ * of thing that is wrong once and then wrong everywhere. */
+export function retrievabilityAt(memory: MemoryRecord, atMs: number): number {
   const state: MemoryState = { stability: memory.stability, difficulty: memory.difficulty };
-  return retrievability(state, (now - memory.lastReviewedAt) / MS_PER_DAY, undefined);
+  return retrievability(state, (atMs - memory.lastReviewedAt) / MS_PER_DAY, undefined);
+}
+
+/** How many concepts the student will still recall on a given day, if they do
+ * nothing between now and then.
+ *
+ * The number no other flashcard app can print. Anki knows when a card is next
+ * DUE, which carries no probability at all, so there is nothing there to project;
+ * FSRS state is a decay curve per concept, and a decay curve can be evaluated at
+ * any future date. Every input already exists on the device.
+ *
+ * Three judgements, none of them arithmetic, all of them chosen to make the number
+ * harder on the student rather than kinder:
+ *
+ * 1. **A unit's probability is the MEAN across its formats**, not the best of
+ *    them. Memory is tracked per (unit x path), so a concept has several rows.
+ *    Taking the max would assume the exam always probes the format the student is
+ *    strongest at - which is the flattery this number exists to avoid. The mean is
+ *    the expected value when they do not get to choose how they are asked.
+ * 2. **A unit with no memory rows contributes 0 and still counts in `total`.**
+ *    Never-opened concepts belong in the denominator; dropping them would let the
+ *    number climb by ignoring work rather than by doing it.
+ * 3. **`expected` is a sum of probabilities**, so it is an expected count and not
+ *    a count of certainties - 0.9 + 0.9 is 1.8 concepts, not 2. Rounding is a
+ *    presentation decision and stays with the caller.
+ *
+ * Honest about what it is not: a projection assuming no further study, so the real
+ * number on the day is higher for anyone who keeps going. That is the point of
+ * showing it. */
+export function projectedRecall(
+  units: readonly KnowledgeUnit[],
+  memories: readonly MemoryRecord[],
+  atMs: number,
+): { expected: number; total: number } {
+  const byUnit = new Map<string, MemoryRecord[]>();
+  for (const memory of memories) {
+    const list = byUnit.get(memory.unitId);
+    if (list) list.push(memory);
+    else byUnit.set(memory.unitId, [memory]);
+  }
+
+  let expected = 0;
+  for (const unit of units) {
+    const rows = byUnit.get(unit.id);
+    if (!rows || rows.length === 0) continue;
+    const sum = rows.reduce((total, row) => total + retrievabilityAt(row, atMs), 0);
+    expected += sum / rows.length;
+  }
+
+  return { expected, total: units.length };
 }
 
 /** Sorted worst-first: whatever is furthest below its own retention target

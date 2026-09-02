@@ -12,8 +12,11 @@ import {
   isProductionPath,
   isRecognitionPath,
   masteryFor,
+  masteryOver,
   memoryKey,
   pathsFor,
+  projectedRecall,
+  retrievabilityAt,
   unitIdFor,
   unitsFromDeck,
 } from "./recallModel";
@@ -439,5 +442,126 @@ describe("masteryFor: high-confidence failures", () => {
     );
     expect(evidence.hasActiveConfidentFailure).toBe(false);
     expect(evidence.level).toBe("solid");
+  });
+});
+
+describe("masteryOver", () => {
+  const twoDecks = [
+    ...unitsFromDeck(deck([concept({ id: "c1" }), concept({ id: "c2" })]), "u1"),
+    ...unitsFromDeck(
+      { id: "deck-2", title: "Cardio", createdAt: NOW, concepts: [concept({ id: "c3" })] },
+      "u1",
+    ),
+  ];
+
+  it("counts every unit it includes, studied or not", () => {
+    const all = masteryOver(twoDecks, [], [], () => true);
+    expect(all.summary.units).toBe(3);
+    // No credited success anywhere, so everything is `met` and nothing is claimed.
+    expect(all.summary.met).toBe(3);
+    expect(all.summary.solid).toBe(0);
+  });
+
+  // The invariant that makes one cross-deck pass safe to substitute for a loop over
+  // per-deck passes: the account-wide summary is the decks' summaries added up.
+  it("account-wide totals equal the per-deck totals added together", () => {
+    const reviews = [review({ unitId: "deck-1::c1" }), review({ unitId: "deck-2::c3" })];
+    const all = masteryOver(twoDecks, [], reviews, () => true);
+    const first = masteryOver(twoDecks, [], reviews, (u) => u.sourceDeckId === "deck-1");
+    const second = masteryOver(twoDecks, [], reviews, (u) => u.sourceDeckId === "deck-2");
+
+    for (const key of ["units", "solid", "fading", "holding", "familiar", "met", "resting"] as const) {
+      expect(all.summary[key]).toBe(first.summary[key] + second.summary[key]);
+    }
+  });
+
+  it("ignores a review belonging to a unit the filter excluded", () => {
+    const reviews = [review({ unitId: "deck-2::c3" })];
+    const first = masteryOver(twoDecks, [], reviews, (u) => u.sourceDeckId === "deck-1");
+    expect(first.summary.units).toBe(2);
+    expect(first.summary.familiar).toBe(0);
+  });
+
+  // `resting` is the claim no flashcard app makes - "you know this, do not spend
+  // tonight on it" - so it must need BOTH solid evidence and nothing currently due.
+  it("never rests a concept with no memory rows to be comfortable about", () => {
+    const all = masteryOver(twoDecks, [], [], () => true);
+    expect(all.summary.resting).toBe(0);
+    expect(all.resting.size).toBe(0);
+  });
+});
+
+describe("retrievabilityAt", () => {
+  it("agrees with currentRetrievability when the instant is now", () => {
+    const m = memory({ lastReviewedAt: NOW - 10 * MS_PER_DAY });
+    expect(retrievabilityAt(m, NOW)).toBeCloseTo(currentRetrievability(m, NOW), 12);
+  });
+
+  it("falls as the instant moves further out", () => {
+    const m = memory({ stability: 20, lastReviewedAt: NOW });
+    const week = retrievabilityAt(m, NOW + 7 * MS_PER_DAY);
+    const month = retrievabilityAt(m, NOW + 30 * MS_PER_DAY);
+    expect(week).toBeGreaterThan(month);
+    expect(month).toBeGreaterThan(0);
+  });
+
+  it("is 1 at or before the last review, since there is nothing yet to forget", () => {
+    const m = memory({ lastReviewedAt: NOW });
+    expect(retrievabilityAt(m, NOW)).toBe(1);
+    expect(retrievabilityAt(m, NOW - MS_PER_DAY)).toBe(1);
+  });
+
+  // Stability is defined as the 90%-recall interval, so this is the one value the
+  // curve has to hit exactly whatever w20 is fitted to.
+  it("returns 0.9 exactly one stability out", () => {
+    const m = memory({ stability: 20, lastReviewedAt: NOW });
+    expect(retrievabilityAt(m, NOW + 20 * MS_PER_DAY)).toBeCloseTo(0.9, 6);
+  });
+});
+
+describe("projectedRecall", () => {
+  const units = unitsFromDeck(deck([concept({ id: "c1" }), concept({ id: "c2" })]), "u1");
+
+  it("counts a never-studied unit in the total and gives it no credit", () => {
+    const projected = projectedRecall(units, [], NOW + 7 * MS_PER_DAY);
+    expect(projected.total).toBe(2);
+    expect(projected.expected).toBe(0);
+  });
+
+  // The whole point of a probability: 0.9 + 0.9 is 1.8 concepts, not 2. Rounding
+  // belongs to whatever renders it.
+  it("sums probabilities rather than counting certainties", () => {
+    const rows = [
+      memory({ unitId: "deck-1::c1", stability: 20, lastReviewedAt: NOW }),
+      memory({ key: "k2", unitId: "deck-1::c2", stability: 20, lastReviewedAt: NOW }),
+    ];
+    const projected = projectedRecall(units, rows, NOW + 20 * MS_PER_DAY);
+    expect(projected.expected).toBeCloseTo(1.8, 5);
+    expect(projected.total).toBe(2);
+  });
+
+  // Averaging rather than taking the best is what stops the number flattering a
+  // student who is strong on recognition and cannot produce the answer at all.
+  it("averages a unit's formats instead of taking its strongest", () => {
+    const strong = memory({ key: "a", path: "cloze", stability: 200, lastReviewedAt: NOW });
+    const weak = memory({ key: "b", path: "swipe", stability: 1, lastReviewedAt: NOW });
+    const at = NOW + 20 * MS_PER_DAY;
+    const both = projectedRecall(units, [strong, weak], at).expected;
+    const bestOnly = retrievabilityAt(strong, at);
+    expect(both).toBeLessThan(bestOnly);
+    expect(both).toBeCloseTo((retrievabilityAt(strong, at) + retrievabilityAt(weak, at)) / 2, 10);
+  });
+
+  it("ignores a memory row whose unit is not in the list", () => {
+    const orphan = memory({ key: "x", unitId: "deck-9::c9", lastReviewedAt: NOW });
+    expect(projectedRecall(units, [orphan], NOW + MS_PER_DAY).expected).toBe(0);
+  });
+
+  it("never exceeds the total, however well the student is doing", () => {
+    const rows = units.map((u, i) =>
+      memory({ key: `k${i}`, unitId: u.id, stability: 5000, lastReviewedAt: NOW }),
+    );
+    const projected = projectedRecall(units, rows, NOW + MS_PER_DAY);
+    expect(projected.expected).toBeLessThanOrEqual(projected.total);
   });
 });

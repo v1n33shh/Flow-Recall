@@ -8,17 +8,22 @@ import {
   type RetrievalPath,
   type ReviewRecord,
   gradeFor,
-  isDue,
   masteryFor,
   memoryKey,
+  masteryOver,
   pathsFor,
+  projectedRecall,
   unitsFromDeck,
   type MasteryEvidence,
+  type DeckMastery,
+  type DeckSummary,
 } from "./recallModel";
 import { buildSession, type SessionPlan } from "./sessionBuilder";
 import { planSync, rebuildMemory, replayDivergences, type SyncPayload } from "./recallSync";
 import { clearProgress, getAllDeckRows, getSyncCursor, mergeRemoteDecks, setSyncCursor } from "./storage";
 import { apiUrl, API_FETCH_CREDENTIALS } from "./apiUrl";
+
+export type { DeckMastery, DeckSummary } from "./recallModel";
 
 // The recall engine's persistence, on the device.
 //
@@ -204,91 +209,32 @@ export async function masteryOf(userId: string, unitId: string): Promise<Mastery
   return masteryFor(reviews, memories);
 }
 
-/** What a session actually achieved, for the completion screen.
- *
- * Deliberately a single pass over two indexed reads rather than one query per
- * concept: a deck can hold a hundred-odd units, and the completion screen must
- * not fire a hundred IndexedDB transactions while the student is looking at it.
- *
- * `resting` is the number worth showing most: concepts the engine has decided
- * NOT to ask about, which is the one thing no flashcard app tells anyone. */
-export type DeckSummary = {
-  units: number;
-  solid: number;
-  fading: number;
-  holding: number;
-  familiar: number;
-  met: number;
-  /** Solid and comfortably inside its retention target - nothing to do here. */
-  resting: number;
-};
-
-/** Everything a deck-level view needs about mastery, from one pass.
- *
- * `byUnit` is what a per-concept surface (the revision sheet) needs and what
- * `masteryOf` cannot supply affordably: called per concept it would fire two
- * IndexedDB transactions per card, so a 60-concept deck would open 120 while the
- * student waited. `units` comes back too, keyed by id, so a caller can render in
- * its own order without a second read. */
-export type DeckMastery = {
-  summary: DeckSummary;
-  byUnit: Map<string, MasteryEvidence>;
-  units: Map<string, KnowledgeUnit>;
-  /** unitIds with nothing currently due - `resting`, per unit rather than counted. */
-  resting: Set<string>;
-};
-
 export async function deckMastery(userId: string, deckId: string): Promise<DeckMastery> {
   const [allUnits, memories, reviews] = await Promise.all([
     listUnits(userId),
     listMemories(userId),
     listAllReviews(userId),
   ]);
-
-  const units = new Map(allUnits.filter((u) => u.sourceDeckId === deckId).map((u) => [u.id, u]));
-  const memoriesByUnit = new Map<string, MemoryRecord[]>();
-  for (const m of memories) {
-    if (!units.has(m.unitId)) continue;
-    const list = memoriesByUnit.get(m.unitId);
-    if (list) list.push(m);
-    else memoriesByUnit.set(m.unitId, [m]);
-  }
-  const reviewsByUnit = new Map<string, ReviewRecord[]>();
-  for (const r of reviews) {
-    if (!units.has(r.unitId)) continue;
-    const list = reviewsByUnit.get(r.unitId);
-    if (list) list.push(r);
-    else reviewsByUnit.set(r.unitId, [r]);
-  }
-
-  const summary: DeckSummary = {
-    units: units.size,
-    solid: 0,
-    fading: 0,
-    holding: 0,
-    familiar: 0,
-    met: 0,
-    resting: 0,
-  };
-  const byUnit = new Map<string, MasteryEvidence>();
-  const resting = new Set<string>();
-
-  for (const unitId of units.keys()) {
-    const unitMemories = memoriesByUnit.get(unitId) ?? [];
-    const evidence = masteryFor(reviewsByUnit.get(unitId) ?? [], unitMemories);
-    byUnit.set(unitId, evidence);
-    summary[evidence.level] += 1;
-    if (evidence.level === "solid" && unitMemories.length > 0 && !unitMemories.some((m) => isDue(m))) {
-      summary.resting += 1;
-      resting.add(unitId);
-    }
-  }
-
-  return { summary, byUnit, units, resting };
+  return masteryOver(allUnits, memories, reviews, (u) => u.sourceDeckId === deckId);
 }
 
 export async function summariseDeck(userId: string, deckId: string): Promise<DeckSummary> {
   return (await deckMastery(userId, deckId)).summary;
+}
+
+/** The same summary across every deck this account holds.
+ *
+ * What the home screen needs, and the reason it is one function rather than a loop
+ * over `summariseDeck`: that loop would re-read all three stores once per deck, so
+ * a student with eight decks would open twenty-four transactions to answer one
+ * question. */
+export async function summariseAll(userId: string): Promise<DeckSummary> {
+  const [allUnits, memories, reviews] = await Promise.all([
+    listUnits(userId),
+    listMemories(userId),
+    listAllReviews(userId),
+  ]);
+  return masteryOver(allUnits, memories, reviews, () => true).summary;
 }
 
 async function listAllReviews(userId: string): Promise<ReviewRecord[]> {
@@ -963,20 +909,84 @@ async function rebuildMemoryStore(userId: string): Promise<void> {
 
 // ── React binding ────────────────────────────────────────────────────────────
 
-/** Reactive memory list for the session builder and the library's progress
- * display. A plain effect rather than useSyncExternalStore, for the same reason
- * useBooks is: IndexedDB is async, so there is no synchronous snapshot to serve.
+/** What the home screen says about durable knowledge, from one read.
  *
- * Loaded rows are keyed by the user they were read for, and the signed-out case
- * is derived rather than stored - so switching account never shows the previous
- * one's memories for a frame, and the effect body never calls setState. */
-const NO_MEMORIES: MemoryRecord[] = [];
+ * `atMs` is the instant to project to and belongs to the caller, not here: the
+ * horizon is a product decision (the nearest exam date, or a fixed week when there
+ * is none) and this function should not have an opinion about it.
+ *
+ * Deliberately does NOT import missing decks the way readSessionInputs does. An
+ * import is a write, and a screen that reads should not quietly write; `importDeck`
+ * fires `recall-engine-update` when TodaySession does it, which re-runs the hook
+ * below - so the number arrives a frame later rather than never. */
+/** How far ahead the projection looks when no exam date has been set.
+ *
+ * A week, because it is long enough for real decay to show on anything that is
+ * actually slipping and short enough that a student can picture it. An exam date
+ * replaces it entirely - see the horizon argument below. */
+export const PROJECTION_FALLBACK_DAYS = 7;
 
-export function useRecallMemories(userId: string | undefined): {
-  memories: MemoryRecord[];
-  loading: boolean;
-} {
-  const [loaded, setLoaded] = useState<{ userId: string; memories: MemoryRecord[] } | null>(null);
+export type MemoryOverview = {
+  summary: DeckSummary;
+  expected: number;
+  total: number;
+  /** The instant projected to, and how far ahead that was when the number was
+   * computed. Both handed back so the UI labels the projection from the same read
+   * that produced it - recomputing `Date.now()` at render time is how a caption
+   * comes to disagree with the number above it. */
+  atMs: number;
+  horizonDays: number;
+};
+
+const EMPTY_OVERVIEW: MemoryOverview = {
+  summary: { units: 0, solid: 0, fading: 0, holding: 0, familiar: 0, met: 0, resting: 0 },
+  expected: 0,
+  total: 0,
+  atMs: 0,
+  horizonDays: PROJECTION_FALLBACK_DAYS,
+};
+
+export async function readMemoryOverview(
+  userId: string,
+  atMs: number,
+  now = Date.now(),
+): Promise<MemoryOverview> {
+  const [units, memories, reviews] = await Promise.all([
+    listUnits(userId),
+    listMemories(userId),
+    listAllReviews(userId),
+  ]);
+  const { summary } = masteryOver(units, memories, reviews, () => true);
+  const { expected, total } = projectedRecall(units, memories, atMs);
+  return {
+    summary,
+    expected,
+    total,
+    atMs,
+    horizonDays: Math.max(1, Math.round((atMs - now) / MS_PER_DAY)),
+  };
+}
+
+/** Reactive overview, re-read on every engine write.
+ *
+ * A plain effect rather than useSyncExternalStore, for the same reason useBooks is:
+ * IndexedDB is async, so there is no synchronous snapshot to serve. Keyed by the
+ * user it was read for, so switching account never shows the previous one's numbers
+ * for a frame.
+ *
+ * A read failure degrades to the empty overview rather than throwing: the component
+ * renders nothing on an empty overview anyway, and the home screen must not break
+ * because a projection could not be computed. */
+export function useMemoryOverview(
+  userId: string | undefined,
+  /** The exam being studied for, or `null` for the fallback week. A fixed
+   * timestamp or null rather than the instant to project to, deliberately:
+   * `Date.now() + a week` is a new number on every render, which would make this
+   * effect re-subscribe forever. The instant is computed at read time instead,
+   * which is also the honest moment to compute it. */
+  examDate: number | null,
+): { overview: MemoryOverview; loading: boolean } {
+  const [loaded, setLoaded] = useState<{ userId: string; overview: MemoryOverview } | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -984,15 +994,13 @@ export function useRecallMemories(userId: string | undefined): {
 
     function refresh() {
       if (!userId) return;
-      listMemories(userId)
-        .then((rows) => {
-          if (!cancelled) setLoaded({ userId, memories: rows });
+      const atMs = examDate ?? Date.now() + PROJECTION_FALLBACK_DAYS * MS_PER_DAY;
+      readMemoryOverview(userId, atMs)
+        .then((overview) => {
+          if (!cancelled) setLoaded({ userId, overview });
         })
         .catch(() => {
-          // A read failure should leave the list empty rather than crash the
-          // page: the engine is additive, and nothing in the existing study
-          // feed depends on it yet.
-          if (!cancelled) setLoaded({ userId, memories: NO_MEMORIES });
+          if (!cancelled) setLoaded({ userId, overview: EMPTY_OVERVIEW });
         });
     }
 
@@ -1002,9 +1010,9 @@ export function useRecallMemories(userId: string | undefined): {
       cancelled = true;
       window.removeEventListener(RECALL_UPDATE_EVENT, refresh);
     };
-  }, [userId]);
+  }, [userId, examDate]);
 
-  if (!userId) return { memories: NO_MEMORIES, loading: false };
-  const fresh = loaded?.userId === userId ? loaded.memories : null;
-  return { memories: fresh ?? NO_MEMORIES, loading: fresh === null };
+  if (!userId) return { overview: EMPTY_OVERVIEW, loading: false };
+  const fresh = loaded?.userId === userId ? loaded.overview : null;
+  return { overview: fresh ?? EMPTY_OVERVIEW, loading: fresh === null };
 }

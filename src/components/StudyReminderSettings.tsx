@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { motion } from "motion/react";
 import { getSavedDecks } from "@/lib/storage";
 import { buildTodaySession } from "@/lib/recallStorage";
 import { daysUntilExam, soonestExamDate } from "@/lib/recallModel";
@@ -96,6 +97,15 @@ export default function StudyReminderSettings() {
             decided you have nothing to review.
           </p>
         </div>
+        {/* Identical to the account screen's ThemeSwitch, down to the pixel, because
+            two switches on one settings screen that differ slightly read as a bug.
+            The `on` track is a fixed #3b82f6 by inline style and NOT `bg-accent`,
+            which is the same mistake ThemeSwitch documents having already made:
+            `--accent` resolves to pure white in dark mode (globals.css sets
+            `--accent: 0 0% 100%`), so an `on` switch painted with it was a white
+            pill the student could not tell from the `off` state. `off` is
+            `bg-foreground/15` rather than a white or black wash, so the track stays
+            visible in BOTH themes - `foreground` flips with the theme. */}
         <button
           type="button"
           role="switch"
@@ -106,16 +116,17 @@ export default function StudyReminderSettings() {
             vibrateTap();
             void apply({ ...pref, enabled: !pref.enabled });
           }}
-          className={`relative h-7 w-12 shrink-0 rounded-full border transition-colors duration-200 disabled:opacity-60 ${
-            pref.enabled ? "border-accent bg-accent" : "border-border bg-foreground/10"
+          className={`relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors duration-200 disabled:opacity-60 ${
+            pref.enabled ? "" : "bg-foreground/15"
           }`}
+          style={{ background: pref.enabled ? "#3b82f6" : undefined }}
         >
-          <span
-            className={`absolute top-1/2 h-5 w-5 -translate-y-1/2 rounded-full transition-transform duration-200 ${
-              pref.enabled
-                ? "translate-x-[26px] bg-accent-foreground"
-                : "translate-x-[3px] bg-foreground/60"
-            }`}
+          {/* Transform-only, per the same performance contract the rest of the
+              native chrome follows - never left/width. */}
+          <motion.span
+            className="absolute top-[3px] left-[3px] h-6 w-6 rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.4)]"
+            animate={{ x: pref.enabled ? 20 : 0 }}
+            transition={{ type: "spring", stiffness: 500, damping: 32 }}
           />
         </button>
       </div>

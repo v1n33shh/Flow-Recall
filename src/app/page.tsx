@@ -579,8 +579,8 @@ export default function Home() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // isFirstChunk: false - this is continuing a deck the user already
-          // spent their one free generation on, not starting a new one. Without
-          // this, the server's lifetime-limit gate (which only checks on a
+          // spent one of their monthly generations on, not starting a new one.
+          // Without this, the server's allowance gate (which only checks on a
           // first chunk) defaults to treating every unmarked request as a first
           // chunk and wrongly re-blocks a free user mid-way through their own
           // already-started deck.

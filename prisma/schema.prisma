@@ -49,12 +49,17 @@ model User {
   // (nullable so existing users start with no recorded generation).
   decksGeneratedToday   Int       @default(0)
   lastDeckGeneratedDate DateTime?
-  // Monetization: FREE plans get 20 AI definitions for life (not per-day -
-  // matches decksGeneratedToday's lifetime-cap pivot in /api/ingest, not its
-  // stale per-day name), enforced server-side in /api/define. PRO is
-  // unlimited and never checks this. Incremented on every successful
-  // lookup regardless of plan, so it doubles as a usage metric for Pro users too.
+  // Monetization: the shared AI-lookup allowance spent by /api/define (a word
+  // looked up in the reader), /api/ask and /api/concept-map. Now FREE_LOOKUPS_PER_MONTH
+  // per CALENDAR MONTH, rolled over in application code when lookupsResetAt predates
+  // the student's current local month - it was 20 for life, which priced the whole
+  // comprehension layer out of the free tier (mapping one deck alone costs
+  // ceil(concepts/40) of it). PRO is unlimited and never checks the cap, but still
+  // increments, so this doubles as a usage metric there.
+  // lookupsResetAt is nullable: every existing row is mid-month by definition and
+  // gets its first fresh allowance at the next boundary.
   definitionsUsed       Int       @default(0)
+  lookupsResetAt        DateTime?
   // Abuse ceiling for /api/cloze-grade, NOT a plan-gated feature limit like
   // decksGeneratedToday - this fires automatically during normal study
   // whenever a typed answer isn't an exact match, so it applies to FREE and

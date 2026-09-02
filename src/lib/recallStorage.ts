@@ -302,6 +302,37 @@ export async function importDeck(deck: Deck, userId: string): Promise<KnowledgeU
   return units;
 }
 
+/** Forgets one concept's scheduling state, for a card the student has deleted.
+ *
+ * Drops the unit and its memory rows - the derived cache and the thing that would
+ * otherwise keep a deleted card in tonight's session forever - and **keeps the
+ * reviews, asks and teach-backs**. Those are append-only history, not state: the
+ * review log is the asset the whole memory model can be rebuilt from and cannot be
+ * regenerated if lost, and a teach-back attempt is the student's own writing. Nothing
+ * reads a review whose unit is gone (readSessionInputs and rebuildMemory both start
+ * from `units`), so they cost a few rows and buy the guarantee that deleting a card
+ * can never destroy evidence.
+ *
+ * This is deliberately more thorough than `deleteDeck`, which tombstones the deck row
+ * and leaves every unit and memory row behind - a leak `readMemoryOverview` has to
+ * work around by counting live decks only. One leak is a known cost; two would be a
+ * habit.
+ *
+ * Both stores in one transaction, so a unit can never survive its memory rows or the
+ * reverse. */
+export async function forgetUnit(userId: string, unitId: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction([UNITS_STORE, MEMORY_STORE], "readwrite");
+  const memory = tx.objectStore(MEMORY_STORE);
+  const rows = await requestToPromise<MemoryRecord[]>(
+    memory.index(USER_UNIT_INDEX).getAll(IDBKeyRange.only([userId, unitId])),
+  );
+  for (const row of rows) memory.delete(row.key);
+  tx.objectStore(UNITS_STORE).delete(unitId);
+  await txDone(tx);
+  notifyRecallUpdate();
+}
+
 export type RecordedReview = {
   review: ReviewRecord;
   /** The reviewed path's memory after the update. */

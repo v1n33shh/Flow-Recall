@@ -235,6 +235,69 @@ export function addConceptsToDeck(deckId: string, newConcepts: Concept[]): void 
   );
 }
 
+/** Rewrites one card in place, keeping its id and therefore its whole history.
+ *
+ * The id is deliberate, not incidental: a memory row is keyed `deckId::conceptId`,
+ * so an edit that preserves the id leaves every review, every memory row and every
+ * saved question attached. That is right for what this is FOR - correcting a card the
+ * generator got wrong - because a student who fixes a typo has not stopped knowing
+ * the concept, and resetting their evidence would punish them for the model's
+ * mistake. Anyone tempted to "fix" that by minting a new id should read this twice.
+ *
+ * Stamps `updatedAt` so sync carries the correction to the account's other devices
+ * like any other deck edit. A no-op if the deck or the card has since been deleted.
+ *
+ * Does NOT refresh the engine's copy: `unit.concept` embeds the card, so the caller
+ * follows this with `importDeck` (recallStorage.ts) to bring the unit into line -
+ * the same split setDeckExamDate makes, and for the same reason: this module knows
+ * nothing about IndexedDB. */
+export function updateConcept(deckId: string, concept: Concept): void {
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId
+        ? {
+            ...deck,
+            concepts: deck.concepts.map((existing) =>
+              existing.id === concept.id ? concept : existing,
+            ),
+            updatedAt: Date.now(),
+          }
+        : deck,
+    ),
+  );
+}
+
+/** Removes one card from a deck, and the map edges that named it.
+ *
+ * Pruning the edges is not tidiness: `conceptMap` stores ids, and a stored map
+ * outlives the concepts it names. ConceptRelations already drops a chip whose label
+ * has gone, but DeckLearningPath orders the deck from these edges, so leaving a
+ * dangling one puts a concept that no longer exists into the numbered path.
+ *
+ * Stamps `updatedAt` so the removal syncs. Unlike deleteDeck there is no tombstone
+ * and none is needed: the deck row itself still travels, and last-write-wins on a
+ * deck whose `concepts` array is one shorter says exactly what happened.
+ *
+ * Leaves the engine alone for the caller to clean up - see `forgetUnit`
+ * (recallStorage.ts), which drops the unit and its memory rows while KEEPING the
+ * reviews. */
+export function deleteConcept(deckId: string, conceptId: string): void {
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId
+        ? {
+            ...deck,
+            concepts: deck.concepts.filter((concept) => concept.id !== conceptId),
+            conceptMap: deck.conceptMap?.filter(
+              (edge) => edge.from !== conceptId && edge.to !== conceptId,
+            ),
+            updatedAt: Date.now(),
+          }
+        : deck,
+    ),
+  );
+}
+
 /** Records how a deck's concepts relate, replacing any previous map wholesale.
  *
  * Replace rather than merge, because a mapping pass looks at the whole deck at once:

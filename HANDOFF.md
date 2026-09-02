@@ -1,8 +1,9 @@
 # FlowRecall — Handoff
 
-**Written 2026-09-02, end of session.** This file replaces the previous reverse-chronological
-log; every earlier version is still in git (`git log --follow -- HANDOFF.md`) if you need the
-older sessions' measurements and reasoning.
+**Written 2026-09-02, end of session; updated the same day once the device verification it was
+waiting on came back clean.** This file replaces the previous reverse-chronological log; every
+earlier version is still in git (`git log --follow -- HANDOFF.md`) if you need the older
+sessions' measurements and reasoning.
 
 Read **State right now** and **Do this next** before touching anything. The rest is why.
 
@@ -22,93 +23,119 @@ library; never edit it. This upgrade is the flashcard section only.
 
 ## State right now
 
-**Everything is committed and pushed.** `main` == `origin/main` == `4c7aa42`, plus one
-uncommitted APK refresh described in step 1 below.
+**`main` == `origin/main` == `0099119`, and there is a large UNCOMMITTED tranche on top of
+it** — the four phases described under *The launch tranche* below. Everything in it passes; none of
+it is committed, deliberately, because it changes what a FREE account gets and that is worth
+reviewing before it lands. `git status` is the honest picture.
 
 | | |
 |---|---|
-| Tests | **312 passing**, 20 files, all pure node logic |
+| Tests | **375 passing**, 26 files — 21 pure-node, and for the first time 5 that render components |
 | Typecheck | `npx tsc --noEmit` clean |
 | Lint | **0 errors / 45 warnings** (all 45 pre-date today) |
 | Builds | `npm run build` and `npm run build:apk` + `gradlew assembleRelease` both pass |
-| Migrations | **7 of 7 applied** to production Supabase — `prisma migrate status` says "up to date" |
-| Phone | shipping build, devtools **off**, md5 `2de67e50c5c925376673cf168334a537` |
-| Download | `public/flowrecall-release.apk` byte-identical to the phone, cert `e1f4352f…bc09` |
+| Migrations | **8 of 8 applied** to production Supabase — `prisma migrate status` says "up to date" |
+| Phone | shipping build carrying the launch tranche, devtools **off**, md5 `5cb8593c21a6b7a5285a87155933bd80` |
+| Download | `public/flowrecall-release.apk` refreshed, byte-identical to the phone, cert `e1f4352f…bc09` |
+| Play | **AAB builds and is signed with the upload key** — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
 
-**One thing is blocked, and I caused it.** Polling `https://www.flowrecall.app/` to detect the
-Vercel deploy tripped a **Vercel Security Checkpoint** on this network's IP. Every request from
-this machine *and from the phone* now returns 403 with an Astro challenge page instead of the
-app — including `/api/sync`. This is not an outage: it is IP-scoped bot protection, no Vercel
-setting was changed, and other users are unaffected. It expires on its own. **Do not poll that
-host in a loop again** — detect a deploy by checking `git log origin/main` and then making one
-request, not eighty.
+**The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
+deploy had tripped IP-scoped bot protection, and every request from this machine *and from the
+phone* returned 403 with an Astro challenge page instead of the app — including `/api/sync`. One
+`curl -s -o /dev/null -w '%{http_code}' https://www.flowrecall.app/api/sync` now returns 405 and
+the phone reaches the API normally. **Do not poll that host in a loop again** — detect a deploy by
+checking `git log origin/main` and then making one request, not eighty.
 
-Because of it, one verification from today's plan did not run. It is step 2 below.
+The verification it blocked has since run and passed — see **The sync-rebuild verification** below.
 
 ---
 
 ## Do this next
 
-### 1. Commit the refreshed APK (one minute, no risk)
+**The binding constraint is a calendar, not code.** The Play developer account is a **personal**
+one, so it must run a closed test with **12 testers opted in continuously for 14 days** before it
+may even apply for production access. That clock starts only once a build is uploaded and 12 real
+people have accepted the invite, so:
 
-`public/flowrecall-release.apk` was rebuilt from `4c7aa42` and installed on the phone, so it
-now carries the concept map, teach-it-back and Move 5. It is uncommitted:
+1. **Review and commit the launch tranche** (below). It is the thing that makes a closed test worth
+   running — without it a tester generates one deck, hits a wall, and never sees the concept map,
+   teach-it-back or the projection.
+2. **Upload the AAB.** It builds and is signed with the upload key:
+   `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
+   before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's
+   key, so anyone who sideloaded `public/flowrecall-release.apk` cannot upgrade in place. Sync makes
+   that recoverable only if they signed in first, so say so wherever the APK is offered. See
+   AGENTS.md.
+3. **Fill the Data Safety form from `src/app/privacy/page.tsx`** rather than from memory — it already
+   names Groq, OpenAI and Anthropic as processors and covers retention and deletion. Declare
+   email/account, uploaded note text sent to third-party AI, Razorpay payment data, usage counters.
+   Play also wants a **web-reachable** account-deletion URL, not just the in-app path.
+4. **Make the two listing assets that are not in the repo**: a 512×512 icon and a 1024×500 feature
+   graphic. Launcher icons are already complete at every density. Screenshots follow the standing
+   privacy rules — name "Unknown", no email, no status bar or shade.
+5. **Recruit the 12 testers.** Nothing in code shortens this, and it is the critical path.
 
-```bash
-git add public/flowrecall-release.apk HANDOFF.md
-git commit -m "Refresh the download so it carries Move 5"
-git push          # run by hand: no credential helper, no gh CLI in this environment
-```
+### Then, in priority order
 
-### 2. Finish the one verification the checkpoint blocked
+- **MCQ (Move 3).** The swipe is a 50/50 guess and mastery leans on one production path. The last
+  endorsed piece of the old roadmap.
+- **A real `importance` signal.** Still a flat 0.5. Starring a concept is the honest first signal.
+- **The visual concept graph.** Edges are validated and stored, so it is a rendering job — but 120
+  nodes will not read at 360dp and it needs an interaction design first.
 
-**What it proves:** that a foreground sync cannot silently undo the exam-date feature.
-`rebuildMemoryStore` runs after *every* pull and replays the whole review log; if it does not
-know the exam dates it recomputes every retention target in the relaxed band, quietly relaxing a
-deck whose paper is next week. The fix is committed (`rebuildMemory` now takes `decks`) and the
-pure case has a test — what is unverified is the real path on the device.
+### Known, unaddressed, and worth a decision
 
-Once the checkpoint has expired (confirm with **one** `curl -s -o /dev/null -w '%{http_code}'
-https://www.flowrecall.app/api/sync` returning 405, not 403):
+`npm audit` reports **4 critical / 18 high**, none of them introduced by the launch tranche. Two
+matter for a store launch specifically: a **pdf.js arbitrary-JS-execution on opening a malicious
+PDF** (this app's entire input is user-supplied PDFs) and a **Next.js middleware/proxy bypass in App
+Router**. Also `@auth/core`'s homoglyph email-normalisation bypass. Upgrading these is its own
+tranche and should happen before, not after, strangers are invited to upload files.
 
-1. `DEVTOOLS=1 npm run build:apk && (cd android && ./gradlew assembleRelease)`
-2. `apksigner verify --print-certs` on **both** APKs — cert must be `e1f4352f…bc09` on each, or
-   `adb install -r` is not an in-place upgrade and the library is gone.
-3. `adb install -r`, launch, `adb forward tcp:9222 localabstract:$(adb shell cat /proc/net/unix |
-   grep -o 'webview_devtools_remote_[0-9]*' | head -1)`. The socket can take ~20s to appear.
-4. Set an exam date ~10 days out on the deck card. Confirm all 6 memory rows move to
-   `desiredRetention` 0.95 (they did today, from 0.905).
-5. Background and foreground the app to force a sync. Pull with `since: null` through the app's
-   own session and confirm the server returns `examDate` on the deck.
-6. **The actual test:** rewind the local deck's `updatedAt` in `localStorage` to something older
-   than the server's copy, so the next pull sees the remote deck as newer, writes it, and
-   therefore runs `rebuildMemoryStore`. Then confirm the 6 rows are **still at 0.95** and not
-   back at 0.905.
-7. Clear the exam date (the Clear button) — it reversed all 6 rows to 0.905 today. Do not leave a
-   fabricated date on their deck.
-8. Rebuild **without** `DEVTOOLS=1`, reinstall, confirm the phone's md5 matches
-   `public/flowrecall-release.apk`, clear `adb forward --remove-all`, and confirm zero
-   `webview_devtools_remote` sockets.
+---
 
-### 3. Then pick the next move
+## The sync-rebuild verification
 
-Move 5 closed the last item in `twinkly-shimmying-hennessy.md`. Candidates, honestly ranked:
+**It passed.** A foreground sync cannot silently undo the exam date. Done on the phone against
+production, `0099119`, devtools build, 360×768dp — then the shipping build put back.
 
-- **Component/UI tests.** The strongest case by evidence. Every UI defect this project has ever
-  found came off the phone by hand, including **both** of today's — a correct concept-map edge
-  silently discarded, and a `wrong` list congratulating a student on being wrong. All 312 tests
-  are pure logic; nothing renders a component.
-- **The $25 Google Play registration.** Not code, and the only thing between this app and a
-  single other student using it.
-- **A real `importance` signal.** `recallModel.ts` pins it at a flat 0.5, so session value is
-  shortfall alone. The first honest signal available without touching the reader is a student
-  starring a concept.
-- **The visual concept graph.** Deferred by choice; the validated edges are already its input, so
-  it is a rendering job. 120 nodes will not read at 360dp, so it needs an interaction design first.
-- **Move 3's MCQ / reverse / explain formats.** Weakest: more ways to be *asked*, and Anki wins
-  on breadth of formats anyway.
+What was proved, in the order it had to be: an exam date set through the deck card's own control
+stored **local** midnight (`Sat Sep 12 2026 00:00:00 GMT+0530`, not the UTC midnight that would
+have read as the 11th here) and moved **all 6** memory rows from 0.905 to 0.95, tightening every
+interval. A `since: null` pull through the app's own session returned that `examDate` from
+Postgres, so the push carries it. Then the real case: the local deck rewound so the pull saw the
+remote copy as newer, which is what makes `syncNow` write it and therefore run
+`rebuildMemoryStore`. **All 6 rows came out of that rebuild still at 0.95.** Clearing the date
+reversed all 6 to 0.905 and that clear reached the server too (`examDate` absent on the next
+pull), so a paper does not stay on the calendar on another device.
+
+**The rebuild was proved to have actually run, not assumed.** One memory row was first poisoned to
+`desiredRetention` 0.5 — a value no code path produces. After the sync it was gone, so the rows
+really were recomputed. Without that, 0.95 surviving is indistinguishable from a rebuild that
+never happened, and the test proves nothing.
+
+**If you ever repeat this, rewinding `updatedAt` alone does not work, and it fails silently.**
+`PUSH_SAFETY_MS` is **7 days**, so the push filter is `deckStamp > since - 7d` and a deck rewound
+by minutes is still pushed — carrying the fabricated stamp up, after which the server agrees with
+local, nothing is newer, no rebuild runs, and the test quietly measures nothing. `deckStamp` is
+`max(createdAt, updatedAt, deletedAt)`, so **`createdAt` has to go back past that cutoff as well**;
+then the deck is not pushed at all, the pull returns the server's real row, and `mergeRemoteDecks`
+restores the true stamps before `rebuildMemoryStore` reads them. Nothing fabricated reached
+Postgres — the server's `updatedAt` was unchanged afterwards, and the census held on both sides
+(3 units, 6 memory, **14 reviews**, 4 asks, 2 teach-backs).
+
+**Two things worth knowing that came out of it:**
+
+- `visibilitychange` **does** fire in the Android WebView on HOME — `hidden` logged, and
+  `SyncEngine` started its sync 3ms later. Worth recording because `MobileAuthBridge`'s own comment
+  says the WebView cannot be trusted with it, which is true for *resume* but not for backgrounding.
+  Backgrounding and foregrounding is a reliable way to force a sync on the device.
+- **A release APK is not bit-reproducible.** A fresh no-devtools build of the same commit came out
+  `8590ed36…` against the committed download's `2de67e50…`, same cert. So "confirm the phone's md5
+  matches `public/flowrecall-release.apk`" means **installing that committed file**, not building a
+  fresh one and hoping. The phone now carries `2de67e50c5c925376673cf168334a537` byte-for-byte,
+  zero `webview_devtools_remote` sockets, no `adb forward` left behind.
 
 ---
 
@@ -286,8 +313,8 @@ other two:
   in force when it was last touched. Without it, a student who set the date and studied would be
   drilled and one who set it and looked at the screen would see nothing happen.
 - **`rebuildMemory` now takes the decks**, because it runs after every sync pull. Without them the
-  next foreground sync would relax a deck whose paper is next week. **This is the case step 2
-  above still has to verify on the device.**
+  next foreground sync would relax a deck whose paper is next week. **Verified on the device** —
+  see **The sync-rebuild verification** above.
 
 `replayDivergences` deliberately gets no decks: it compares recorded against replayed **stability**,
 and stability does not depend on the retention target — only `dueAt` does. So an exam date can never
@@ -331,3 +358,19 @@ Also today, before all three: the **export button** was wired and made to work o
 200 and 16,600 bytes and nothing reached the filesystem. Now `@capacitor/filesystem` +
 `@capacitor/share`, device-verified by `ChooserActivity` taking focus with the file attached. Its
 filename also used `toISOString()`, so a 03:50 IST export was stamped with the previous day.
+
+---
+
+## Uncommitted Session Work (Wound down due to token limit)
+
+In the session following the above handoff, a massive amount of new functionality was built and remains uncommitted in the working tree. The primary additions are:
+
+1. **Monetization / Quota Upgrade:** The free tier AI lookup allowance (definitions, asks, concept maps) was changed from a lifetime cap to a recurring monthly allowance (`FREE_LOOKUPS_PER_MONTH`). `prisma/schema.prisma` was updated with `lookupsResetAt` and the enforcement logic was moved to a new `freeQuota.ts` system.
+2. **Local Study Reminders:** Added `@capacitor/local-notifications` to schedule on-device push notifications for study reminders. This includes `ReminderScheduler.tsx`, `StudyReminderSettings.tsx`, and `notifications.ts`.
+3. **Android Configuration:** Updated `AndroidManifest.xml` and Capacitor gradle settings to support the new local notifications.
+
+**Next Steps for New Session:**
+1. Read the uncommitted changes in the working tree to familiarize yourself with the exact implementation details of the new Free Quota and Local Notifications systems.
+2. Run any necessary tests (`vitest` or testing library tests added today).
+3. If the features are complete, commit them to git and push them.
+4. Continue with the next phase of the Flowrecall masterplan.

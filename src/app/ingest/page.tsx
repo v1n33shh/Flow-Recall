@@ -9,6 +9,7 @@ import { saveDeck, setStudyDeck } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { vibrateTap } from "@/lib/haptics";
+import { FREE_DECKS_PER_MONTH } from "@/lib/freeQuota";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -151,9 +152,15 @@ export default function IngestPage() {
         const res = await fetch(apiUrl("/api/ingest"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // Only the first chunk of a deck counts against the FREE daily quota
-          // - continuation chunks are part of the same deck.
-          body: JSON.stringify({ text: chunks[i], model: selectedModel, isFirstChunk: i === 0 }),
+          // Only the first chunk of a deck counts against the FREE monthly
+          // allowance - continuation chunks are part of the same deck. The offset
+          // decides which calendar month that allowance is counted in.
+          body: JSON.stringify({
+            text: chunks[i],
+            model: selectedModel,
+            isFirstChunk: i === 0,
+            timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+          }),
           credentials: API_FETCH_CREDENTIALS,
         });
 
@@ -199,10 +206,10 @@ export default function IngestPage() {
         setShowPaywall(true);
       } else if (accumulated.length > 0) {
         // A later chunk failed after at least one earlier chunk already
-        // succeeded. Chunk 0 succeeding is exactly what spends a FREE user's
-        // lifetime deck quota server-side (see /api/ingest's isFirstChunk
-        // gate) - discarding `accumulated` here would burn that one-time
-        // quota for nothing. Save what we got instead, and queue the chunk
+        // succeeded. Chunk 0 succeeding is exactly what spends one of a FREE
+        // user's monthly decks server-side (see /api/ingest's isFirstChunk
+        // gate) - discarding `accumulated` here would burn that allowance
+        // for nothing. Save what we got instead, and queue the chunk
         // that failed plus everything after it (both the rest of this batch
         // and any truncation overflow) as pendingChunks - "Generate Next
         // Section" on the home page already sends isFirstChunk: false, so
@@ -338,10 +345,12 @@ export default function IngestPage() {
             </span>
           </div>
           <p className="mt-3 text-lg font-semibold text-foreground">
-            You&apos;ve reached your lifetime free limit of 1 deck.
+            You&apos;ve used all {FREE_DECKS_PER_MONTH} of this month&apos;s free decks.
           </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Upgrade to Pro to unlock unlimited AI studying.
+            Your allowance resets at the start of next month. Everything you&apos;ve already
+            made stays free to study, review and map. Pro removes the limit and unlocks the
+            smartest models.
           </p>
           <Link
             href="/pricing"

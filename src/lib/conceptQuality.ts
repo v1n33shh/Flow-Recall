@@ -22,8 +22,10 @@ export type QualityReport = {
  *
  * Deliberately repairs rather than rejects wherever it can. A hard reject would
  * throw away a card whose question, answer, distractor and explanation are all
- * perfectly good because one derived field came back malformed - and a FREE user
- * gets one deck for life. */
+ * perfectly good because one derived field came back malformed, and a FREE user has
+ * only a few decks a month to spend. A cleared cloze is also no longer permanent:
+ * ConceptEditor lets a student repair the blank, which brings a card the engine was
+ * never able to ask back into the schedule. */
 export function applyQualityGate(concepts: RawConcept[]): {
   concepts: RawConcept[];
   report: QualityReport;

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -86,4 +87,26 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- POST_NOTIFICATIONS, VIBRATE, WAKE_LOCK and RECEIVE_BOOT_COMPLETED are merged
+         in by @capacitor/local-notifications and are all wanted: the nightly study
+         reminder needs the first, and the last is what survives a reboot.
+
+         SCHEDULE_EXACT_ALARM is removed on purpose. It is a Play policy-restricted
+         permission that expects a core feature genuinely requiring exact timing (an
+         alarm clock, a calendar alert), and a nightly nudge is not that - a few
+         minutes of drift is invisible. Requesting it anyway invites a review question
+         we would have no good answer to.
+
+         Safe to remove, and checked on the device rather than assumed: the plugin
+         marks every notification isExactNotification=true by default, so the thing
+         that actually decides is the second half of its own guard -
+         `isExactNotification && canScheduleExactAlarms(alarmManager)`. On API 31+
+         without this permission that call returns false and LocalNotificationManager
+         falls back to setAndAllowWhileIdle, which still wakes the device from doze.
+         No SecurityException, a few minutes of drift, and nothing to explain to a
+         Play reviewer. -->
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:node="remove" />
 </manifest>

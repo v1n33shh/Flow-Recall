@@ -12,14 +12,14 @@ import {
   parseModelJson,
 } from "@/lib/ai";
 import { AskResponseSchema, askRequestSchema, buildAskPrompt } from "@/lib/askSchema";
+import { FREE_LOOKUPS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
+import { claimLookupAllowance } from "@/lib/freeQuotaDb";
 
-// FREE draws from the same lifetime bucket as reader definitions rather than a
-// counter of its own, purely to avoid a schema migration against production for
-// a first cut. The semantics are close enough to be honest - both are "AI lookups
-// you have spent" - but they do compete: a free student who spent all 20 looking
-// up words in the reader has none left for questions here. Splitting them is one
-// nullable column with a default and the same atomic-increment logic below.
-const FREE_ASK_LIMIT = 20;
+// FREE draws from the same monthly bucket as reader definitions and concept maps
+// rather than a counter of its own. The semantics are honest - all three are "AI
+// lookups you have spent" - but they do compete: a student who spends the month's
+// allowance looking up words in the reader has none left for questions here. That
+// competition is why the allowance is monthly and 60 rather than 20 for life.
 
 export async function POST(request: Request) {
   // Login-gated to block anonymous cost abuse, same as /api/define and /api/ingest.
@@ -38,7 +38,12 @@ export async function POST(request: Request) {
   // Plan and usage read fresh from the DB, never from the JWT or the client.
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { plan: true, currentPeriodEnd: true, definitionsUsed: true },
+    select: {
+      plan: true,
+      currentPeriodEnd: true,
+      definitionsUsed: true,
+      lookupsResetAt: true,
+    },
   });
 
   // A JWT outlives the row it names (src/auth.ts keeps a token valid when the
@@ -53,9 +58,15 @@ export async function POST(request: Request) {
     plan: user.plan,
     currentPeriodEnd: user.currentPeriodEnd,
   });
-  const used = user.definitionsUsed ?? 0;
+  const now = new Date();
+  const lookupsThisMonth = countInCurrentMonth(
+    user.definitionsUsed ?? 0,
+    user.lookupsResetAt ?? null,
+    now,
+    0,
+  );
 
-  if (plan !== "PRO" && used >= FREE_ASK_LIMIT) {
+  if (plan !== "PRO" && lookupsThisMonth >= FREE_LOOKUPS_PER_MONTH) {
     return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
   }
 
@@ -98,16 +109,10 @@ export async function POST(request: Request) {
     if (plan === "PRO") {
       await prisma.user.update({
         where: { id: session.user.id },
-        data: { definitionsUsed: { increment: 1 } },
+        data: { definitionsUsed: { increment: 1 }, lookupsResetAt: now },
       });
-    } else {
-      const result = await prisma.user.updateMany({
-        where: { id: session.user.id, definitionsUsed: { lt: FREE_ASK_LIMIT } },
-        data: { definitionsUsed: { increment: 1 } },
-      });
-      if (result.count === 0) {
-        return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
-      }
+    } else if (!(await claimLookupAllowance(session.user.id, now))) {
+      return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
     }
 
     return Response.json(validated.data);

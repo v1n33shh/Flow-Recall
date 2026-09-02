@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearAllLocalUserData, setStudyDeck, setStudySession } from "./storage";
-import type { QueueItem } from "./types";
+import {
+  clearAllLocalUserData,
+  deleteConcept,
+  getAllDeckRows,
+  setStudyDeck,
+  setStudySession,
+  updateConcept,
+} from "./storage";
+import type { Concept, Deck, QueueItem } from "./types";
 
 // vitest runs in the "node" environment (see vitest.config.ts), so there is no
 // window. A minimal localStorage is enough for this: the point under test is
@@ -115,6 +122,75 @@ describe("the study handoffs", () => {
     expect(store.has(SESSION_KEY)).toBe(false);
   });
 });
+
+describe("correcting one card", () => {
+  beforeEach(() => {
+    installFakeStorage({ "flowrecall:savedDecks": JSON.stringify([deck()]) });
+  });
+
+  const cardsOf = () => getAllDeckRows()[0].concepts.map((c) => c.id);
+
+  it("rewrites the card in place, keeping its id and its position", () => {
+    // The id IS the history: memory rows are keyed deckId::conceptId, so a "fix"
+    // that mints a new id would silently discard everything the student has proved.
+    updateConcept("deck-a", { ...card("c2"), answer: "Corrected answer" });
+    const rows = getAllDeckRows()[0];
+    expect(cardsOf()).toEqual(["c1", "c2", "c3"]);
+    expect(rows.concepts[1].answer).toBe("Corrected answer");
+    expect(rows.concepts[0].answer).toBe("answer c1");
+  });
+
+  it("stamps updatedAt so sync carries the correction", () => {
+    const before = getAllDeckRows()[0].updatedAt ?? 0;
+    updateConcept("deck-a", { ...card("c2"), answer: "Corrected" });
+    expect((getAllDeckRows()[0].updatedAt ?? 0)).toBeGreaterThan(before);
+  });
+
+  it("is a no-op for a card that is no longer in the deck", () => {
+    updateConcept("deck-a", { ...card("gone"), answer: "x" });
+    expect(cardsOf()).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("drops the card and every map edge that named it", () => {
+    // A stored map outlives the concepts it names, and DeckLearningPath orders the
+    // deck from these edges - a dangling one puts a deleted concept in the path.
+    deleteConcept("deck-a", "c2");
+    const row = getAllDeckRows()[0];
+    expect(cardsOf()).toEqual(["c1", "c3"]);
+    expect(row.conceptMap).toEqual([{ from: "c1", to: "c3", relation: "contrast" }]);
+  });
+
+  it("leaves no tombstone, because the deck row itself still travels", () => {
+    deleteConcept("deck-a", "c2");
+    expect(getAllDeckRows()[0].deletedAt).toBeUndefined();
+  });
+});
+
+function card(id: string): Concept {
+  return {
+    id,
+    concept: `label ${id}`,
+    question: `question ${id}`,
+    answer: `answer ${id}`,
+    distractor: `distractor ${id}`,
+    cloze: `the fact about ${id} is _____.`,
+  };
+}
+
+function deck(): Deck {
+  return {
+    id: "deck-a",
+    title: "Cardiac cycle",
+    createdAt: 1_000,
+    updatedAt: 2_000,
+    concepts: [card("c1"), card("c2"), card("c3")],
+    conceptMap: [
+      { from: "c1", to: "c2", relation: "prerequisite" },
+      { from: "c2", to: "c3", relation: "explains" },
+      { from: "c1", to: "c3", relation: "contrast" },
+    ],
+  };
+}
 
 function queueItem(): QueueItem {
   return {

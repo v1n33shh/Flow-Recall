@@ -16,6 +16,8 @@ import {
   buildConceptMapPrompt,
   conceptMapRequestSchema,
 } from "@/lib/conceptGraphSchema";
+import { FREE_LOOKUPS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
+import { claimLookupAllowance } from "@/lib/freeQuotaDb";
 
 /** How a deck's ideas relate, in one pass over the finished deck.
  *
@@ -35,7 +37,8 @@ import {
 // Same reasoning /api/ingest applies per deck rather than per chunk - and the same
 // tradeoff: a client that always sent `first: false` would map for free. Worth it
 // for a route that cannot create a deck, only annotate one the account already has.
-const FREE_MAP_LIMIT = 20;
+//
+// The allowance itself is shared with /api/define and /api/ask - see freeQuota.ts.
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -52,7 +55,12 @@ export async function POST(request: Request) {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { plan: true, currentPeriodEnd: true, definitionsUsed: true },
+    select: {
+      plan: true,
+      currentPeriodEnd: true,
+      definitionsUsed: true,
+      lookupsResetAt: true,
+    },
   });
 
   // A JWT outlives the row it names (src/auth.ts keeps a token valid when the
@@ -68,9 +76,15 @@ export async function POST(request: Request) {
     currentPeriodEnd: user.currentPeriodEnd,
   });
   const charge = parsed.data.first;
-  const used = user.definitionsUsed ?? 0;
+  const now = new Date();
+  const lookupsThisMonth = countInCurrentMonth(
+    user.definitionsUsed ?? 0,
+    user.lookupsResetAt ?? null,
+    now,
+    0,
+  );
 
-  if (charge && plan !== "PRO" && used >= FREE_MAP_LIMIT) {
+  if (charge && plan !== "PRO" && lookupsThisMonth >= FREE_LOOKUPS_PER_MONTH) {
     return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
   }
 
@@ -114,16 +128,10 @@ export async function POST(request: Request) {
       if (plan === "PRO") {
         await prisma.user.update({
           where: { id: session.user.id },
-          data: { definitionsUsed: { increment: 1 } },
+          data: { definitionsUsed: { increment: 1 }, lookupsResetAt: now },
         });
-      } else {
-        const result = await prisma.user.updateMany({
-          where: { id: session.user.id, definitionsUsed: { lt: FREE_MAP_LIMIT } },
-          data: { definitionsUsed: { increment: 1 } },
-        });
-        if (result.count === 0) {
-          return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
-        }
+      } else if (!(await claimLookupAllowance(session.user.id, now))) {
+        return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
       }
     }
 

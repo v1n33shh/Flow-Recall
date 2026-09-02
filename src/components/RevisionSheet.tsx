@@ -8,9 +8,10 @@ import type { Concept } from "@/lib/types";
 import { factSentence, readableBody } from "@/lib/conceptProse";
 import { deckMastery, type DeckMastery } from "@/lib/recallStorage";
 import { unitIdFor, type MasteryLevel } from "@/lib/recallModel";
-import { setStudyDeck } from "@/lib/storage";
+import { setStudyDeck, useSavedDecks } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
+import ConceptEditor from "./ConceptEditor";
 import ConceptRelations from "./ConceptRelations";
 import ConceptTeachBack from "./ConceptTeachBack";
 import DeckLearningPath, { useConceptMap } from "./DeckLearningPath";
@@ -58,10 +59,12 @@ const FILTERS: { id: Filter; label: string }[] = [
 export default function RevisionSheet({
   deckId,
   title,
-  concepts,
+  concepts: handedOff,
 }: {
   deckId: string;
   title: string;
+  /** The deck as the study handoff had it. Used only until the live deck row is
+   * readable - see `concepts` below. */
   concepts: Concept[];
 }) {
   const router = useRouter();
@@ -70,6 +73,15 @@ export default function RevisionSheet({
 
   const [mastery, setMastery] = useState<DeckMastery | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [editing, setEditing] = useState<string | null>(null);
+
+  // Read from the live deck row rather than the handoff prop, so a card corrected or
+  // deleted below appears corrected or deleted immediately. useSavedDecks is a
+  // useSyncExternalStore over the same localStorage the mutations write, so this
+  // needs no event of its own. Falls back to the handoff for the first render, where
+  // the server snapshot is empty.
+  const savedDecks = useSavedDecks();
+  const concepts = savedDecks.find((deck) => deck.id === deckId)?.concepts ?? handedOff;
 
   // Re-read on the engine's own event, so finishing a session and coming back
   // here shows the new state without a reload. Signed out, this simply never
@@ -320,6 +332,29 @@ export default function RevisionSheet({
                     actually do. */}
                 <ConceptAsk unitId={unitIdFor(deckId, concept.id)} concept={concept} />
                 <ConceptTeachBack unitId={unitIdFor(deckId, concept.id)} concept={concept} />
+
+                {/* Last, because correcting a card is the rarest thing done here and
+                    the most destructive - but a real bordered control rather than
+                    something revealed on hover, which does not exist on a phone. */}
+                {editing === concept.id ? (
+                  <ConceptEditor
+                    deckId={deckId}
+                    concept={concept}
+                    userId={userId}
+                    onDone={() => setEditing(null)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      vibrateTap();
+                      setEditing(concept.id);
+                    }}
+                    className="mt-3 rounded-full border border-border bg-foreground/5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors duration-200 active:bg-foreground/10"
+                  >
+                    Fix this card
+                  </button>
+                )}
               </motion.li>
             );
           })}

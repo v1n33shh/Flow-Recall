@@ -41,3 +41,26 @@ export function wholeDaysBetween(from: Date, to: Date, timezoneOffsetMinutes: nu
   const toDay = startOfLocalDay(to, timezoneOffsetMinutes).getTime();
   return Math.round((toDay - fromDay) / MS_PER_DAY);
 }
+
+/** UTC-midnight timestamp for the first day of the local calendar month - the
+ * monthly sibling of startOfLocalDay, and safe to store and compare the same way.
+ *
+ * Used by the FREE allowances, which roll over per calendar month rather than per
+ * day. A student in UTC+5:30 who generates a deck at 00:30 on the 1st has already
+ * started a new month; reading the raw UTC month would tell them they had not. */
+export function startOfLocalMonth(date: Date, timezoneOffsetMinutes: number): Date {
+  const shifted = new Date(date.getTime() - timezoneOffsetMinutes * 60_000);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1));
+}
+
+/** Whether `to` falls in a later local calendar month than `from`.
+ *
+ * Strictly later, not merely different: a clock that has gone backwards (a
+ * corrected device clock, a stored date in the future) must not hand out a fresh
+ * allowance. */
+export function isNewLocalMonth(from: Date, to: Date, timezoneOffsetMinutes: number): boolean {
+  return (
+    startOfLocalMonth(to, timezoneOffsetMinutes).getTime() >
+    startOfLocalMonth(from, timezoneOffsetMinutes).getTime()
+  );
+}

@@ -10,6 +10,7 @@ import { Browser } from "@capacitor/browser";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import SignOutButton from "@/components/SignOutButton";
+import StudyReminderSettings from "@/components/StudyReminderSettings";
 import GoogleIcon from "@/components/GoogleIcon";
 import LogoMark from "@/components/LogoMark";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
@@ -835,6 +836,12 @@ function NativeAccountScreen() {
               trailing={<ThemeSwitch on={theme === "dark"} onToggle={toggleTheme} />}
             />
           </SettingsGroup>
+          {/* Its own card rather than a SettingsRow: the switch carries a sentence of
+              explanation and an hour picker, neither of which fits a single row. Renders
+              nothing on the web, where a closed tab cannot fire a notification. */}
+          <div className="mt-3">
+            <StudyReminderSettings />
+          </div>
         </Reveal>
 
         <Reveal index={4}>

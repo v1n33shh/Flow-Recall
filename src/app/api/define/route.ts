@@ -7,11 +7,14 @@ import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
 import { DefinitionResponseSchema } from "@/lib/definitionSchema";
+import { FREE_LOOKUPS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
+import { claimLookupAllowance } from "@/lib/freeQuotaDb";
 
-// Lifetime cap for FREE plans, matching /api/ingest's "1 deck for life"
+// The FREE allowance for this route lives in freeQuota.ts, shared with /api/ask
+// and /api/concept-map because all three spend the one `definitionsUsed` counter.
+// Formerly a local "20 for life" constant, matching /api/ingest's old lifetime cap
 // pivot rather than a daily reset - simpler to reason about and simpler to
 // enforce (no day-rollover logic needed, just a running counter).
-const FREE_DEFINITION_LIMIT = 20;
 
 const requestSchema = z.object({
   phrase: z.string().trim().min(1).max(200),
@@ -65,11 +68,16 @@ export async function POST(request: Request) {
 
   // Read plan + usage fresh from the DB - never trust a client-supplied
   // count, same reasoning as /api/ingest's server-side quota check. FREE
-  // gets a lifetime cap of FREE_DEFINITION_LIMIT lookups; PRO is unlimited
-  // and never hits this branch.
+  // gets FREE_LOOKUPS_PER_MONTH lookups a month; PRO is unlimited and never
+  // hits this branch.
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { plan: true, currentPeriodEnd: true, definitionsUsed: true },
+    select: {
+      plan: true,
+      currentPeriodEnd: true,
+      definitionsUsed: true,
+      lookupsResetAt: true,
+    },
   });
 
   // A JWT outlives the row it names: sessions are stateless (src/auth.ts sets
@@ -83,9 +91,17 @@ export async function POST(request: Request) {
   const plan = await resolveEffectivePlan(
     user ? { id: session.user.id, plan: user.plan, currentPeriodEnd: user.currentPeriodEnd } : null,
   );
-  const definitionsUsed = user?.definitionsUsed ?? 0;
+  const now = new Date();
+  // A count stamped in an earlier month is spent-and-expired. The lookup month is
+  // UTC for all three routes that share this counter - see claimLookupAllowance.
+  const lookupsThisMonth = countInCurrentMonth(
+    user.definitionsUsed ?? 0,
+    user.lookupsResetAt ?? null,
+    now,
+    0,
+  );
 
-  if (plan !== "PRO" && definitionsUsed >= FREE_DEFINITION_LIMIT) {
+  if (plan !== "PRO" && lookupsThisMonth >= FREE_LOOKUPS_PER_MONTH) {
     return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
   }
 
@@ -123,26 +139,19 @@ export async function POST(request: Request) {
     // user nothing. Incremented regardless of plan (see schema.prisma) so
     // it doubles as a usage metric once a user is Pro.
     //
-    // Atomic + conditional for FREE (not the plain read-then-write this used
-    // to be) - two concurrent requests reading the same stale `definitionsUsed`
-    // before either write lands could otherwise both pass the earlier check
-    // and both increment, letting a FREE account exceed the lifetime cap.
-    // PRO has no cap, so its increment stays unconditional.
+    // PRO has no cap, so its increment stays unconditional and exists only as a
+    // usage metric. FREE goes through the atomic claim, which is what stops two
+    // concurrent requests from both reading a pre-increment count and both passing
+    // the check above.
     if (plan === "PRO") {
       await prisma.user.update({
         where: { id: session.user.id },
-        data: { definitionsUsed: { increment: 1 } },
+        data: { definitionsUsed: { increment: 1 }, lookupsResetAt: now },
       });
-    } else {
-      const result = await prisma.user.updateMany({
-        where: { id: session.user.id, definitionsUsed: { lt: FREE_DEFINITION_LIMIT } },
-        data: { definitionsUsed: { increment: 1 } },
-      });
-      if (result.count === 0) {
-        // Lost a race for the last free slot - the lookup already happened
-        // and cost real money, but a FREE account must never end up over cap.
-        return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
-      }
+    } else if (!(await claimLookupAllowance(session.user.id, now))) {
+      // Lost a race for the last free slot - the lookup already happened and cost
+      // real money, but a FREE account must never end up over cap.
+      return Response.json({ error: "LIMIT_REACHED" }, { status: 403 });
     }
 
     return Response.json(validated.data);

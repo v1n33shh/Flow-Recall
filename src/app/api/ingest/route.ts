@@ -16,6 +16,9 @@ import {
 } from "@/lib/ai";
 import { ConceptsResponseSchema, buildConceptsPrompt } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
+import { FREE_DECKS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
+import { claimDeckAllowance } from "@/lib/freeQuotaDb";
+import { parseTimezoneOffsetMinutes } from "@/lib/localDay";
 
 const requestSchema = z.object({
   text: z.string().min(1),
@@ -29,6 +32,10 @@ const requestSchema = z.object({
   // enforces and increments the limit; continuation chunks (false) pass
   // through. Defaults true so a plain single-chunk request always counts.
   isFirstChunk: z.boolean().default(true),
+  // Which calendar month the FREE allowance is counted in belongs to the student,
+  // not to the server process (always UTC on Vercel). Same convention as
+  // /api/cloze-grade and /api/streak: the client sends getTimezoneOffset().
+  timezoneOffsetMinutes: z.number().optional(),
 });
 
 export async function POST(request: Request) {
@@ -55,6 +62,8 @@ export async function POST(request: Request) {
   }
 
   const { text, model: requestedModel, isFirstChunk } = parsed.data;
+  const timezoneOffsetMinutes = parseTimezoneOffsetMinutes(parsed.data.timezoneOffsetMinutes);
+  const now = new Date();
 
   // Read the plan fresh from the DB - never trust a plan claim from the client,
   // and don't rely on the (possibly stale) JWT, so an upgrade takes effect on
@@ -90,14 +99,21 @@ export async function POST(request: Request) {
     );
   }
 
-  // We are pivoting to a LIFETIME free limit (1 deck forever) rather than daily.
-  // We just read the raw counter and never roll it over. We leave the DB column
-  // named `decksGeneratedToday` for now to avoid a Supabase DB migration.
-  const generatedTotal = user?.decksGeneratedToday ?? 0;
+  // FREE_DECKS_PER_MONTH per calendar month, rolled over in application code -
+  // the columns stay named `decksGeneratedToday`/`lastDeckGeneratedDate` (a stale
+  // per-day name kept through two pivots now) so this needs no Supabase migration.
+  // See freeQuota.ts for why the allowance is monthly rather than the one-deck
+  // lifetime cap this used to be.
+  const generatedThisMonth = countInCurrentMonth(
+    user?.decksGeneratedToday ?? 0,
+    user?.lastDeckGeneratedDate ?? null,
+    now,
+    timezoneOffsetMinutes,
+  );
 
-  // Paywall: FREE plans get exactly 1 deck for life. Only the first chunk of
-  // a stream increments the limit (checked by `generatedTotal >= 1`).
-  if (plan !== "PRO" && isFirstChunk && generatedTotal >= 1) {
+  // Refuse before spending anything. Only the first chunk of a stream is counted,
+  // so a multi-chunk deck costs one allowance however many requests it takes.
+  if (plan !== "PRO" && isFirstChunk && generatedThisMonth >= FREE_DECKS_PER_MONTH) {
     return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
   }
 
@@ -155,29 +171,21 @@ export async function POST(request: Request) {
       ...concept,
     }));
 
-    // Record this deck against the lifetime quota - only on the first chunk.
-    // Atomic + conditional for FREE (not the plain read-then-write this used
-    // to be) - two concurrent requests reading the same stale `generatedTotal`
-    // before either write lands could otherwise both pass the earlier check
-    // and both increment, letting a FREE account get more than its one
-    // lifetime deck. PRO has no cap, so its increment stays unconditional.
+    // Record this deck against the monthly allowance - only on the first chunk.
+    // PRO has no cap, so its increment stays unconditional and exists only as a
+    // usage metric; FREE goes through the atomic claim, which is what stops two
+    // concurrent requests from both reading a pre-increment count and both passing
+    // the check above.
     if (isFirstChunk) {
       if (plan === "PRO") {
         await prisma.user.update({
           where: { id: session.user.id },
-          data: { decksGeneratedToday: { increment: 1 }, lastDeckGeneratedDate: new Date() },
+          data: { decksGeneratedToday: { increment: 1 }, lastDeckGeneratedDate: now },
         });
-      } else {
-        const result = await prisma.user.updateMany({
-          where: { id: session.user.id, decksGeneratedToday: { lt: 1 } },
-          data: { decksGeneratedToday: { increment: 1 }, lastDeckGeneratedDate: new Date() },
-        });
-        if (result.count === 0) {
-          // Lost a race for the one free slot - generation already happened
-          // and cost real money, but a FREE account must never end up with
-          // more than its one lifetime deck.
-          return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
-        }
+      } else if (!(await claimDeckAllowance(session.user.id, now, timezoneOffsetMinutes))) {
+        // Lost a race for the last free slot. Generation already happened and cost
+        // real money, but a FREE account must never exceed its allowance.
+        return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
       }
     }
 

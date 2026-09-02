@@ -41,13 +41,14 @@ On the flashcard plan itself, **Move 2 is complete and device-verified**: the se
 its UI - the *"Got 20 minutes?"* home block, `/study`'s session mode, the cross-deck handoff (`2f08c0b`) -
 and the three bugs the device pass found (`0a336bd`). Shipped before it, in plan order: A1 the revision sheet (`/revise`, `0d874ab`), A2 ask-this-card (`1ff2bc2`), and
 Move 4's generation fields - `misconception` (`8dccdbf`), `whyItMatters` / `sourceQuote` (`2afdb16`).
-**273 tests pass**, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
+**286 tests pass**, `tsc --noEmit` clean, lint **0 errors / 45 warnings**, both `npm run build` and
 `npm run build:apk` succeed. All 45 warnings pre-date this work; the two the export control cleared
 (`useDataExport` and `Capacitor` both unused) are gone because it now calls them.
 
 **What is next**, per `twinkly-shimmying-hennessy.md`: Phase 1 (durability) and Phase 2 (**A4 the concept
-map**) are both **done and device-verified** - `ded772c` plus the label fix in the commit below it. Phase 3 is
-**A3 teach-it-back**, not started. Move 3's extra formats and Move 5 come after both. The
+map**) are both **done and device-verified** - `ded772c` plus the label fix in the commit below it. Phase 3,
+**A3 teach-it-back**, is **committed as `be6e9c7`**, device-verified as far as it can be before deploying, and
+waiting on a migration and a push - see its own section below. After it: Move 3's extra formats and Move 5. Move 3's extra formats and Move 5 come after both. The
 one non-code item is still the **$25 Play registration**, below.
 
 ### The concept map, as built (`ded772c`)
@@ -79,6 +80,67 @@ pinned model ever changes.
 
 `Deck.conceptMap` rides the sync that shipped in Phase 1, whose migration already carried the column, and a
 tombstone now strips the map along with the concepts.
+
+### Phase 3 — teach it back, as built (`be6e9c7`)
+
+The only surface in the app where a student PRODUCES understanding instead of
+recognising it. `/api/teach-back` takes their own explanation of one concept and returns
+three lists: **what you got**, **what you left out**, **where your material says
+otherwise**. No score, deliberately - a number becomes the thing they optimise, and
+"write until the number goes up" is not the exercise.
+
+`src/lib/teachBackSchema.ts` holds the schemas and `buildTeachBackPrompt`, exported so the
+prompt can be run against the real model without a session cookie. Every response list
+defaults to empty rather than being required (no `generateObject` on the pinned model, so
+a missing key should cost that key, not the debrief) - and because that means `{}` parses
+clean, **the route rejects all three lists being empty**: that is not a verdict, it is a
+model that did not answer.
+
+**Checked against the real model** on an attempt built to be mixed: one right point, one
+claim contradicting the stated mechanism, one omission the material covers, and one TRUE
+claim the material never mentions. All four landed - the contradiction in `wrong`, the
+omission in `missing`, and the beyond-material claim correctly left alone. Measured over
+26 calls, **roughly 1 in 12 returns malformed JSON** (truncated mid-array); the route
+502s with a readable message and the client keeps the draft, so the cost is one of the
+day's 200 and a retry. Raising `maxOutputTokens` is not the fix - the failures were 500
+characters into a 4800-character budget. A single in-route retry is the cheap lever if it
+ever measures worse.
+
+**The limit is `isOverDailyCap`** (200/day, FREE and PRO alike) rather than the FREE
+lifetime 20 that `/api/ask` and `/api/concept-map` spend. A lifetime 20 would kill the
+feature exactly where it earns its place: a student working through a hard chapter
+explains ten concepts in a sitting. The cost, documented in the route, is that this
+shares one counter with cloze grading - spend 150 here and 50 grades remain before typed
+answers fall back to self-report.
+
+Attempts persist like asks: **IndexedDB v3**, immutable, userId-scoped, and joined into
+`SyncPayload`. A second attempt is a new row, never an edit, because re-reading last
+month's explanation beside this month's is the point.
+
+**Device-verified so far** (on the phone, 360dp, before deploy): the v3 upgrade added the
+`teachBacks` store and left everything else exactly as it was - units 3, memory 6,
+**reviews 14**, asks 4 - which is the check that mattered, since the review log cannot be
+regenerated. The pill renders on every card (137x34, no overflow), the textarea is 244x126
+and hit-testable with `maxLength` 1200, and submitting against the not-yet-deployed route
+returns 404 and shows *"Couldn't read your explanation. Please try again."* **while keeping
+the draft** - a student never loses what they wrote to a failed call.
+
+**Two things gate the rest, in this order and no other:**
+
+1. **Apply `20260902120000_add_teach_back_records`.** Purely additive - one CREATE TABLE,
+   one index, one FK, on a table that does not exist yet; verified byte-identical to what
+   `prisma migrate diff --from-empty` generates from the schema. Needs an explicit
+   go-ahead: the datasource is the live Supabase instance and there is no staging database.
+2. **Then push.** Order matters and is not cosmetic: `/api/sync` now writes
+   `TeachBackRecord`, so deploying it before the table exists makes every push 500 and
+   breaks syncing for reviews and asks too. The reverse order is safe - an old deployed
+   route silently drops the unknown `teachBacks` key (zod strips it), and the client reads
+   an absent collection as "nothing new".
+
+Until both are done the phone is deliberately back on the **last shipping build**
+(`59aaf678b1e3c71629e019c8f6f66150`), not a devtools one, and `public/flowrecall-release.apk`
+is deliberately NOT refreshed - a download whose "Explain it back" button 404s would be
+worse than one without the feature.
 
 ### What the concept-map device pass settled, 2026-09-02
 
@@ -145,7 +207,8 @@ zero `adb` forwards left behind.
 Run `git status -sb` first and trust it over this line; it has gone stale mid-session before.
 
 ```
-HEAD     Keep the edge the model got right, and say why nothing looser
+HEAD     Let a student explain it back, and be told what they missed
+878b9ac  Keep the edge the model got right, and say why nothing looser
 266df2e  Record what the concept map is, and what it has not proved yet   <- origin/main
 ded772c  Turn a deck into a subject, not a pile of facts
 b8fb2b6  Deliver the export the way a phone can actually receive it

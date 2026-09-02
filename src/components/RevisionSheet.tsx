@@ -12,6 +12,7 @@ import { setStudyDeck } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
 import ConceptRelations from "./ConceptRelations";
+import ConceptTeachBack from "./ConceptTeachBack";
 import DeckLearningPath, { useConceptMap } from "./DeckLearningPath";
 
 /** Read the deck instead of answering it.
@@ -313,8 +314,12 @@ export default function RevisionSheet({
                 )}
 
                 {/* Reading is where a question actually forms - the explanation is
-                    right there and either it landed or it did not. */}
+                    right there and either it landed or it did not. Asking comes
+                    first and explaining back second, because that is the order a
+                    student uses them in: understand it, then find out whether you
+                    actually do. */}
                 <ConceptAsk unitId={unitIdFor(deckId, concept.id)} concept={concept} />
+                <ConceptTeachBack unitId={unitIdFor(deckId, concept.id)} concept={concept} />
               </motion.li>
             );
           })}

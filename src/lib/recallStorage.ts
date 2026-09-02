@@ -34,17 +34,19 @@ import { apiUrl, API_FETCH_CREDENTIALS } from "./apiUrl";
 // it lands, this is device-local, exactly as the deck list already was.
 
 const DB_NAME = "flowrecall-recall";
-// v2 added the `asks` store. Every createObjectStore below is guarded by a
-// `contains` check and nothing existing is touched, so upgrading a v1 database
-// adds the one store and leaves units, memory and reviews exactly as they were -
-// which matters more here than usual, since `reviews` is the asset the whole
-// memory model can be rebuilt from and cannot be regenerated if lost.
-const DB_VERSION = 2;
+// v2 added the `asks` store, v3 the `teachBacks` store. Every createObjectStore
+// below is guarded by a `contains` check and nothing existing is touched, so
+// upgrading an older database adds only the missing stores and leaves units, memory
+// and reviews exactly as they were - which matters more here than usual, since
+// `reviews` is the asset the whole memory model can be rebuilt from and cannot be
+// regenerated if lost.
+const DB_VERSION = 3;
 
 const UNITS_STORE = "units";
 const MEMORY_STORE = "memory";
 const REVIEWS_STORE = "reviews";
 const ASKS_STORE = "asks";
+const TEACH_BACKS_STORE = "teachBacks";
 
 const USER_INDEX = "userId";
 const UNIT_INDEX = "unitId";
@@ -88,6 +90,11 @@ function openDb(): Promise<IDBDatabase> {
         const asks = db.createObjectStore(ASKS_STORE, { keyPath: "id" });
         asks.createIndex(USER_INDEX, "userId");
         asks.createIndex(USER_UNIT_INDEX, ["userId", "unitId"]);
+      }
+      if (!db.objectStoreNames.contains(TEACH_BACKS_STORE)) {
+        const teachBacks = db.createObjectStore(TEACH_BACKS_STORE, { keyPath: "id" });
+        teachBacks.createIndex(USER_INDEX, "userId");
+        teachBacks.createIndex(USER_UNIT_INDEX, ["userId", "unitId"]);
       }
     };
     // A version change cannot start while another connection still holds the
@@ -514,14 +521,19 @@ export function hasMigratedSavedDecks(): boolean {
  * deletion flow at the exact moment the user most needs it to complete. */
 export async function deleteAllRecallData(): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction([UNITS_STORE, MEMORY_STORE, REVIEWS_STORE, ASKS_STORE], "readwrite");
+  const tx = db.transaction(
+    [UNITS_STORE, MEMORY_STORE, REVIEWS_STORE, ASKS_STORE, TEACH_BACKS_STORE],
+    "readwrite",
+  );
   tx.objectStore(UNITS_STORE).clear();
   tx.objectStore(MEMORY_STORE).clear();
   tx.objectStore(REVIEWS_STORE).clear();
   // Asks are the student's own words and an AI answer they paid a lookup for, so
   // account deletion has to take them too - the whole point of this function is
-  // that nothing survives it.
+  // that nothing survives it. Teach-backs are more personal again: an attempt is
+  // the student's own understanding, written out in full.
   tx.objectStore(ASKS_STORE).clear();
+  tx.objectStore(TEACH_BACKS_STORE).clear();
   await txDone(tx);
   if (typeof window !== "undefined") window.localStorage.removeItem(MIGRATION_FLAG_KEY);
   notifyRecallUpdate();
@@ -585,6 +597,82 @@ export async function saveAsk(input: {
   await txDone(tx);
   notifyRecallUpdate();
   return record;
+}
+
+// ── Teach-backs ──────────────────────────────────────────────────────────────
+
+/** One attempt at explaining a concept in the student's own words, and what came
+ * back.
+ *
+ * Stored for the same reason asks are - it carries a userId, so two people on one
+ * phone can never read each other's - but it is worth keeping for a different
+ * reason. An ask is a question and an answer; this is the student's own
+ * understanding as it stood on a date, which is the only record in the app of them
+ * getting BETTER at explaining something rather than faster at recognising it.
+ * Re-reading last week's attempt is the feature.
+ *
+ * Immutable, like a review and an ask: a second attempt at the same concept is a new
+ * record, never an edit of the old one. That is what makes the sync a union with
+ * nothing to resolve. */
+export type TeachBackRecord = {
+  id: string;
+  userId: string;
+  unitId: string;
+  /** What the student wrote, verbatim. Never rewritten - the point is comparing it
+   * with what they write next time. */
+  attempt: string;
+  correct: string[];
+  missing: string[];
+  wrong: string[];
+  attemptedAt: number;
+};
+
+/** Oldest first, so a concept reads as the progression it is. */
+export async function listTeachBacks(userId: string, unitId: string): Promise<TeachBackRecord[]> {
+  const db = await openDb();
+  const tx = db.transaction(TEACH_BACKS_STORE, "readonly");
+  const rows = await requestToPromise<TeachBackRecord[]>(
+    tx
+      .objectStore(TEACH_BACKS_STORE)
+      .index(USER_UNIT_INDEX)
+      .getAll(IDBKeyRange.only([userId, unitId])),
+  );
+  return rows.sort((a, b) => a.attemptedAt - b.attemptedAt);
+}
+
+export async function saveTeachBack(input: {
+  userId: string;
+  unitId: string;
+  attempt: string;
+  correct: string[];
+  missing: string[];
+  wrong: string[];
+}): Promise<TeachBackRecord> {
+  const record: TeachBackRecord = {
+    id: crypto.randomUUID(),
+    userId: input.userId,
+    unitId: input.unitId,
+    attempt: input.attempt,
+    correct: input.correct,
+    missing: input.missing,
+    wrong: input.wrong,
+    attemptedAt: Date.now(),
+  };
+  const db = await openDb();
+  const tx = db.transaction(TEACH_BACKS_STORE, "readwrite");
+  tx.objectStore(TEACH_BACKS_STORE).put(record);
+  await txDone(tx);
+  notifyRecallUpdate();
+  return record;
+}
+
+/** Every teach-back this account holds, for the sync push. */
+async function listAllTeachBacks(userId: string): Promise<TeachBackRecord[]> {
+  const db = await openDb();
+  const tx = db.transaction(TEACH_BACKS_STORE, "readonly");
+  return requestToPromise<TeachBackRecord[]>(
+    tx.objectStore(TEACH_BACKS_STORE).index(USER_INDEX).getAll(IDBKeyRange.only(userId)),
+  );
 }
 
 /** Tonight's session, across every deck the student has.
@@ -654,16 +742,17 @@ export async function syncNow(userId: string): Promise<{ pushed: number; pulled:
   if (typeof window === "undefined") return null;
   const since = getSyncCursor(userId);
 
-  const [units, reviews, asks] = await Promise.all([
+  const [units, reviews, asks, teachBacks] = await Promise.all([
     listUnits(userId),
     listAllReviews(userId),
     listAllAsks(userId),
+    listAllTeachBacks(userId),
   ]);
   // Decks are per device, not per account (see Deck.userId): only this account's
   // go up, and a deck saved before owners were recorded counts as this account's,
   // which is exactly how the library already treats it.
   const decks = getAllDeckRows().filter((deck) => deck.userId === undefined || deck.userId === userId);
-  const local: SyncPayload = { decks, units, reviews, asks };
+  const local: SyncPayload = { decks, units, reviews, asks, teachBacks };
 
   const { toPush } = planSync({ local, remote: emptyPayload(), since, now: Date.now() });
 
@@ -693,6 +782,10 @@ export async function syncNow(userId: string): Promise<{ pushed: number; pulled:
     pulled.units.push(...remote.units.map((unit) => ({ ...unit, userId })));
     pulled.reviews.push(...remote.reviews.map((review) => ({ ...review, userId })));
     pulled.asks.push(...remote.asks.map((ask) => ({ ...ask, userId })));
+    // A route deployed before teach-backs existed returns no such key, and an older
+    // client is what this guard is really for - either way an absent collection is
+    // "nothing new", not a crash on the whole sync.
+    pulled.teachBacks.push(...(remote.teachBacks ?? []).map((row) => ({ ...row, userId })));
     cursor = remote.nextSince;
     if (!remote.more) {
       complete = true;
@@ -733,14 +826,15 @@ export async function syncNow(userId: string): Promise<{ pushed: number; pulled:
 }
 
 /** What one request carries up, well under /api/sync's own caps (500 decks, 5000
- * units, 5000 reviews, 1000 asks).
+ * units, 5000 reviews, 1000 asks, 500 teach-backs).
  *
  * Decks and units are the small numbers here even though the route allows more of
  * them, because both embed whole `Concept` objects - every explanation, every
  * source quote - so a few hundred decks is megabytes of request body, and the
  * ceiling that bites first is the platform's, not the route's. Reviews are a
- * handful of numbers each and can go up in bulk. */
-const PUSH_CHUNK = { decks: 20, units: 500, reviews: 2000, asks: 500 } as const;
+ * handful of numbers each and can go up in bulk. Teach-backs sit between the two:
+ * an attempt is a paragraph the student wrote plus three short lists. */
+const PUSH_CHUNK = { decks: 20, units: 500, reviews: 2000, asks: 500, teachBacks: 200 } as const;
 
 /** How many pull pages one sync will walk before giving up and leaving the rest
  * for the next one. At the route's page sizes this is more than a hundred thousand
@@ -757,12 +851,17 @@ function pushChunks(toPush: SyncPayload): SyncPayload[] {
     Math.ceil(toPush.units.length / PUSH_CHUNK.units),
     Math.ceil(toPush.reviews.length / PUSH_CHUNK.reviews),
     Math.ceil(toPush.asks.length / PUSH_CHUNK.asks),
+    Math.ceil(toPush.teachBacks.length / PUSH_CHUNK.teachBacks),
   );
   return Array.from({ length: count }, (_, i) => ({
     decks: toPush.decks.slice(i * PUSH_CHUNK.decks, (i + 1) * PUSH_CHUNK.decks),
     units: toPush.units.slice(i * PUSH_CHUNK.units, (i + 1) * PUSH_CHUNK.units),
     reviews: toPush.reviews.slice(i * PUSH_CHUNK.reviews, (i + 1) * PUSH_CHUNK.reviews),
     asks: toPush.asks.slice(i * PUSH_CHUNK.asks, (i + 1) * PUSH_CHUNK.asks),
+    teachBacks: toPush.teachBacks.slice(
+      i * PUSH_CHUNK.teachBacks,
+      (i + 1) * PUSH_CHUNK.teachBacks,
+    ),
   }));
 }
 
@@ -787,6 +886,7 @@ async function postSync(input: {
       units: input.payload.units.map(withoutOwner),
       reviews: input.payload.reviews.map(withoutOwner),
       asks: input.payload.asks.map(withoutOwner),
+      teachBacks: input.payload.teachBacks.map(withoutOwner),
     }),
   });
   if (!response.ok) throw new Error(`sync failed: ${response.status}`);
@@ -794,7 +894,7 @@ async function postSync(input: {
 }
 
 function emptyPayload(): SyncPayload {
-  return { decks: [], units: [], reviews: [], asks: [] };
+  return { decks: [], units: [], reviews: [], asks: [], teachBacks: [] };
 }
 
 /** Drops the owner from a row on its way up. The server writes every row with the
@@ -809,12 +909,23 @@ function withoutOwner<T extends { userId?: string }>(row: T): Omit<T, "userId"> 
 /** Everything pulled, in one transaction per store. `put` rather than `add`: the
  * merge has already decided these rows win, and a retry must not throw. */
 async function writePulledRows(rows: SyncPayload): Promise<void> {
-  if (rows.units.length === 0 && rows.reviews.length === 0 && rows.asks.length === 0) return;
+  if (
+    rows.units.length === 0 &&
+    rows.reviews.length === 0 &&
+    rows.asks.length === 0 &&
+    rows.teachBacks.length === 0
+  ) {
+    return;
+  }
   const db = await openDb();
-  const tx = db.transaction([UNITS_STORE, REVIEWS_STORE, ASKS_STORE], "readwrite");
+  const tx = db.transaction(
+    [UNITS_STORE, REVIEWS_STORE, ASKS_STORE, TEACH_BACKS_STORE],
+    "readwrite",
+  );
   for (const unit of rows.units) tx.objectStore(UNITS_STORE).put(unit);
   for (const review of rows.reviews) tx.objectStore(REVIEWS_STORE).put(review);
   for (const ask of rows.asks) tx.objectStore(ASKS_STORE).put(ask);
+  for (const row of rows.teachBacks) tx.objectStore(TEACH_BACKS_STORE).put(row);
   await txDone(tx);
 }
 

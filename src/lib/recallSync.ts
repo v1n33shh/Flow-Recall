@@ -11,7 +11,7 @@ import {
   type MemoryRecord,
   type ReviewRecord,
 } from "./recallModel";
-import type { AskRecord } from "./recallStorage";
+import type { AskRecord, TeachBackRecord } from "./recallStorage";
 import type { Deck } from "./types";
 
 // Making the learning record survive the phone.
@@ -160,6 +160,7 @@ export type SyncPayload = {
   units: KnowledgeUnit[];
   reviews: ReviewRecord[];
   asks: AskRecord[];
+  teachBacks: TeachBackRecord[];
 };
 
 /** How far back before the last cursor a push still re-sends rows.
@@ -176,8 +177,9 @@ export const PUSH_SAFETY_MS = 7 * 24 * 60 * 60 * 1000;
 /** Decides what to send up and what to write down. Pure, so every rule below is
  * a test rather than an argument.
  *
- * Conflicts, in full: **reviews and asks are immutable**, so a row already held
- * locally is never rewritten and the merge is a union by id. **Units and decks
+ * Conflicts, in full: **reviews, asks and teach-backs are immutable**, so a row
+ * already held locally is never rewritten and the merge is a union by id. A second
+ * attempt at explaining the same concept is a new row, never an edit. **Units and decks
  * are last-write-wins**, and a deck's stamp is the LATEST of createdAt, updatedAt
  * and deletedAt - which is what makes a tombstone beat an edit it postdates, and
  * an edit beat a tombstone it postdates. Losing that would resurrect a deck the
@@ -194,12 +196,14 @@ export function planSync(input: {
   const localUnits = new Map(input.local.units.map((u) => [u.id, u]));
   const localReviewIds = new Set(input.local.reviews.map((r) => r.id));
   const localAskIds = new Set(input.local.asks.map((a) => a.id));
+  const localTeachBackIds = new Set(input.local.teachBacks.map((t) => t.id));
 
   const toPush: SyncPayload = {
     decks: input.local.decks.filter((d) => deckStamp(d) > cutoff),
     units: input.local.units.filter((u) => unitStamp(u) > cutoff),
     reviews: input.local.reviews.filter((r) => r.reviewedAt > cutoff),
     asks: input.local.asks.filter((a) => a.askedAt > cutoff),
+    teachBacks: input.local.teachBacks.filter((t) => t.attemptedAt > cutoff),
   };
 
   const toWrite: SyncPayload = {
@@ -213,6 +217,7 @@ export function planSync(input: {
     }),
     reviews: input.remote.reviews.filter((r) => !localReviewIds.has(r.id)),
     asks: input.remote.asks.filter((a) => !localAskIds.has(a.id)),
+    teachBacks: input.remote.teachBacks.filter((t) => !localTeachBackIds.has(t.id)),
   };
 
   return {

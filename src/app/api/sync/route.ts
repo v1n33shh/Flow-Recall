@@ -35,6 +35,7 @@ const DECK_PAGE = PAGE;
 const UNIT_PAGE = PAGE * 5;
 const REVIEW_PAGE = PAGE * 25;
 const ASK_PAGE = PAGE * 5;
+const TEACH_BACK_PAGE = PAGE * 5;
 
 const timestamp = z.number().int().nonnegative();
 
@@ -93,6 +94,21 @@ const askSchema = z.object({
   askedAt: timestamp,
 });
 
+/** An attempt at explaining a concept, and the three lists that came back.
+ *
+ * `attempt` is capped at the same 1200 the route that produces it accepts, and each
+ * list entry at the same 300 - a payload claiming more than the producing route can
+ * emit did not come from it. */
+const teachBackSchema = z.object({
+  id: z.string().min(1).max(100),
+  unitId: z.string().min(1).max(400),
+  attempt: z.string().max(1200),
+  correct: z.array(z.string().max(300)).max(6),
+  missing: z.array(z.string().max(300)).max(6),
+  wrong: z.array(z.string().max(300)).max(6),
+  attemptedAt: timestamp,
+});
+
 const requestSchema = z.object({
   since: timestamp.nullable().default(null),
   /** False for the push-only requests a chunked first sync sends. Running the four
@@ -104,6 +120,9 @@ const requestSchema = z.object({
   units: z.array(unitSchema).max(5000).default([]),
   reviews: z.array(reviewSchema).max(5000).default([]),
   asks: z.array(askSchema).max(1000).default([]),
+  /** Defaults to empty, so a client built before teach-backs existed keeps syncing
+   * exactly as it did. */
+  teachBacks: z.array(teachBackSchema).max(500).default([]),
 });
 
 export async function POST(request: Request) {
@@ -130,7 +149,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const { since, pull, decks, units, reviews, asks } = parsed.data;
+  const { since, pull, decks, units, reviews, asks, teachBacks } = parsed.data;
 
   // Taken before the writes, and returned as the client's next cursor. Taking it
   // after would open a window in which another device's push is timestamped
@@ -208,6 +227,16 @@ export async function POST(request: Request) {
         skipDuplicates: true,
         data: asks.map((ask) => ({ ...ask, userId, askedAt: new Date(ask.askedAt) })),
       }),
+      // Immutable like a review: a second attempt at the same concept is a new row,
+      // so an id arriving twice is the same row twice and skipping it is the answer.
+      prisma.teachBackRecord.createMany({
+        skipDuplicates: true,
+        data: teachBacks.map((row) => ({
+          ...row,
+          userId,
+          attemptedAt: new Date(row.attemptedAt),
+        })),
+      }),
     ]);
   } catch (error) {
     console.error("sync push failed", error);
@@ -219,6 +248,7 @@ export async function POST(request: Request) {
   const remoteUnits = page?.units ?? [];
   const remoteReviews = page?.reviews ?? [];
   const remoteAsks = page?.asks ?? [];
+  const remoteTeachBacks = page?.teachBacks ?? [];
 
   // A collection whose page came back exactly as long as its own take has rows
   // after it that this response does not carry. `more` used to be
@@ -238,6 +268,9 @@ export async function POST(request: Request) {
   }
   if (remoteAsks.length === ASK_PAGE) {
     boundaries.push(remoteAsks[remoteAsks.length - 1].askedAt.getTime());
+  }
+  if (remoteTeachBacks.length === TEACH_BACK_PAGE) {
+    boundaries.push(remoteTeachBacks[remoteTeachBacks.length - 1].attemptedAt.getTime());
   }
   const more = boundaries.length > 0;
 
@@ -282,6 +315,10 @@ export async function POST(request: Request) {
       confidence: review.confidence ?? undefined,
     })),
     asks: remoteAsks.map((ask) => ({ ...ask, askedAt: ask.askedAt.getTime() })),
+    teachBacks: remoteTeachBacks.map((row) => ({
+      ...row,
+      attemptedAt: row.attemptedAt.getTime(),
+    })),
     // The client loops until this is false, asking again from `nextSince`.
     more,
     nextSince,
@@ -295,7 +332,7 @@ export async function POST(request: Request) {
  * chunk of a chunked first push is a real cost on a route that already writes up
  * to several thousand rows. */
 async function pullPage(userId: string, after: Date) {
-  const [decks, units, reviews, asks] = await Promise.all([
+  const [decks, units, reviews, asks, teachBacks] = await Promise.all([
     prisma.deck.findMany({
       where: { userId, updatedAt: { gt: after } },
       orderBy: { updatedAt: "asc" },
@@ -316,6 +353,11 @@ async function pullPage(userId: string, after: Date) {
       orderBy: { askedAt: "asc" },
       take: ASK_PAGE,
     }),
+    prisma.teachBackRecord.findMany({
+      where: { userId, attemptedAt: { gt: after } },
+      orderBy: { attemptedAt: "asc" },
+      take: TEACH_BACK_PAGE,
+    }),
   ]);
-  return { decks, units, reviews, asks };
+  return { decks, units, reviews, asks, teachBacks };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AGAIN, COUPLING_ON_LAPSE, COUPLING_ON_SUCCESS, GOOD, nextState } from "./fsrs";
 import { memoryKey, type KnowledgeUnit, type ReviewRecord } from "./recallModel";
 import { PUSH_SAFETY_MS, planSync, rebuildMemory, replayDivergences, type SyncPayload } from "./recallSync";
+import type { TeachBackRecord } from "./recallStorage";
 import type { Concept, Deck } from "./types";
 
 const USER = "u1";
@@ -192,8 +193,22 @@ function deck(overrides: Partial<Deck> = {}): Deck {
   return { id: "deck-a", title: "Cardio", createdAt: T0, concepts: [concept()], ...overrides };
 }
 
+function teachBack(overrides: Partial<TeachBackRecord> = {}): TeachBackRecord {
+  return {
+    id: "tb1",
+    userId: "u1",
+    unitId: "deck-a::c1",
+    attempt: "The heart fills, then squeezes.",
+    correct: ["You got the order right."],
+    missing: [],
+    wrong: [],
+    attemptedAt: T0,
+    ...overrides,
+  };
+}
+
 function payload(overrides: Partial<SyncPayload> = {}): SyncPayload {
-  return { decks: [], units: [], reviews: [], asks: [], ...overrides };
+  return { decks: [], units: [], reviews: [], asks: [], teachBacks: [], ...overrides };
 }
 
 describe("planSync", () => {
@@ -233,6 +248,38 @@ describe("planSync", () => {
       now: NOW,
     });
     expect(plan.toWrite.reviews.map((r) => r.id)).toEqual(["theirs"]);
+  });
+
+  it("pushes a teach-back after the cutoff and re-sends one just behind it", () => {
+    const since = NOW;
+    const plan = planSync({
+      local: payload({
+        teachBacks: [
+          teachBack({ id: "fresh", attemptedAt: since + 10 }),
+          teachBack({ id: "just-behind", attemptedAt: since - PUSH_SAFETY_MS / 2 }),
+          teachBack({ id: "ancient", attemptedAt: since - PUSH_SAFETY_MS * 2 }),
+        ],
+      }),
+      remote: payload(),
+      since,
+      now: NOW,
+    });
+    expect(plan.toPush.teachBacks.map((t) => t.id)).toEqual(["fresh", "just-behind"]);
+  });
+
+  // Immutable, so a second attempt at the same concept is a new row and the merge is
+  // a union by id - never an overwrite of what the student wrote before.
+  it("writes a remote teach-back it has never seen and never rewrites one it holds", () => {
+    const mine = teachBack({ id: "mine", attempt: "what I wrote here" });
+    const theirs = teachBack({ id: "theirs", attempt: "what I wrote on the laptop" });
+    const edited = teachBack({ id: "mine", attempt: "SOMETHING ELSE" });
+    const plan = planSync({
+      local: payload({ teachBacks: [mine] }),
+      remote: payload({ teachBacks: [edited, theirs] }),
+      since: T0,
+      now: NOW,
+    });
+    expect(plan.toWrite.teachBacks.map((t) => t.id)).toEqual(["theirs"]);
   });
 
   it("takes the newer deck when both sides changed it", () => {

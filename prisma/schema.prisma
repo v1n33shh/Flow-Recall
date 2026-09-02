@@ -9,8 +9,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -29,20 +29,20 @@ model User {
   // a plain String (not an enum) to match the existing default and the session
   // typing in src/types/next-auth.d.ts. `planStatus` mirrors the gateway's
   // subscription status ("ACTIVE" | "CANCELED"), null while a user is on FREE.
-  plan             String    @default("FREE")
-  planStatus       String?
-  currentPeriodEnd DateTime?
+  plan                   String    @default("FREE")
+  planStatus             String?
+  currentPeriodEnd       DateTime?
   // Gateway ids are nullable + unique: a given user pays through exactly one
   // gateway (Razorpay for IN, Stripe for INTL), and an id maps to one user.
-  stripeCustomerId       String? @unique
-  stripeSubscriptionId   String? @unique
-  razorpayCustomerId     String? @unique
-  razorpaySubscriptionId String? @unique
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  razorpayCustomerId     String?   @unique
+  razorpaySubscriptionId String?   @unique
 
   // Gamification: consecutive-day study streak and the last day it advanced.
   // lastStudyDate is nullable so existing users start with no recorded study.
-  currentStreak Int       @default(0)
-  lastStudyDate DateTime?
+  currentStreak         Int       @default(0)
+  lastStudyDate         DateTime?
   // Monetization: FREE plans are capped at 1 generation per calendar day.
   // decksGeneratedToday is the running count for the current day; it's reset
   // in application code when lastDeckGeneratedDate rolls over to a new day
@@ -54,20 +54,20 @@ model User {
   // stale per-day name), enforced server-side in /api/define. PRO is
   // unlimited and never checks this. Incremented on every successful
   // lookup regardless of plan, so it doubles as a usage metric for Pro users too.
-  definitionsUsed Int @default(0)
+  definitionsUsed       Int       @default(0)
   // Abuse ceiling for /api/cloze-grade, NOT a plan-gated feature limit like
   // decksGeneratedToday - this fires automatically during normal study
   // whenever a typed answer isn't an exact match, so it applies to FREE and
   // PRO alike (same free Groq model either way) and must stay generous
   // enough that heavy legitimate studying never comes close. Resets daily,
   // same rollover pattern as currentStreak/lastStudyDate above.
-  clozeGradesToday   Int       @default(0)
-  lastClozeGradeDate DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  clozeGradesToday      Int       @default(0)
+  lastClozeGradeDate    DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  accounts Account[]
-  sessions Session[]
+  accounts  Account[]
+  sessions  Session[]
   // One row per calendar day the user studied - powers the weekly streak
   // calendar. currentStreak above stays the fast path for the navbar badge;
   // this is the detailed history the Streak modal renders.
@@ -75,10 +75,11 @@ model User {
 
   // The learning record, synced from the device (see src/lib/recallSync.ts and
   // /api/sync). Cascade like studyDays: account deletion must take all of it.
-  decks    Deck[]
-  units    KnowledgeUnit[]
-  reviews  ReviewRecord[]
-  asks     AskRecord[]
+  decks      Deck[]
+  units      KnowledgeUnit[]
+  reviews    ReviewRecord[]
+  asks       AskRecord[]
+  teachBacks TeachBackRecord[]
 }
 
 // ── The synced learning record ───────────────────────────────────────────────
@@ -96,25 +97,33 @@ model User {
 // synced - which removes the only state two devices could disagree about.
 
 model Deck {
-  id     String @id
-  userId String
-  title  String
-  /** Concept[] verbatim. A blob rather than a Concept table because the client
-   * reads and writes a deck whole; the symmetry is what keeps the merge simple. */
-  concepts Json
-  /** Unprocessed source text for "Generate Next Section". */
+  id            String    @id
+  userId        String
+  title         String
+  /**
+   * Concept[] verbatim. A blob rather than a Concept table because the client
+   * reads and writes a deck whole; the symmetry is what keeps the merge simple.
+   */
+  concepts      Json
+  /**
+   * Unprocessed source text for "Generate Next Section".
+   */
   pendingChunks Json?
   model         String?
   createdAt     DateTime
   updatedAt     DateTime
-  /** Tombstone. A deleted deck is kept, not removed: a row that vanishes cannot
-   * propagate, so the next pull from another device would hand it straight back. */
-  deletedAt DateTime?
-  /** ConceptEdge[] - how this deck's ideas relate (prerequisite / explains /
+  /**
+   * Tombstone. A deleted deck is kept, not removed: a row that vanishes cannot
+   * propagate, so the next pull from another device would hand it straight back.
+   */
+  deletedAt     DateTime?
+  /**
+   * ConceptEdge[] - how this deck's ideas relate (prerequisite / explains /
    * contrast). Added with the table rather than in a later migration purely
    * because this one had not been applied yet; nothing writes it until the
-   * concept map ships, and null means "never mapped", not "no relationships". */
-  conceptMap Json?
+   * concept map ships, and null means "never mapped", not "no relationships".
+   */
+  conceptMap    Json?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -126,15 +135,17 @@ model Deck {
 }
 
 model KnowledgeUnit {
-  id         String   @id
-  userId     String
-  /** `sourceDeckId` on the device - same name, so the mirror stays literal. */
+  id           String   @id
+  userId       String
+  /**
+   * `sourceDeckId` on the device - same name, so the mirror stays literal.
+   */
   sourceDeckId String
-  label      String
-  importance Float
-  concept    Json
-  createdAt  DateTime
-  updatedAt  DateTime
+  label        String
+  importance   Float
+  concept      Json
+  createdAt    DateTime
+  updatedAt    DateTime
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -142,9 +153,11 @@ model KnowledgeUnit {
   @@index([userId, updatedAt])
 }
 
-/** One retrieval, as it happened. Append-only on the device and append-only here:
+/**
+ * One retrieval, as it happened. Append-only on the device and append-only here:
  * never updated, never deleted. This is the asset the whole memory model can be
- * rebuilt from, which is what makes the merge a union with no conflict to settle. */
+ * rebuilt from, which is what makes the merge a union with no conflict to settle.
+ */
 model ReviewRecord {
   id                String   @id
   userId            String
@@ -158,7 +171,9 @@ model ReviewRecord {
   elapsedDays       Float
   stabilityBefore   Float?
   stabilityAfter    Float
-  /** Absent means NOT ASKED, never "guessed" - see Confidence in recallModel.ts. */
+  /**
+   * Absent means NOT ASKED, never "guessed" - see Confidence in recallModel.ts.
+   */
   confidence        String?
   couplingOnSuccess Float
   couplingOnLapse   Float
@@ -180,6 +195,29 @@ model AskRecord {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, askedAt])
+}
+
+/**
+ * One attempt at explaining a concept in the student's own words, and the three
+ * lists that came back. Append-only on the device and append-only here: a second
+ * attempt is a new row, never an edit of the first, because comparing this week's
+ * explanation with last week's is the whole point of keeping them.
+ * `attempt` is the student's own writing, which makes this the most personal table
+ * in the schema - hence the same cascade as the rest.
+ */
+model TeachBackRecord {
+  id          String   @id
+  userId      String
+  unitId      String
+  attempt     String
+  correct     String[]
+  missing     String[]
+  wrong       String[]
+  attemptedAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, attemptedAt])
 }
 
 // A single day on which a user studied. Upserted (one row per user per day) by

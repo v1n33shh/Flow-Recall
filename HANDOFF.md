@@ -39,9 +39,10 @@ which no route imports.
 | Lint | **0 errors / 45 warnings** (all 45 pre-date the tranche) |
 | Builds | `npm run build` and `npm run build:apk` both pass; `cap sync` finds all 7 plugins including `local-notifications` |
 | Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
-| Phone | shipping build carrying **both** tranches, devtools **off**, md5 `cd1302f1c389b5fc6b98cf59195b3485` |
-| Download | `public/flowrecall-release.apk`, byte-identical to the phone, cert `e1f4352f…bc09` |
-| Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Now carries a **local DEVTOOLS release build** — logging and devtools on, gesture navigation enabled — **not** the shipping bytes |
+| Phone | still the pre-2026-09-03 build, md5 `cd1302f1c389b5fc6b98cf59195b3485` — **behind the download**, and it has the invisible status bar |
+| Download | `public/flowrecall-release.apk`, refreshed to `2aa0cfdbddd5e5639ddcaea38a133201`, cert `e1f4352f…bc09`, devtools off — carries the system-bar fix the phone does not |
+| Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Superseded as the daily driver by **`fr36play`** (below) but kept, since it is the only AOSP image here |
+| Emulator (use this one) | **`fr36play`** — API 36 **Google Play** image, so it has Play Services 26.32.34, the Play Store, and Chrome 133: Google sign-in, Custom Tabs and App Link verification are reachable for the first time. 1080×2400 @ 480dpi, 4 GB, port 5556, **visible on the desktop**. Launch line and the `-feature -Vulkan` it cannot start without: *The emulator you can watch* below |
 | Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`keytool -printcert -jarfile` reads back `E1:F4:35:2F…BC:09`), `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
@@ -51,14 +52,12 @@ hold. The last two rows are still the previous session's census carried forward:
 attached in either session** — only the emulator has, so nothing about the phone has been
 re-measured. (`adb` works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
 
-Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD today, so
-they carry the committed code and are signed with the upload key `e1f4352f…bc09` — the same key the
-phone's install trusts, which is what makes the APK there installable over it for item 1. The fresh
-APK is `054901d9dfff71a7ab580cb5f0420b8b`; that it differs from the download is expected, a release
-APK is not bit-reproducible. **`public/flowrecall-release.apk` is deliberately untouched at
-`cd1302f1…`**: today's commits change the shipping app by exactly nothing (the config change is
-gated behind `DEVTOOLS`, the rest is this file, the submission reference and three PNG re-encodes),
-so there is no download to refresh.
+Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD today and
+are signed with the upload key `e1f4352f…bc09` — the same key the phone's install trusts, so the
+download installs over it in place. **The download was refreshed** to
+`2aa0cfdbddd5e5639ddcaea38a133201` because the status-bar fix genuinely changes the shipping app;
+that exact file was installed on the emulator and measured before it was committed. The phone has
+not been touched, so it and the download now differ **on purpose** until someone installs it.
 
 **The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
 deploy had tripped IP-scoped bot protection, and every request from this machine *and from the
@@ -78,14 +77,17 @@ one, so it must run a closed test with **12 testers opted in continuously for 14
 may even apply for production access. That clock starts only once a build is uploaded and 12 real
 people have accepted the invite, so:
 
-**Back navigation is measured and correct — the item that used to head this list is closed.** Seven
-scenarios on the API 36 emulator, every one of them right, including the exact three-entry sequence
-the anomaly was reported from. There is no double-pop and no second consumer. See **The
-back-navigation measurement** below for what was run and for the two things it turned up.
+**Two things came off the emulator on 2026-09-03 before this list starts.** Back navigation is
+**measured and correct** — seven scenarios on API 36, every one right, including the exact
+three-entry sequence the anomaly was reported from, with no double-pop and no second consumer (*The
+back-navigation measurement*). And a real defect was found and fixed in its place: the status bar
+clock, wifi and battery were **invisible on any phone not in dark mode** (*The invisible clock*).
 
-1. **Verify the tranche on the phone — none of it has been.** The bytes are installed there (the
-   download and the phone are the same file), but the monthly rollover, the card editor and the
-   reminder have only ever run in tests and a desktop browser. The reminder has an explicit
+1. **Verify the tranche on the phone — none of it has been, and the phone is now a build behind.**
+   Install `public/flowrecall-release.apk` (`2aa0cfdbddd5e5639ddcaea38a133201`) first: it is signed
+   with the same upload key, so it goes over the existing install without touching the library, and
+   it is the only build with a visible status bar. Then the monthly rollover, the card editor and the
+   reminder, which have only ever run in tests and a desktop browser. The reminder has an explicit
    completion bar it has not met: **Phase 4 is not done until a notification has been seen on the
    phone with the app closed.** Every call in `notifications.ts` resolves successfully whether or
    not `POST_NOTIFICATIONS` was ever granted, which is the same failure shape as the WebView
@@ -93,7 +95,9 @@ back-navigation measurement** below for what was run and for the two things it t
    an eye while there: *Fix this card* is a new control on the revision sheet at 360dp, and
    `ConceptEditor` writes to five `textarea`s (see the CDP note about React inputs before
    automating it). Nothing is blocking this but the cable — `adb` is installed, at
-   `~/Android/Sdk/platform-tools/adb`, and no device was attached.
+   `~/Android/Sdk/platform-tools/adb`, and no phone has been attached in either session. **Flip the
+   system theme to light while you are there**, which is the check that would have caught the
+   invisible clock.
 2. **Upload the AAB.** It builds and is signed with the upload key:
    `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
    before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's
@@ -132,9 +136,11 @@ back-navigation measurement** below for what was run and for the two things it t
 **The notification permission still has not been exercised, and it needs an account.**
 `StudyReminderSettings` renders only on the signed-in account screen — signed out, the Account tab
 shows "Welcome to FlowRecall". So the API 33+ runtime dialog, the whole reason the emulator exists,
-is unreachable without credentials, and the AOSP image has no Play Services so Google sign-in is
-out. Register a throwaway email/password account from the emulator (a real row in production,
-deletable through the app's own Danger Zone) or use an existing test login. Worth knowing before
+is unreachable without credentials. **`fr36play` removes half of that obstacle**: it has Play
+Services, the Play Store and Chrome, so Google sign-in is now reachable on an emulator for the first
+time — it just needs a Google account signed into the image. Otherwise register a throwaway
+email/password account from the emulator (a real row in production, deletable through the app's own
+Danger Zone) or use an existing test login. Worth knowing before
 deciding how much this matters: a fresh API 36 install reports
 `POST_NOTIFICATION: ignore` — **denied by default**, which is what every tester starts from, so the
 request path is genuinely load-bearing rather than decorative.
@@ -167,6 +173,83 @@ and the two packages that depend on it, plus `tar`. Two matter for a store launc
 PDF** (this app's entire input is user-supplied PDFs) and a **Next.js middleware/proxy bypass in App
 Router**. Also `@auth/core`'s homoglyph email-normalisation bypass. Upgrading these is its own
 tranche and should happen before, not after, strangers are invited to upload files.
+
+---
+
+## The emulator you can watch
+
+`fr36play`, an **API 36 Google Play** AVD, created 2026-09-03 to replace the headless AOSP one. It
+appears on the desktop as a window, which is the point.
+
+```bash
+setsid env DISPLAY=:0 XAUTHORITY=$HOME/.Xauthority \
+  ~/Android/Sdk/emulator/emulator -avd fr36play -gpu host -feature -Vulkan \
+  -port 5556 -no-boot-anim &
+# then: ~/Android/Sdk/platform-tools/adb -s emulator-5556 ...
+```
+
+**`-feature -Vulkan` is not optional and cost an hour to find.** With plain `-gpu host` the emulator
+**segfaults** (exit 139, core dumped) part-way through QEMU startup on this machine's
+Intel-RPL-P-plus-RTX-4050 hybrid — and it dies *silently*, with the log ending mid-boot-properties
+and no error line, which reads exactly like something killed the process. Running it in the
+foreground with `-verbose` is what showed the signal; the crash is in gfxstream's Vulkan path, so
+disabling that one feature keeps host GL acceleration and boots in ~90s. `-gpu swiftshader_indirect`
+also works and is what `fr36` used, at software-rendering speed.
+
+**Why the Google Play image rather than another AOSP one:** the AOSP image has no Play Services and
+**no browser**, so `@capacitor/browser`'s `Browser.open()` has nothing to hand a URL to and Google
+sign-in cannot be exercised at all — nor can App Link verification of
+`https://www.flowrecall.app/auth-callback`, which needs the platform verifier that ships with GMS.
+Both have only ever run on the phone. It also means WebView and Chrome update through the Play Store,
+so the app can be tested against a current WebView rather than the AOSP image's frozen 133.
+
+Two operational notes for next time:
+
+- **Gesture navigation is on** (`cmd overlay enable com.android.internal.systemui.navbar.gestural`),
+  so a back gesture is `input swipe 3 1200 700 1200 100`. Enabling that overlay **restarts the app**
+  and resets its WebView history — which is worth knowing before measuring anything about back.
+- **CDP works, with one trap.** `adb forward tcp:9333 localabstract:webview_devtools_remote_<pid>`,
+  then `http://localhost:9333/json/list` for the target. The WebSocket handshake is **rejected 403**
+  unless the client suppresses its `Origin` header (`websocket.create_connection(...,
+  suppress_origin=True)` in python's `websocket-client`, which is installed). Reaching app state
+  through `Runtime.evaluate` is how the light-theme half of the status-bar measurement was done —
+  and note that `localStorage.setItem` followed immediately by `am force-stop` **loses the write**;
+  `location.reload()` instead.
+
+---
+
+## The invisible clock
+
+**The status bar clock, wifi and battery were invisible for any student whose phone is not in dark
+mode, and are not now.** Measured on the emulator from a release build of HEAD: `dumpsys window`
+reported `mLastAppearance=LIGHT_STATUS_BARS` — dark glyphs — and the status strip measured **5/255**
+against the app's own `#050505`. It reads **255/255** after a one-line config change, with no
+`LIGHT_STATUS_BARS` left on the app's window.
+
+**Capacitor 8 owns this, and it overwrote the fix the compatibility tranche wrote.** Its built-in
+`SystemBars` plugin resolves style `DEFAULT` from `Configuration.UI_MODE_NIGHT_MASK` — the *system*
+night mode, which has nothing to do with this app being dark — and applies it through
+`Bridge.executeOnMainThread`, a task posted after `MainActivity.onCreate` has returned. So the
+`WindowInsetsControllerCompat` call in `onCreate` ran first and lost, every launch, on every phone
+not in dark mode. That Java is gone, along with a docblock that confidently described a mechanism
+that could not work.
+
+The fix is `plugins.SystemBars.style = 'DARK'` in `capacitor.config.ts` — a value the plugin reads
+instead of overwriting, and one that survives a system dark/light switch because
+`handleOnConfigurationChanged` re-applies the stored style rather than re-resolving the system's.
+
+**Pinned dark rather than following the app's own theme, and that was measured both ways.** Driving
+it from `data-theme` was written first and then reverted: with the app in light mode the `body` token
+does go near-white (`rgb(252,252,252)`), but every page except the token-based Account screen paints
+its own hardcoded dark background across the full viewport — globals.css says so about itself — so
+theme-following glyphs went **dark on dark**, invisible on more screens than it fixed. With the
+constant, Home and the Account tab in the app's light theme both kept a dark strip behind the bar
+(5/255 at the top, light content below) and readable glyphs at 255. **The signed-in Account screen is
+the one surface that could still bite** — the only fully token-based one — and it needs an account to
+reach, so it is unmeasured rather than fine.
+
+**Why a tranche that measured this exact strip missed it: a phone in dark mode never shows the bug.**
+The check that would have caught it is one line — flip the *system* theme, not the app's.
 
 ---
 
@@ -514,9 +597,11 @@ mode, so the window background showed through as near-white either side of a bla
 background then hid the icons: `dumpsys window` still said `LIGHT_STATUS_BARS`, and the status strip
 measured **5/255**. `android:windowLightStatusBar` does not take, because it is read at window
 creation and this window is created under the splash theme then swapped via `postSplashScreenTheme`
-— a `setTheme()`, which does not re-apply decor attributes. `WindowInsetsControllerCompat` in
-`MainActivity.onCreate` does. Measured through all three states: white/dark glyphs → `#050505`/5 →
-`#050505`/255.
+— a `setTheme()`, which does not re-apply decor attributes. The white bands are fixed and stayed
+fixed. **The icon half of this was wrong, and it is corrected on 2026-09-03** — see *The invisible
+clock* below. `WindowInsetsControllerCompat` in `MainActivity.onCreate` ran and was then overwritten
+by Capacitor's own SystemBars plugin on every launch; the `#050505`/255 reading it was signed off
+with cannot have come from a light-mode system, and that Java has been removed.
 
 **Nothing handled back.** No `backButton` listener anywhere, no `onBackPressed` in `BridgeActivity`,
 against 11 `router.push` sites — so back finished the Activity from wherever the student was.

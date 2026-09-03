@@ -7,9 +7,18 @@ import Script from "next/script";
 import { Capacitor } from "@capacitor/core";
 import { useIsNative } from "@/lib/useIsNative";
 import { vibrateTap } from "@/lib/haptics";
+import { FREE_DECKS_PER_MONTH, FREE_LOOKUPS_PER_MONTH } from "@/lib/freeQuota";
 
+// Read from the constants rather than written out, because this copy was wrong
+// for a fortnight after the launch tranche and nobody noticed: it still promised
+// "1 free deck to try it out" and "unlimited generation per DAY", both of which
+// describe caps that no longer exist. This is the page a student reads before
+// deciding whether to pay, so it is the worst place in the app to be stale - and
+// freeQuota.ts is the client-safe half of the quota split for exactly this kind
+// of call site (the ingest page's paywall copy does the same).
 const FREE_FEATURES = [
-  "1 free deck to try it out (up to 60,000 chars)",
+  `${FREE_DECKS_PER_MONTH} decks a month, free`,
+  `${FREE_LOOKUPS_PER_MONTH} AI lookups a month — definitions, ask-anything, concept maps`,
   "Qwen3 27B — fast, capable free model",
   "AI-generated active-recall study feed",
   "Daily streak tracking",
@@ -18,7 +27,7 @@ const FREE_FEATURES = [
 
 const PRO_FEATURES = [
   "Everything in Free",
-  "Unlimited deck generation per day",
+  "Unlimited deck generation",
   "Claude Haiku — smarter AI, optimised for deep material",
   "Infinite Recall Mode — AI generates new angles forever",
   "Streak Freezes — protect your flame on off-days",
@@ -57,7 +66,12 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isYearly, setIsYearly] = useState(true);
-  const isNative = useIsNative();
+  // Tri-state (null until Capacitor answers), not the default `false`, for the
+  // reason spelled out at length in account/page.tsx: defaulting to false means
+  // the WEB branch mounts on native for a beat. There it bounced the tab to
+  // home; here it would flash a Razorpay purchase button inside the Play build,
+  // which is the one affordance this screen must never show on Android.
+  const isNative = useIsNative<boolean | null>(null);
 
   async function handleUpgrade() {
     vibrateTap();
@@ -160,12 +174,19 @@ export default function PricingPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+      {/* Web only. The native build has no purchase path, so fetching a payment
+          provider's checkout SDK there is both pointless bandwidth and a signal
+          in the Play build's traffic that nothing in the app can justify. */}
+      {isNative === false && (
+        <Script src="https://checkout.razorpay.com/v1/checkout.js" strategy="lazyOnload" />
+      )}
       <h1 className="text-center text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
         Simple, honest pricing
       </h1>
       <p className="mx-auto mt-3 max-w-md text-center text-sm text-muted-foreground">
-        Start free. Upgrade when you want the smartest models on your side.
+        {isNative
+          ? "Start free. Pro unlocks the smartest models for serious study."
+          : "Start free. Upgrade when you want the smartest models on your side."}
       </p>
 
       {/* Monthly / Yearly Toggle */}
@@ -262,9 +283,25 @@ export default function PricingPage() {
             </div>
           )}
 
-          {isNative ? (
-            <p className="mt-6 rounded-full border border-border px-6 py-3.5 text-center text-sm font-medium text-muted-foreground">
-              {isPro ? "You are on Pro" : "Upgrade at flowrecall.app on the web"}
+          {/* The native build sells nothing and names nowhere to buy, and that is a
+              Play policy decision rather than a product one. There is no in-app
+              purchase here - Razorpay checkout only exists in the web branch below -
+              but until March 2026 Google also forbade *steering* users to an outside
+              payment, and while that opened up, the rollout reaches India only by
+              September 2027. Enforcement is live in the meantime: AnkiDroid, a
+              flashcard app, was flagged in September 2026 over a donation link. So
+              this branch states the plan a student is on and stops. The Pro feature
+              list and prices above stay - they describe what Pro is, with no
+              mechanism or destination attached. Revisit when the rollout lands here. */}
+          {isNative === null ? (
+            /* Neither branch until Capacitor answers - see the hook call above.
+               Reserves the footer's height so the card does not jump. */
+            <div className="mt-6 h-[54px]" aria-hidden />
+          ) : isNative ? (
+            <p className="rounded-full border border-border px-6 py-3.5 text-center text-sm font-medium text-muted-foreground">
+              {isPro
+                ? "You are on Pro"
+                : `Free plan — ${FREE_DECKS_PER_MONTH} decks and ${FREE_LOOKUPS_PER_MONTH} AI lookups a month`}
             </p>
           ) : (
             <>

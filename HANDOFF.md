@@ -1,7 +1,8 @@
 # FlowRecall — Handoff
 
 **Written 2026-09-02, end of session; updated the same day once the device verification it was
-waiting on came back clean, and again on 2026-09-03 when back navigation was measured on API 36.**
+waiting on came back clean, and again on 2026-09-03 — back navigation measured on API 36, two
+system-bar defects found and fixed, and the app run across **seven** Android versions.**
 This file replaces the previous reverse-chronological log; every
 earlier version is still in git (`git log --follow -- HANDOFF.md`) if you need the older
 sessions' measurements and reasoning.
@@ -24,9 +25,10 @@ library; never edit it. This upgrade is the flashcard section only.
 
 ## State right now
 
-**`origin/main` == `main` == `5aa2df9` at the start of this session — the eight commits this file
-used to list as unpushed are all pushed.** On top of that sits the back-navigation commit below;
-`git log origin/main..main` is the only honest answer to whether it has been pushed yet. Two
+**`origin/main` is `9e6de49` and `main` is ahead of it — `git log origin/main..main` is the only
+honest answer to how far.** The four commits pushed on 2026-09-03 cover the back measurement, the
+store assets, and the first half of the system-bar work; what sits on top is the Android 7-14 bar
+fix, the refreshed download and this file. Two
 tranches are in there: the allowance race tests the launch tranche's own plan asked for by name, and
 the **compatibility tranche** (*Making it survive a phone that is not yours*, below) which is what a
 closed test needs before strangers install it. Also inert in there: Phase 1 of the mock-paper plan,
@@ -43,7 +45,7 @@ which no route imports.
 | Download | `public/flowrecall-release.apk` = `2424aa1283735dcad1e345cb9046dc2e`, cert `e1f4352f…bc09`, devtools off. **Byte-identical to what is on the phone again** |
 | Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Superseded as the daily driver by **`fr36play`** (below) but kept, since it is the only AOSP image here |
 | Emulator (use this one) | **`fr36play`** — API 36 **Google Play** image, so it has Play Services 26.32.34, the Play Store, and Chrome 133: Google sign-in, Custom Tabs and App Link verification are reachable for the first time. 1080×2400 @ 480dpi, 4 GB, port 5556, **visible on the desktop**. Launch line and the `-feature -Vulkan` it cannot start without: *The emulator you can watch* below |
-| Emulators (compatibility) | **`fr24`** (API 24, google_apis, port 5558) and **`fr35`** (API 35, Play, port 5560), same geometry, same launch line. Both were run on 2026-09-03 — see *What this app has now actually run on* |
+| Emulators (compatibility) | Five more, all 1080×2400 @ 480dpi and the same launch line: **`fr24`** (API 24, google_apis, port 5558), **`fr31`** (5562), **`fr33`** (5564), **`fr34`** (5566) and **`fr35`** (5560), the last four Google Play images. Every one was run on 2026-09-03 — see *What this app has now actually run on* |
 | Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`keytool -printcert -jarfile` reads back `E1:F4:35:2F…BC:09`), `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
@@ -54,12 +56,13 @@ Android 7-14 half of the status-bar problem was found; the last two rows below a
 session's data census, carried forward, because nothing was read out of the app's own storage. (`adb`
 works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
 
-Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD today and
-are signed with the upload key `e1f4352f…bc09` — the same key the phone's install trusts, so the
-download installs over it in place. **The download was refreshed** to
-`2aa0cfdbddd5e5639ddcaea38a133201` because the status-bar fix genuinely changes the shipping app;
-that exact file was installed on the emulator and measured before it was committed. The phone has
-not been touched, so it and the download now differ **on purpose** until someone installs it.
+Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD and are
+signed with the upload key `e1f4352f…bc09` — the same key the phone's install trusts, so the download
+upgrades it in place without touching the library. **The download was refreshed twice on 2026-09-03**
+and ended at `2424aa1283735dcad1e345cb9046dc2e`, carrying both halves of the system-bar work; that
+exact file was then installed on the phone, so the two are byte-identical rather than merely close.
+(An intermediate `2aa0cfdb…` carried only the first half and is superseded — if you see that md5
+anywhere, it is stale.)
 
 **The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
 deploy had tripped IP-scoped bot protection, and every request from this machine *and from the
@@ -85,21 +88,21 @@ three-entry sequence the anomaly was reported from, with no double-pop and no se
 back-navigation measurement*). And a real defect was found and fixed in its place: the status bar
 clock, wifi and battery were **invisible on any phone not in dark mode** (*The invisible clock*).
 
-1. **Verify the tranche on the phone — none of it has been, and the phone is now a build behind.**
-   Install `public/flowrecall-release.apk` (`2aa0cfdbddd5e5639ddcaea38a133201`) first: it is signed
-   with the same upload key, so it goes over the existing install without touching the library, and
-   it is the only build with a visible status bar. Then the monthly rollover, the card editor and the
-   reminder, which have only ever run in tests and a desktop browser. The reminder has an explicit
+1. **Verify the tranche on the phone — the phone is now current, and none of the tranche has run on
+   it.** The install and the system-bar checks are done: it carries
+   `2424aa1283735dcad1e345cb9046dc2e`, the same file as the download, and the system theme was
+   flipped to light and back while measuring the grey band. What is still untouched there is the
+   tranche itself — the monthly rollover, the card editor and the reminder have only ever run in tests
+   and a desktop browser. The reminder has an explicit
    completion bar it has not met: **Phase 4 is not done until a notification has been seen on the
    phone with the app closed.** Every call in `notifications.ts` resolves successfully whether or
    not `POST_NOTIFICATIONS` was ever granted, which is the same failure shape as the WebView
    swallowing `<a download>` blob URLs — the API said 200 and the file never existed. Also worth
    an eye while there: *Fix this card* is a new control on the revision sheet at 360dp, and
    `ConceptEditor` writes to five `textarea`s (see the CDP note about React inputs before
-   automating it). Nothing is blocking this but the cable — `adb` is installed, at
-   `~/Android/Sdk/platform-tools/adb`, and no phone has been attached in either session. **Flip the
-   system theme to light while you are there**, which is the check that would have caught the
-   invisible clock.
+   automating it). The cable is no longer the blocker — the phone is attached as
+   `W4O7RWNJSOAEJVU8` (`adb` is at `~/Android/Sdk/platform-tools/adb`, not on PATH). **What blocks
+   the reminder specifically is an account**, since `StudyReminderSettings` only renders signed in.
 2. **Upload the AAB.** It builds and is signed with the upload key:
    `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
    before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's
@@ -143,9 +146,10 @@ Services, the Play Store and Chrome, so Google sign-in is now reachable on an em
 time — it just needs a Google account signed into the image. Otherwise register a throwaway
 email/password account from the emulator (a real row in production, deletable through the app's own
 Danger Zone) or use an existing test login. Worth knowing before
-deciding how much this matters: a fresh API 36 install reports
-`POST_NOTIFICATION: ignore` — **denied by default**, which is what every tester starts from, so the
-request path is genuinely load-bearing rather than decorative.
+deciding how much this matters: a fresh install reports
+`POST_NOTIFICATION: ignore` — **denied by default** — and that was read back on **API 33, 34 and 36**,
+so it is the platform's behaviour from Android 13 onward rather than a quirk of one image. Every
+tester starts there, which makes the request path load-bearing rather than decorative.
 
 One item from the tranche's own verification list is still open, and it is cheap: **generate on a
 real FREE account until the cap bites and confirm the 403 reaches the paywall copy.** `c8517c1`
@@ -283,10 +287,16 @@ measured status strip:
 
 | Platform | WebView | What happened |
 |---|---|---|
-| **API 24**, Android 7.0 (emulator `fr24`) | **53** | `webview-too-old.html`, exactly as designed — the gate fires against a genuinely old engine, not just against a forced floor of 999. Page renders correctly in its 2017-era CSS, including the blue-square mark it deliberately uses instead of an SVG |
+| **API 24**, Android 7.0 (`fr24`) | **53** | `webview-too-old.html`, exactly as designed. Renders correctly in its own 2017-era CSS, blue-square mark and both buttons |
+| **API 31**, Android 12 (`fr31`) | **91** | `webview-too-old.html` |
+| **API 33**, Android 13 (`fr33`) | **109** | `webview-too-old.html` — two versions under the floor, which is the tightest the gate has been tested at |
+| **API 34**, Android 14 (`fr34`) | **113** | **Runs**, and it is the first image whose bundled WebView clears the floor. Full home screen with its translucent surfaces, bars (5,5,5), glyphs 255, no fatal, no app-level error |
 | **API 30**, Android 11 (**the real phone**, OPPO CPH2001, arm64) | **150** | Runs. Library intact across three in-place upgrades — the *Tonight* session card is still there. Bars #050505 + white glyphs in both system themes |
-| **API 35**, Android 15 (emulator `fr35`) | **124** | Runs. Bars (5,5,5), glyphs 255, no crash, no JS error |
-| **API 36**, Android 16 (emulator `fr36play`) | **133** | Runs. 255/255, `LIGHT_STATUS_BARS` cleared, no E-level console output |
+| **API 35**, Android 15 (`fr35`) | **124** | Runs. Bars (5,5,5), glyphs 255, no crash, no JS error |
+| **API 36**, Android 16 (`fr36play`) | **133** | Runs. 255/255, `LIGHT_STATUS_BARS` cleared, no E-level console output |
+
+**Every level reports `POST_NOTIFICATION: ignore` on a fresh install from 33 up**, read back on 33,
+34 and 36.
 
 **The install surface, read off the APK with `aapt2`:** `minSdkVersion 24`, **no native libraries at
 all** (no `lib/`, no `.so`) so one APK covers arm64-v8a, armeabi-v7a, x86 and x86_64; `supports-screens`
@@ -295,10 +305,25 @@ implied `android.hardware.screen.portrait` feature that `screenOrientation="port
 which filters devices that cannot present portrait — TVs and some kiosk displays, not phones or
 tablets.
 
-**So "compatible with every Android device" is still not the claim to make**, and the reason is the
-WebView rather than the OS: below 111 the app deliberately refuses to draw. What *is* now true is
-that the two ends of the supported range and both sides of the edge-to-edge boundary have been run
-and measured.
+**The sweep's real lesson is that the OS axis is the wrong axis, and it cost three downloads to
+learn.** A Play system image ships the WebView it was built with, frozen — and for every level up to
+33 that version is *below* 111. So an Android-version sweep cannot exercise the app on 7 through 13
+at all; it can only prove the gate fires, which it now does at 53, 91 and 109. Rendering depends on
+the WebView, not on the OS, and the app's real coverage is therefore **WebView 113 / 124 / 133 / 150**
+(API 34, 35, 36 and the phone). Putting the app itself onto an Android 12 or 13 image needs a *newer
+WebView in that image* — which means signing the emulator into the Play Store, not another 3 GB
+download.
+
+**So "compatible with every Android device" is still not the claim to make.** What is true: it
+installs everywhere from 7.0 up on any CPU, it draws correctly on every WebView from 113 to 150
+that has been tried, and below 111 it refuses deliberately and says why in a page that renders on a
+2016 browser.
+
+**Operational trap, because it cost 90 minutes.** The three-level sweep hung on API 33: `adb logcat
+-d` never returned against that emulator after the screenshot, leaving the script wedged and a 3.5 GB
+emulator resident until it was killed by hand. Wrap every `adb` call in `timeout`, and bound the log
+dump (`logcat -d -t 3000`) rather than pulling the whole ring buffer — the API 34 run did both and
+finished in four minutes.
 
 **The earlier `Error injecting safe area CSS` console error did not reproduce** on any later launch,
 including a fresh `pm clear` on API 36. It looks like a first-launch race inside Capacitor's own
@@ -814,9 +839,7 @@ minutes of drift, no `SecurityException`.
 
 ### What this tranche has NOT proved
 
-- **No part of it has been exercised on the phone.** The tranche build is installed there
-  (`5cb8593c…`), but the rollover, the card editor and the reminder have only run in tests and a
-  desktop browser.
+- **No part of it has been exercised on a real device or emulator yet.** The tranche build is installed on the physical phone (`5cb8593c…`), but the rollover, the card editor and the reminder have only run in tests and a desktop browser. **Update:** The Android 12 emulator (`fr31`) has now successfully booted in the background, so the immediate next step is to exercise these features (especially the Android 12+ exact alarm permissions for the reminder) on the emulator.
 - **The reminder has never been seen arriving.** This is the phase's own completion bar, and the
   reason it is written as a bar: on API 33+ every call in `notifications.ts` resolves successfully
   whether or not `POST_NOTIFICATIONS` was granted, so a resolved promise is not evidence. Same

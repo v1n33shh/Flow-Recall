@@ -1,7 +1,9 @@
 # Play Store submission reference
 
 Drafted from a direct read of the actual codebase (auth, billing, storage) on 2026-08-23,
-not guessed. This replaces an earlier draft from a prior session that was discussed in
+not guessed, and corrected on 2026-09-03 where the launch tranche had moved underneath it (the
+free tier is no longer one deck for life) and where the compatibility tranche added a question
+this file did not have (Android auto-backup). This replaces an earlier draft from a prior session that was discussed in
 conversation but never saved to a file, and was lost. **Verify against Play Console's
 current form wording before submitting** — categories/wording can change, and this is a
 reference to work from, not a substitute for your own read of the policy.
@@ -31,6 +33,25 @@ Yes.
 
 ### App info and performance
 - **Crash logs / diagnostics** — not currently collected (no crash-reporting SDK integrated as of this writing — verify this is still true before submitting, since it directly affects this answer).
+
+### Android auto-backup — the question this form does not ask in so many words
+`AndroidManifest.xml` keeps `android:allowBackup="true"` on purpose, so Android's own Auto Backup
+copies the app's data directory — the whole IndexedDB library, decks, reviews, highlights, reading
+positions — to **the student's own Google Drive**, where it is protected by their Google account and
+end-to-end encrypted on Android 9+. It is the only thing that carries their library across a phone
+swap when they never signed in.
+
+**Nothing reaches FlowRecall through it**, and the destination is the student's own Drive, not ours.
+Play's Data safety article never mentions Auto Backup, so this has to be answered by analogy to the
+FAQ it does have — *"My app enables users to upload their data directly to Google Drive or Dropbox
+for backup or storage"* — whose answer is "It depends on the particular implementation" and carves
+out an upload to the user's own cloud storage that the app "never collects or accesses", governed by
+that provider's terms. Auto Backup fits that shape: the platform performs it, we never see it. The
+same article's baseline is blunter, though — *"'Collect' means transmitting data from your app off a
+user's device"* — and it says the declaration is the developer's alone to make.
+
+So: answer it deliberately rather than by default, and if in doubt say so in the privacy policy,
+which costs nothing. The real fix is the Restore Credentials API, which Play requires by April 2027.
 
 ### Data collection is required for the app to function
 Yes — an account is required to use core features (this isn't optional profiling).
@@ -79,7 +100,10 @@ review fails for a reason that looks like a broken login. Options, in order of p
    resubmission.
 2. Keep two review accounts and give both, so one surviving is enough.
 3. Grant it Pro manually (`plan: "PRO"`) so the reviewer sees the paid experience without a
-   payment, which also avoids them hitting the FREE lifetime cap of one deck mid-review.
+   payment. This is now a preference rather than a rescue: FREE is **3 decks and 60 AI lookups per
+   calendar month** (`FREE_DECKS_PER_MONTH`, `FREE_LOOKUPS_PER_MONTH` in `src/lib/freeQuota.ts`),
+   so a reviewer on a FREE account no longer hits a wall after one deck the way they would have
+   under the old one-deck-for-life cap.
 
 ## Content rating questionnaire
 
@@ -142,11 +166,29 @@ the form asks about AI-generated content.
 > • Daily streak tracking to build a real study habit
 >
 > FREE TO START
-> Try your first deck free, no credit card required. Upgrade to Pro for unlimited deck generation and access to the smartest AI models for deeper material.
+> Three decks and 60 AI lookups every month, free, no credit card required. Upgrade to Pro for unlimited deck generation and access to the smartest AI models for deeper material.
 >
 > FlowRecall is built for medical students, law students, and anyone with a stack of dense material to actually learn — not just skim.
 
 ---
+
+## The graphic assets, and how they measure against the spec
+
+Checked against Play's own asset requirements on 2026-09-03, then corrected where they missed:
+
+| Asset | Required | This repo |
+|---|---|---|
+| `icon.png` | 512×512, **32-bit PNG with alpha**, ≤1024 KB | 512×512, 32-bit RGBA, 3 KB — was 24-bit RGB until it was converted |
+| `feature-graphic.png` | 1024×500, JPEG or **24-bit** PNG (no alpha) | 1024×500, 24-bit RGB, 68 KB ✓ |
+| `screenshots/*.png` | ≥2 to publish, JPEG or 24-bit PNG, each side 320–3840 px, longer side ≤2× shorter | eight at 1080×2160, 24-bit RGB, largest 1023 KB — `03-reader` and `05-study-feed` were 8-bit grayscale until they were converted |
+
+The conversions asserted the RGB pixels identical afterwards, so nothing about how any of them looks
+changed.
+
+**One shape decision is still open.** 1080×2160 is exactly 2:1, which is the *maximum* ratio Play
+allows, so these publish — but Play separately "highly recommends" at least four screenshots at
+**9:16** (1080×1920 minimum) and makes eligibility for some recommendation surfaces depend on it.
+Buying that means recapturing at 1080×1920, which is a device session, not an edit.
 
 ## Known follow-ups (not blocking today, but don't forget)
 

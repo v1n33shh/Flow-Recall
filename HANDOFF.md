@@ -92,13 +92,33 @@ back-navigation measurement** below for what was run and for the two things it t
    key, so anyone who sideloaded `public/flowrecall-release.apk` cannot upgrade in place. Sync makes
    that recoverable only if they signed in first, so say so wherever the APK is offered. See
    AGENTS.md.
-3. **Fill the Data Safety form from `src/app/privacy/page.tsx`** rather than from memory — it already
-   names Groq, OpenAI and Anthropic as processors and covers retention and deletion. Declare
-   email/account, uploaded note text sent to third-party AI, Razorpay payment data, usage counters.
-   Play also wants a **web-reachable** account-deletion URL, not just the in-app path.
-4. **Make the two listing assets that are not in the repo**: a 512×512 icon and a 1024×500 feature
-   graphic. Launcher icons are already complete at every density. Screenshots follow the standing
-   privacy rules — name "Unknown", no email, no status bar or shade.
+3. **Fill the Data Safety form from `play-store-assets/store-listing-and-data-safety.md`**, which
+   answers every section of it from a direct read of auth, billing and storage — not from memory, and
+   not from this file. It was corrected today where the launch tranche had aged it (FREE is 3 decks
+   and 60 lookups a *month*, not one deck for life, which appeared in both the reviewer note and the
+   listing copy) and given the section it was missing: **Android auto-backup**, which sends the
+   whole on-device library to the student's own Drive and which Play's own Data safety article never
+   mentions. What is genuinely left is Console-side: verify the wording against the live form, give
+   `https://www.flowrecall.app/privacy` as the **web-reachable** deletion URL, and create the review
+   account (expect a reviewer to press Delete Account, so make two or recreate it per round).
+4. **The listing assets are already in the repo** — this file was wrong to say otherwise.
+   `play-store-assets/` holds `icon.png` at 512×512, `feature-graphic.png` at 1024×500 and **eight**
+   phone screenshots at 1080×2160, tracked since `ecb246d` and `880c8b3`. Launcher icons are complete
+   at every density, and tablet screenshots are not required for a portrait,
+   `resizeableActivity="false"` phone build.
+
+   **Three of them did not match the documented formats and now do.** Play asks for the icon as a
+   *32-bit PNG with alpha* and it was 24-bit RGB; screenshots must be JPEG or *24-bit* PNG and
+   `03-reader.png` and `05-study-feed.png` were 8-bit **grayscale**. All three were converted with
+   the RGB pixels asserted identical afterwards, so nothing about how they look changed — the point
+   was to not learn this from an upload error. Sizes are inside the caps (icon 3 KB against 1 MB,
+   largest screenshot 1023 KB against 8 MB).
+
+   One thing to accept knowingly: 1080×2160 is exactly 2:1, which is Play's *maximum* ratio — it
+   publishes, but Play separately "highly recommends" four or more shots at **9:16** (1080×1920) to
+   be eligible for its recommendation surfaces, and 2:1 is taller than that. Recapturing at 1080×1920
+   is the only way to buy that eligibility. Any *new* screenshot follows the standing privacy rules —
+   name "Unknown", no email, no status bar or shade.
 5. **Recruit the 12 testers.** Nothing in code shortens this, and it is the critical path.
 
 **The notification permission still has not been exercised, and it needs an account.**

@@ -291,8 +291,6 @@ measured status strip:
 | **API 31**, Android 12 (`fr31`) | **91** | `webview-too-old.html` |
 | **API 33**, Android 13 (`fr33`) | **109** | `webview-too-old.html` — two versions under the floor, which is the tightest the gate has been tested at |
 | **API 34**, Android 14 (`fr34`) | **113** | **Runs**, and it is the first image whose bundled WebView clears the floor. Full home screen with its translucent surfaces, bars (5,5,5), glyphs 255, no fatal, no app-level error |
-| **API 31**, Android 12 (emulator `fr31`) | **91** | `webview-too-old.html`. Correct — 91 is below the floor |
-| **API 33**, Android 13 (emulator `fr33`) | **109** | `webview-too-old.html`. Correct, and the tightest check the gate has had: **109 is two versions below 111** and it still refused |
 | **API 30**, Android 11 (**the real phone**, OPPO CPH2001, arm64) | **150** | Runs. Library intact across three in-place upgrades — the *Tonight* session card is still there. Bars #050505 + white glyphs in both system themes |
 | **API 35**, Android 15 (`fr35`) | **124** | Runs. Bars (5,5,5), glyphs 255, no crash, no JS error |
 | **API 36**, Android 16 (`fr36play`) | **133** | Runs. 255/255, `LIGHT_STATUS_BARS` cleared, no E-level console output |
@@ -310,21 +308,6 @@ levels where the app actually draws, and every reading matched: **API 34, 35 and
 sockets** — that last count is what proves it was the shipping build and not the twin. 24, 31 and 33
 were skipped on purpose: they serve `webview-too-old.html`, and that decision comes from
 `minWebViewVersion: 111`, identical in both builds' synced config.
-
-**Read that table carefully: three of those rows test the REFUSAL, not the app.** A Play system image
-ships a WebView frozen at the image's build date — 53 on API 24, 91 on 31, 109 on 33 — and an
-emulator cannot update it without a Google account signed into its Play Store. A real Android 12 or 13
-phone updates WebView through Play and would be on 14x, so it would get the app, not the too-old page.
-So what these three prove is that the gate fires correctly, right down to a two-version margin. **The
-app itself has run on three WebViews: 150 (the phone), 124 (API 35) and 133 (API 36).** Updating an
-emulator's WebView, which needs that Google sign-in, is what would turn API 31 and 33 into real tests
-of the app.
-
-**API 34 (Android 14) was never run** — the sweep was killed with the session before it started. The
-image is downloaded (`system-images;android-34;google_apis_playstore;x86_64`), the AVD recipe is in
-*The emulator you can watch*, and `~/.claude/jobs/.../compat-run.sh` is the script that did the other
-five if it still exists; otherwise it is a boot, an install, a launch, a screenshot and a status-strip
-measurement.
 
 **The install surface, read off the APK with `aapt2`:** `minSdkVersion 24`, **no native libraries at
 all** (no `lib/`, no `.so`) so one APK covers arm64-v8a, armeabi-v7a, x86 and x86_64; `supports-screens`

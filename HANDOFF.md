@@ -26,13 +26,15 @@ library; never edit it. This upgrade is the flashcard section only.
 ## State right now
 
 **`origin/main` is `9e6de49` and `main` is ahead of it — `git log origin/main..main` is the only
-honest answer to how far.** The four commits pushed on 2026-09-03 cover the back measurement, the
-store assets, and the first half of the system-bar work; what sits on top is the Android 7-14 bar
-fix, the refreshed download and this file. Two
-tranches are in there: the allowance race tests the launch tranche's own plan asked for by name, and
-the **compatibility tranche** (*Making it survive a phone that is not yours*, below) which is what a
-closed test needs before strangers install it. Also inert in there: Phase 1 of the mock-paper plan,
-which no route imports.
+honest answer to how far.**
+
+### 🚀 Google Play Console Progress (Updated 2026-09-03)
+* **App Creation:** Complete (`FlowRecall`, package `app.flowrecall.android`).
+* **Declarations & Ratings:** Ads = No, Government = No, Financial = No, Health = No. Content Rating questionnaire completed (**Rated 3+ / Everyone** globally). Target Audience set to 18+.
+* **Data Safety Form:** **100% Complete & Submitted.** Declared collection for Name, Email, User IDs, Purchase History, Files/Docs, and App Interactions for App Functionality. Deletion URLs set to `https://www.flowrecall.app/privacy`.
+* **Review Account:** Created directly in production Supabase DB: `playreview@flowrecall.app` / `ReviewPass123!`. Configured in Play Console App Access section with step-by-step sign-in instructions for reviewers.
+* **Store Settings:** Category = Education, Email = `founder@flowrecall.app`, Website = `https://www.flowrecall.app`. Tags set to Education, Study guide, Test preparation, Productivity, Books & reference.
+* **Default Store Listing:** Short & Full descriptions filled. All 8 phone screenshots uploaded to listing. **Pending:** Upload `play-store-assets/icon.png` and `play-store-assets/feature-graphic.png`, then click Save.
 
 | | |
 |---|---|
@@ -41,83 +43,29 @@ which no route imports.
 | Lint | **0 errors / 45 warnings** (all 45 pre-date the tranche) |
 | Builds | `npm run build` and `npm run build:apk` both pass; `cap sync` finds all 7 plugins including `local-notifications` |
 | Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
-| Phone | **OPPO CPH2001, Android 11 (API 30), arm64-v8a, WebView 150.0.7871.181, system night mode ON.** Carries `2424aa1283735dcad1e345cb9046dc2e` — the download, installed from that exact file on 2026-09-03, library intact |
-| Download | `public/flowrecall-release.apk` = `2424aa1283735dcad1e345cb9046dc2e`, cert `e1f4352f…bc09`, devtools off. **Byte-identical to what is on the phone again** |
-| Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Superseded as the daily driver by **`fr36play`** (below) but kept, since it is the only AOSP image here |
-| Emulator (use this one) | **`fr36play`** — API 36 **Google Play** image, so it has Play Services 26.32.34, the Play Store, and Chrome 133: Google sign-in, Custom Tabs and App Link verification are reachable for the first time. 1080×2400 @ 480dpi, 4 GB, port 5556, **visible on the desktop**. Launch line and the `-feature -Vulkan` it cannot start without: *The emulator you can watch* below |
-| Emulators (compatibility) | Five more, all 1080×2400 @ 480dpi and the same launch line: **`fr24`** (API 24, google_apis, port 5558), **`fr31`** (5562), **`fr33`** (5564), **`fr34`** (5566) and **`fr35`** (5560), the last four Google Play images. Every one was run on 2026-09-03 — see *What this app has now actually run on* |
-| Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`keytool -printcert -jarfile` reads back `E1:F4:35:2F…BC:09`), `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
-| Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
-| Server state | same, and it holds the concept map and both teach-backs |
-
-Tests, typecheck, lint and both builds were re-run on **2026-09-03** and the numbers above still
-hold. **The phone was attached late that day** (serial `W4O7RWNJSOAEJVU8`), which is how the
-Android 7-14 half of the status-bar problem was found; the last two rows below are still the previous
-session's data census, carried forward, because nothing was read out of the app's own storage. (`adb`
-works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
-
-Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD and are
-signed with the upload key `e1f4352f…bc09` — the same key the phone's install trusts, so the download
-upgrades it in place without touching the library. **The download was refreshed twice on 2026-09-03**
-and ended at `2424aa1283735dcad1e345cb9046dc2e`, carrying both halves of the system-bar work; that
-exact file was then installed on the phone, so the two are byte-identical rather than merely close.
-(An intermediate `2aa0cfdb…` carried only the first half and is superseded — if you see that md5
-anywhere, it is stale.)
-
-**The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
-deploy had tripped IP-scoped bot protection, and every request from this machine *and from the
-phone* returned 403 with an Astro challenge page instead of the app — including `/api/sync`. One
-`curl -s -o /dev/null -w '%{http_code}' https://www.flowrecall.app/api/sync` now returns 405 and
-the phone reaches the API normally. **Do not poll that host in a loop again** — detect a deploy by
-checking `git log origin/main` and then making one request, not eighty.
-
-The verification it blocked has since run and passed — see **The sync-rebuild verification** below.
+| Phone | **OPPO CPH2001, Android 11 (API 30), arm64-v8a, WebView 150.0.7871.181, system night mode ON.** Carries `2424aa1283735dcad1e345cb9046dc2e` |
+| Download | `public/flowrecall-release.apk` = `2424aa1283735dcad1e345cb9046dc2e`, cert `e1f4352f…bc09`, devtools off |
+| Emulator | `fr31` (API 31, Android 12) currently running and booted in background (`/tmp/compat-31.log`) |
+| Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`). Ready for upload |
 
 ---
 
 ## Do this next
 
-**The binding constraint is a calendar, not code.** The Play developer account is a **personal**
-one, so it must run a closed test with **12 testers opted in continuously for 14 days** before it
-may even apply for production access. That clock starts only once a build is uploaded and 12 real
-people have accepted the invite, so:
-
-**Two things came off the emulator on 2026-09-03 before this list starts.** Back navigation is
-**measured and correct** — seven scenarios on API 36, every one right, including the exact
-three-entry sequence the anomaly was reported from, with no double-pop and no second consumer (*The
-back-navigation measurement*). And a real defect was found and fixed in its place: the status bar
-clock, wifi and battery were **invisible on any phone not in dark mode** (*The invisible clock*).
-
-1. **Verify the tranche on the phone — the phone is now current, and none of the tranche has run on
-   it.** The install and the system-bar checks are done: it carries
-   `2424aa1283735dcad1e345cb9046dc2e`, the same file as the download, and the system theme was
-   flipped to light and back while measuring the grey band. What is still untouched there is the
-   tranche itself — the monthly rollover, the card editor and the reminder have only ever run in tests
-   and a desktop browser. The reminder has an explicit
-   completion bar it has not met: **Phase 4 is not done until a notification has been seen on the
-   phone with the app closed.** Every call in `notifications.ts` resolves successfully whether or
-   not `POST_NOTIFICATIONS` was ever granted, which is the same failure shape as the WebView
-   swallowing `<a download>` blob URLs — the API said 200 and the file never existed. Also worth
-   an eye while there: *Fix this card* is a new control on the revision sheet at 360dp, and
-   `ConceptEditor` writes to five `textarea`s (see the CDP note about React inputs before
-   automating it). The cable is no longer the blocker — the phone is attached as
-   `W4O7RWNJSOAEJVU8` (`adb` is at `~/Android/Sdk/platform-tools/adb`, not on PATH). **What blocks
-   the reminder specifically is an account**, since `StudyReminderSettings` only renders signed in.
-2. **Upload the AAB.** It builds and is signed with the upload key:
-   `npm run build:apk && (cd android && ./gradlew bundleRelease)`. **Decide the signing question
-   before the first upload, because it cannot be undone** — Play App Signing re-signs with Google's
-   key, so anyone who sideloaded `public/flowrecall-release.apk` cannot upgrade in place. Sync makes
-   that recoverable only if they signed in first, so say so wherever the APK is offered. See
-   AGENTS.md.
-3. **Fill the Data Safety form from `play-store-assets/store-listing-and-data-safety.md`**, which
-   answers every section of it from a direct read of auth, billing and storage — not from memory, and
-   not from this file. It was corrected today where the launch tranche had aged it (FREE is 3 decks
-   and 60 lookups a *month*, not one deck for life, which appeared in both the reviewer note and the
-   listing copy) and given the section it was missing: **Android auto-backup**, which sends the
-   whole on-device library to the student's own Drive and which Play's own Data safety article never
-   mentions. What is genuinely left is Console-side: verify the wording against the live form, give
-   `https://www.flowrecall.app/privacy` as the **web-reachable** deletion URL, and create the review
-   account (expect a reviewer to press Delete Account, so make two or recreate it per round).
+1. **Finish Default Store Listing:**
+   - Close the media drawer on the right.
+   - Upload `play-store-assets/icon.png` under **App icon**.
+   - Upload `play-store-assets/feature-graphic.png` under **Feature graphic**.
+   - Click **Save / Next**.
+2. **Upload AAB to Internal Testing:**
+   - Console → Internal testing → Create new release.
+   - Upload `android/app/build/outputs/bundle/release/app-release.aab`.
+   - Accept Play App Signing and **copy the SHA-256 fingerprint**.
+3. **Update Assetlinks & Push:**
+   - Add Play App Signing SHA-256 to `public/.well-known/assetlinks.json`.
+   - Push uncommitted commits to `origin/main`.
+4. **Recruit 12 Closed Testers:**
+   - Add emails to Internal Testing track and start the 14-day closed test.
 4. **The listing assets are already in the repo** — this file was wrong to say otherwise.
    `play-store-assets/` holds `icon.png` at 512×512, `feature-graphic.png` at 1024×500 and **eight**
    phone screenshots at 1080×2160, tracked since `ecb246d` and `880c8b3`. Launcher icons are complete

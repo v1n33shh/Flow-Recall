@@ -24,18 +24,26 @@
 
          #050505 is globals.css's own background token (see @color/splashBackground,
          which documents the same requirement for the splash handoff), so the bars
-         match the web layer rather than the platform default. The two light-bar
-         flags are false because the icons have to read against that near-black:
-         left at their default they came out dark, which against #050505 would be
-         invisible rather than merely wrong.
+         match the web layer rather than the platform default.
 
-         The known limit, stated rather than discovered later: this is fixed dark,
-         while the app's own light theme is opt-in via a class in globals.css. A
-         student who switches the app to light mode gets near-black bars around
-         near-white content. Better than the reverse - the app is dark by default
-         and almost always used that way - and the real fix is for the web layer
-         to paint the full viewport and own the inset areas itself, which
-         viewportFit: "cover" and env(safe-area-inset-*) already set up. -->
+         The two light-bar flags below are inert on this app's launch path, and
+         are left only as correct intent: a theme's decor attributes are read
+         when the window is created, and this window is created under
+         AppTheme.NoActionBarLaunch and swapped here afterwards via
+         postSplashScreenTheme, which is a setTheme() and does not re-apply
+         them. What actually decides whether the clock and battery are drawn
+         light or dark is Capacitor 8's own SystemBars plugin, configured in
+         capacitor.config.ts's SystemBars.style - which that comment explains in
+         full, including why it is pinned dark rather than following the app's
+         own light/dark preference (viewportFit "cover" puts the WebView under
+         both bars, but what shows through is the PAGE's background, and only
+         the token-based Account screen re-themes).
+
+         Because this windowBackground is fixed dark, one narrow window remains:
+         between the splash tearing down and the web layer's first paint, a
+         student on the app's light theme sees dark glyphs on #050505. Fixing
+         that means teaching this attribute the web preference, which it cannot
+         read - not worth a DayNight resource dance for two frames. -->
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>

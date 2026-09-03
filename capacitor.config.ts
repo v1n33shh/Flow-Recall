@@ -51,6 +51,39 @@ const config: CapacitorConfig = {
     loggingBehavior: process.env.DEVTOOLS === '1' ? 'production' : 'debug',
   },
   plugins: {
+    // Makes the status bar clock, wifi and battery VISIBLE. Measured, and it
+    // was invisible without this line: Capacitor 8 ships its own SystemBars
+    // plugin whose default style 'DEFAULT' is resolved from
+    // Configuration.UI_MODE_NIGHT_MASK - the *system* night mode - so a phone
+    // in LIGHT mode gets LIGHT_STATUS_BARS, i.e. dark glyphs, drawn over this
+    // app's near-black bars. Read back on an API 36 emulator as
+    // `mLastAppearance=LIGHT_STATUS_BARS` with the status strip measuring
+    // 5/255 in a screenshot; 255/255 with it. A developer whose own phone sits
+    // in dark mode never sees the bug, which is why it survived the tranche
+    // that went looking for exactly this.
+    //
+    // 'DARK' means "light content on a dark background", and it is deliberately
+    // a CONSTANT rather than something driven from the app's own light/dark
+    // preference. That was tried and measured wrong: with data-theme="light"
+    // the body token does go near-white (rgb(252,252,252)) but every page
+    // except the token-based Account screen paints its own hardcoded dark
+    // background over the full viewport (see globals.css's own note on that
+    // deliberate scope), so the strip behind the clock stayed at 5/255 and
+    // theme-following glyphs went dark on dark - invisible again, on more
+    // screens than it fixed. Checked the other way too, with the app switched
+    // to light: Home and the Account tab both kept a dark strip behind the bar
+    // (5/255 at the top, light content further down) and the light glyphs
+    // stayed readable at 255. The one case that could still bite is the
+    // SIGNED-IN Account screen, the only fully token-based surface in the app -
+    // it needs an account to reach and has not been measured. Revisit that when
+    // the token migration finishes.
+    //
+    // It also survives a system dark/light switch: SystemBars re-applies
+    // `currentStatusBarStyle` in handleOnConfigurationChanged, and that field
+    // holds this value rather than the freshly-resolved system one.
+    SystemBars: {
+      style: 'DARK',
+    },
     // Routes fetch()/XHR through native OkHttp instead of the WebView's own
     // networking stack, and gives it a real native cookie jar. This is what
     // lets the NextAuth session cookie set by the cross-origin API

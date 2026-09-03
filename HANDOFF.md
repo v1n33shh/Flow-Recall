@@ -42,15 +42,23 @@ which no route imports.
 | Phone | shipping build carrying **both** tranches, devtools **off**, md5 `cd1302f1c389b5fc6b98cf59195b3485` |
 | Download | `public/flowrecall-release.apk`, byte-identical to the phone, cert `e1f4352f…bc09` |
 | Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Now carries a **local DEVTOOLS release build** — logging and devtools on, gesture navigation enabled — **not** the shipping bytes |
-| Play | **AAB builds and is signed with the upload key**, `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
+| Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`keytool -printcert -jarfile` reads back `E1:F4:35:2F…BC:09`), `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
 
-Every row above was re-run on 2026-09-02 after the tranche landed **except the last two**, which
-are the previous session's census carried forward: **no device was attached this session**, so
-nothing about the phone was re-measured. (`adb` works but is not on PATH — it is at
-`~/Android/Sdk/platform-tools/adb`.) No source file is newer than the APK or the AAB sitting on
-disk, so both of them do carry the committed code.
+Tests, typecheck, lint and both builds were re-run on **2026-09-03** and the numbers above still
+hold. The last two rows are still the previous session's census carried forward: **no phone has been
+attached in either session** — only the emulator has, so nothing about the phone has been
+re-measured. (`adb` works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
+
+Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD today, so
+they carry the committed code and are signed with the upload key `e1f4352f…bc09` — the same key the
+phone's install trusts, which is what makes the APK there installable over it for item 1. The fresh
+APK is `054901d9dfff71a7ab580cb5f0420b8b`; that it differs from the download is expected, a release
+APK is not bit-reproducible. **`public/flowrecall-release.apk` is deliberately untouched at
+`cd1302f1…`**: today's commits change the shipping app by exactly nothing (the config change is
+gated behind `DEVTOOLS`, the rest is this file, the submission reference and three PNG re-encodes),
+so there is no download to refresh.
 
 **The Vercel Security Checkpoint has expired.** Polling `https://www.flowrecall.app/` to detect a
 deploy had tripped IP-scoped bot protection, and every request from this machine *and from the

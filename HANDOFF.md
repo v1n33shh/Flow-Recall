@@ -1,7 +1,8 @@
 # FlowRecall — Handoff
 
 **Written 2026-09-02, end of session; updated the same day once the device verification it was
-waiting on came back clean.** This file replaces the previous reverse-chronological log; every
+waiting on came back clean, and again on 2026-09-03 when back navigation was measured on API 36.**
+This file replaces the previous reverse-chronological log; every
 earlier version is still in git (`git log --follow -- HANDOFF.md`) if you need the older
 sessions' measurements and reasoning.
 
@@ -23,11 +24,13 @@ library; never edit it. This upgrade is the flashcard section only.
 
 ## State right now
 
-**`origin/main` == `50fcd83`. `main` is EIGHT commits ahead and none of them are pushed** —
-`c8517c1` through `51d2758`. Two tranches sit in there: the allowance race tests the launch
-tranche's own plan asked for by name, and the **compatibility tranche** (*Making it survive a
-phone that is not yours*, below) which is what a closed test needs before strangers install it.
-Also inert in there: Phase 1 of the mock-paper plan, which no route imports.
+**`origin/main` == `main` == `5aa2df9` at the start of this session — the eight commits this file
+used to list as unpushed are all pushed.** On top of that sits the back-navigation commit below;
+`git log origin/main..main` is the only honest answer to whether it has been pushed yet. Two
+tranches are in there: the allowance race tests the launch tranche's own plan asked for by name, and
+the **compatibility tranche** (*Making it survive a phone that is not yours*, below) which is what a
+closed test needs before strangers install it. Also inert in there: Phase 1 of the mock-paper plan,
+which no route imports.
 
 | | |
 |---|---|
@@ -38,7 +41,7 @@ Also inert in there: Phase 1 of the mock-paper plan, which no route imports.
 | Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
 | Phone | shipping build carrying **both** tranches, devtools **off**, md5 `cd1302f1c389b5fc6b98cf59195b3485` |
 | Download | `public/flowrecall-release.apk`, byte-identical to the phone, cert `e1f4352f…bc09` |
-| Emulator | `fr36` AVD, **API 36**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`, then `adb connect localhost:5555` — it does NOT auto-appear in `adb devices` |
+| Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Now carries a **local DEVTOOLS release build** — logging and devtools on, gesture navigation enabled — **not** the shipping bytes |
 | Play | **AAB builds and is signed with the upload key**, `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
@@ -67,17 +70,10 @@ one, so it must run a closed test with **12 testers opted in continuously for 14
 may even apply for production access. That clock starts only once a build is uploaded and 12 real
 people have accepted the invite, so:
 
-0. **Diagnose the back-navigation anomaly on API 36 — the one open risk in the code.**
-   `BackButtonBridge` was added today because nothing handled back at all and it closed the app
-   from wherever a student stood. On the phone it is right: from Account, back returns Home; at the
-   root it exits. On the **API 36 emulator** it is not: from three history entries (`/` → `/ingest`
-   → `/account`) the first back stayed in the app and the **second exited**, where two in-app backs
-   were expected. That smells like a double-pop — `router.back()` plus something else consuming the
-   same press — but the WebView's URL cannot be read without devtools, so anything past that is
-   speculation. `DEVTOOLS=1 npm run build:apk` + `gradlew assembleRelease`, install on the
-   **emulator** (harmless there, no library to lose), and log `history.length` and
-   `location.pathname` at each press. Back is used on every screen by every tester, so this is
-   worth more than anything else outstanding.
+**Back navigation is measured and correct — the item that used to head this list is closed.** Seven
+scenarios on the API 36 emulator, every one of them right, including the exact three-entry sequence
+the anomaly was reported from. There is no double-pop and no second consumer. See **The
+back-navigation measurement** below for what was run and for the two things it turned up.
 
 1. **Verify the tranche on the phone — none of it has been.** The bytes are installed there (the
    download and the phone are the same file), but the monthly rollover, the card editor and the
@@ -146,6 +142,58 @@ tranche and should happen before, not after, strangers are invited to upload fil
 
 ---
 
+## The back-navigation measurement
+
+**`BackButtonBridge` is correct on API 36. The reported anomaly did not reproduce, in any of seven
+scenarios.** Run on the `fr36` emulator (API 36, AOSP WebView 133.0.6943.137) against a local
+DEVTOOLS release build of `5aa2df9`. `BackButtonBridge.tsx` has exactly one commit and has not been
+touched since `c5695c9`, so this is the same logic the anomaly was reported against.
+
+The history index came from the **Navigation API** (`navigation.currentEntry.index`), not
+`history.length` — which is useless for this: it sits at the stack's high-water mark and does not
+move when you go back. Every press logged the event, the `popstate`, and the route it landed on.
+
+| Stack | Input | Result |
+|---|---|---|
+| `/` → `/ingest` → `/account`, built from the tab bar | key event | back, back, then exit — index 2→1→0 |
+| `/` → `/pricing` → `/ingest` → `/account` | key event | three in-app backs, 3→2→1→0, app still in front |
+| `/` → `/ingest` → `/account` | **back gesture**, gesture nav enabled | identical to the key event |
+| `/` → `/ingest` → `/account` | two presses **79 ms** apart | two single pops, nothing skipped or merged |
+| `/` → "Start ingesting notes" → `/account` | key event | back, back — the CTA pushes, it does not replace |
+| 3 entries, HOME, relaunched from the launcher | key event | the stack survived, index still 2 |
+| 3 entries, HOME, `am kill`, relaunched | key event | relaunches at `/` with **one** entry, so back exits |
+
+Every press produced **exactly one** `backButton` event from **exactly one** listener instance —
+`instance=1` for the whole session, so the effect does not re-register on navigation and there is
+never a second live listener — and **exactly one** `popstate`. At the first entry `canGoBack` came
+back false and `exitApp()` finished the Activity, as designed.
+
+**The last row is the likeliest explanation of the original report.** A killed process relaunches at
+`/` holding a single history entry — Capacitor loads the start URL, it does not restore `/account` —
+so the next back exits, correctly. With no devtools and no console, which is where the earlier
+session stood, that is indistinguishable from "the second back exited from three entries".
+
+**`DEVTOOLS=1` alone cannot show console output, so this needed a config change before it could have
+a diagnosis.** Capacitor's `loggingBehavior` defaults to `debug`, and `debug` means *only when the
+APK is debuggable* — a release APK is not, so `CapConfig` disables logging entirely and
+`BridgeWebChromeClient.onConsoleMessage` drops every `console.log` before it reaches logcat. The
+config now sets `loggingBehavior: 'production'` under the same `DEVTOOLS` env var that already
+controls devtools, so a devtools build says what it knows and a shipping build stays exactly as
+silent as before. Both halves were read back from the synced
+`android/app/src/main/assets/capacitor.config.json`.
+
+**Two things worth knowing that came out of it:**
+
+- `@capacitor/app` fires **two** channels for one press: the `backButton` plugin event *and* a
+  `backbutton` DOM event on `document` (`bridge.triggerJSEvent`, in `AppPlugin.load()`). Nothing in
+  this app listens to the second, so it is inert — but a `document.addEventListener("backbutton")`
+  that also navigated would be exactly the double-pop this went looking for. Don't add one.
+- **`ConceptEditor` is inline state, not a route and not an overlay** (`RevisionSheet.tsx:339`), so
+  back from an open editor leaves `/revise` rather than closing the editor and keeping the draft.
+  That is a decision to make when the editor is finally exercised at 360dp, not a defect in it.
+
+---
+
 ## The sync-rebuild verification
 
 **It passed.** A foreground sync cannot silently undo the exam date. Done on the phone against
@@ -197,7 +245,7 @@ Postgres — the server's `updatedAt` was unchanged afterwards, and the census h
 Nine commits, in three tranches. Each is independently shippable and leaves the app working.
 
 ```
-4c7aa42  Let a student name the exam, and drill for it              <- HEAD, origin/main
+4c7aa42  Let a student name the exam, and drill for it
 ffcdd46  Tell them what they will still know next week
 38761c0  Stop the wrong list from congratulating a student on being wrong
 b991715  Record what teach-it-back is, and the order the rest has to happen in
@@ -446,7 +494,8 @@ creation and this window is created under the splash theme then swapped via `pos
 against 11 `router.push` sites — so back finished the Activity from wherever the student was.
 `BackButtonBridge` registers one listener, which is what takes the decision away from the platform;
 `canGoBack` is read from the WebView at press time, and at the first entry it exits rather than
-trapping anyone. **See item 0 of *Do this next* — the API 36 behaviour is not yet right.**
+trapping anyone. **Measured on API 36 and right there too** — see *The back-navigation
+measurement*.
 
 **Portrait-locked and resizing declined**, because every layout was measured at 360dp and Play was
 offering landscape, split-screen and freeform. Narrows rather than closes it: Android 16 ignores

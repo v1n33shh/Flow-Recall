@@ -42,6 +42,13 @@ const config: CapacitorConfig = {
     // is the only way to see console output or run timings inside the real
     // Android WebView. Re-run the build without DEVTOOLS before shipping.
     webContentsDebuggingEnabled: process.env.DEVTOOLS === '1',
+    // Without this, a DEVTOOLS build still cannot show console output in
+    // logcat: Capacitor's own logging (which is what forwards
+    // console.log through BridgeWebChromeClient.onConsoleMessage)
+    // defaults to 'debug', and 'debug' means "only when the APK is
+    // debuggable" - which a release APK is not. Gated on the same flag,
+    // so a shipped release is silent as before.
+    loggingBehavior: process.env.DEVTOOLS === '1' ? 'production' : 'debug',
   },
   plugins: {
     // Routes fetch()/XHR through native OkHttp instead of the WebView's own

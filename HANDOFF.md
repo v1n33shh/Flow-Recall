@@ -39,18 +39,20 @@ which no route imports.
 | Lint | **0 errors / 45 warnings** (all 45 pre-date the tranche) |
 | Builds | `npm run build` and `npm run build:apk` both pass; `cap sync` finds all 7 plugins including `local-notifications` |
 | Migrations | **all 8 applied** to production Supabase — `prisma migrate status` says "up to date", `lookupsResetAt` included |
-| Phone | still the pre-2026-09-03 build, md5 `cd1302f1c389b5fc6b98cf59195b3485` — **behind the download**, and it has the invisible status bar |
-| Download | `public/flowrecall-release.apk`, refreshed to `2aa0cfdbddd5e5639ddcaea38a133201`, cert `e1f4352f…bc09`, devtools off — carries the system-bar fix the phone does not |
+| Phone | **OPPO CPH2001, Android 11 (API 30), arm64-v8a, WebView 150.0.7871.181, system night mode ON.** Carries `2424aa1283735dcad1e345cb9046dc2e` — the download, installed from that exact file on 2026-09-03, library intact |
+| Download | `public/flowrecall-release.apk` = `2424aa1283735dcad1e345cb9046dc2e`, cert `e1f4352f…bc09`, devtools off. **Byte-identical to what is on the phone again** |
 | Emulator | `fr36` AVD, **API 36**, AOSP WebView **133.0.6943.137**, 1080×2400 @ 480dpi so it matches the phone's 360dp. Headless: `emulator -avd fr36 -no-window -gpu swiftshader_indirect -port 5554`; it appeared as `emulator-5554` on its own this session (start `adb` after the emulator), and `adb connect localhost:5555` is the fallback if it does not. Superseded as the daily driver by **`fr36play`** (below) but kept, since it is the only AOSP image here |
 | Emulator (use this one) | **`fr36play`** — API 36 **Google Play** image, so it has Play Services 26.32.34, the Play Store, and Chrome 133: Google sign-in, Custom Tabs and App Link verification are reachable for the first time. 1080×2400 @ 480dpi, 4 GB, port 5556, **visible on the desktop**. Launch line and the `-feature -Vulkan` it cannot start without: *The emulator you can watch* below |
+| Emulators (compatibility) | **`fr24`** (API 24, google_apis, port 5558) and **`fr35`** (API 35, Play, port 5560), same geometry, same launch line. Both were run on 2026-09-03 — see *What this app has now actually run on* |
 | Play | **AAB rebuilt from HEAD on 2026-09-03 and signed with the upload key** (`keytool -printcert -jarfile` reads back `E1:F4:35:2F…BC:09`), `versionCode 1` — `android/app/build/outputs/bundle/release/app-release.aab`. Never uploaded |
 | Device state | 1 deck (*Cardiac cycle - lecture 4*, 3 concepts), 3 units, 6 memory rows, 14 reviews, 4 asks, 2 teach-backs |
 | Server state | same, and it holds the concept map and both teach-backs |
 
 Tests, typecheck, lint and both builds were re-run on **2026-09-03** and the numbers above still
-hold. The last two rows are still the previous session's census carried forward: **no phone has been
-attached in either session** — only the emulator has, so nothing about the phone has been
-re-measured. (`adb` works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
+hold. **The phone was attached late that day** (serial `W4O7RWNJSOAEJVU8`), which is how the
+Android 7-14 half of the status-bar problem was found; the last two rows below are still the previous
+session's data census, carried forward, because nothing was read out of the app's own storage. (`adb`
+works but is not on PATH — it is at `~/Android/Sdk/platform-tools/adb`.)
 
 Both the release APK and the AAB in `android/app/build/outputs/` were rebuilt from HEAD today and
 are signed with the upload key `e1f4352f…bc09` — the same key the phone's install trusts, so the
@@ -249,7 +251,59 @@ the one surface that could still bite** — the only fully token-based one — a
 reach, so it is unmeasured rather than fine.
 
 **Why a tranche that measured this exact strip missed it: a phone in dark mode never shows the bug.**
-The check that would have caught it is one line — flip the *system* theme, not the app's.
+The check that would have caught it is one line — flip the *system* theme, not the app's. **The phone's own
+setting was read to confirm it**: `cmd uimode night` on the OPPO says `yes`.
+
+### The other half of it, on Android 7-14
+
+**Below API 35 the bug is a grey band, not an invisible clock, and it was also there.** Enforced
+edge-to-edge only starts at 35; before that the platform paints an *opaque* status bar from
+`android:statusBarColor`, which `Theme.AppCompat.DayNight` resolves to `colorPrimaryDark` — and in
+light mode that is AppCompat's own `primary_dark_material_light`, **#757575**. Measured on the phone
+(OPPO CPH2001, Android 11, WebView 150) with the system in light mode: the bar was **(117,117,117)**
+above a black app, in *both* builds. The SystemBars fix alone only changed the glyphs on that band
+from black to white.
+
+`android:statusBarColor` and `android:navigationBarColor` are now pinned to `@color/splashBackground`
+in **both** `AppTheme.NoActionBar` and the splash theme — the second because decor attributes are
+read when the window is created and the splash theme is the one in force then, the same trap
+`windowLightStatusBar` fell into. Belt and braces: whichever the platform honours, the answer is
+#050505.
+
+Measured on the phone, in light mode, before and after: status bar **(117,117,117) → (5,5,5)** with
+white glyphs at 255, navigation bar (6,6,6). In dark mode it moved from pure black to #050505, which
+matches the app rather than merely looking similar. **Ignored at API 35+**, so the transparent-bar
+path is untouched — re-measured there, both 35 and 36 still read (5,5,5) with 255 glyphs.
+
+### What this app has now actually run on
+
+The compatibility tranche's premise was that it had only ever run on one Android 11 handset. That is
+no longer true. Every row below was a real launch of a release build of HEAD, with a screenshot and a
+measured status strip:
+
+| Platform | WebView | What happened |
+|---|---|---|
+| **API 24**, Android 7.0 (emulator `fr24`) | **53** | `webview-too-old.html`, exactly as designed — the gate fires against a genuinely old engine, not just against a forced floor of 999. Page renders correctly in its 2017-era CSS, including the blue-square mark it deliberately uses instead of an SVG |
+| **API 30**, Android 11 (**the real phone**, OPPO CPH2001, arm64) | **150** | Runs. Library intact across three in-place upgrades — the *Tonight* session card is still there. Bars #050505 + white glyphs in both system themes |
+| **API 35**, Android 15 (emulator `fr35`) | **124** | Runs. Bars (5,5,5), glyphs 255, no crash, no JS error |
+| **API 36**, Android 16 (emulator `fr36play`) | **133** | Runs. 255/255, `LIGHT_STATUS_BARS` cleared, no E-level console output |
+
+**The install surface, read off the APK with `aapt2`:** `minSdkVersion 24`, **no native libraries at
+all** (no `lib/`, no `.so`) so one APK covers arm64-v8a, armeabi-v7a, x86 and x86_64; `supports-screens`
+small→xlarge with `supports-any-density`; densities 120→640. The only install-time exclusion is the
+implied `android.hardware.screen.portrait` feature that `screenOrientation="portrait"` generates,
+which filters devices that cannot present portrait — TVs and some kiosk displays, not phones or
+tablets.
+
+**So "compatible with every Android device" is still not the claim to make**, and the reason is the
+WebView rather than the OS: below 111 the app deliberately refuses to draw. What *is* now true is
+that the two ends of the supported range and both sides of the edge-to-edge boundary have been run
+and measured.
+
+**The earlier `Error injecting safe area CSS` console error did not reproduce** on any later launch,
+including a fresh `pm clear` on API 36. It looks like a first-launch race inside Capacitor's own
+injection rather than a defect in this app; nothing renders wrong when it happens. Left as an
+observation.
 
 ---
 

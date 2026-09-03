@@ -300,6 +300,17 @@ measured status strip:
 **Every level reports `POST_NOTIFICATION: ignore` on a fresh install from 33 up**, read back on 33,
 34 and 36.
 
+**The matrix was run with a DEVTOOLS twin of the same commit, then re-run with the shipping bytes.**
+The twin differs only in `webContentsDebuggingEnabled` and `loggingBehavior` — flags that gate
+inspection, not rendering — but it was the twin that made console output readable at all, so the
+distinction was worth closing rather than arguing. `public/flowrecall-release.apk`
+(`2424aa1283735dcad1e345cb9046dc2e`, the phone's own file) was uninstalled-then-installed on the three
+levels where the app actually draws, and every reading matched: **API 34, 35 and 36 all came back
+(5,5,5) status bar, glyphs 255, nav (5,5,5), zero FATAL/ANR, and zero `webview_devtools_remote`
+sockets** — that last count is what proves it was the shipping build and not the twin. 24, 31 and 33
+were skipped on purpose: they serve `webview-too-old.html`, and that decision comes from
+`minWebViewVersion: 111`, identical in both builds' synced config.
+
 **Read that table carefully: three of those rows test the REFUSAL, not the app.** A Play system image
 ships a WebView frozen at the image's build date — 53 on API 24, 91 on 31, 109 on 33 — and an
 emulator cannot update it without a Google account signed into its Play Store. A real Android 12 or 13

@@ -49,6 +49,18 @@
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
         <item name="android:windowBackground">@color/splashBackground</item>
+        <!-- Measured on the OPPO CPH2001 (Android 11) with the system in LIGHT
+             mode: without these the status bar was a #757575 band above a black
+             app - AppCompat's own primary_dark_material_light, which is what
+             DayNight resolves colorPrimaryDark to when the system is light. It
+             is only visible below API 35, where the platform still paints an
+             opaque bar from these attributes instead of enforcing edge-to-edge;
+             at 35+ they are ignored and the transparent-bar path in this
+             comment applies. So this is the Android 7-14 half of the same
+             problem: the bars now match the app in both system themes rather
+             than only in dark. -->
+        <item name="android:statusBarColor">@color/splashBackground</item>
+        <item name="android:navigationBarColor">@color/splashBackground</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
@@ -79,6 +91,13 @@
          replaces. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splashBackground</item>
+        <!-- Same two attributes as AppTheme.NoActionBar, and here for the reason
+             that comment gives about windowLightStatusBar: decor attributes are
+             read when the WINDOW is created, and this is the theme in force
+             then. Belt and braces - whichever of the two the platform actually
+             honours, the answer is #050505. -->
+        <item name="android:statusBarColor">@color/splashBackground</item>
+        <item name="android:navigationBarColor">@color/splashBackground</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>

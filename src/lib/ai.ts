@@ -1,7 +1,7 @@
 import { createGroq } from "@ai-sdk/groq";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { APICallError, type LanguageModel } from "ai";
+import { APICallError, RetryError, type LanguageModel } from "ai";
 
 // The Groq model FREE plans are pinned to: Groq's current smartest free model.
 // NOTE: llama-3.1-70b-versatile was DECOMMISSIONED on Groq, replaced by
@@ -83,6 +83,72 @@ export function resolveGradeModel(): LanguageModel {
   return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
 }
 
+/** A provider's rate-limit answer, and how long it asked us to wait - `null`
+ * seconds where it did not say. Returns `null` for anything that is not a rate
+ * limit at all.
+ *
+ * Read by /api/ingest so a 429 can be passed through to the client as a 429
+ * rather than flattened into the same 502 every other provider failure gets. A
+ * book-length ingest is 20 sequential requests against a per-minute limit, and
+ * the client can only retry the one chunk that tripped it - instead of losing the
+ * rest of the deck - if it can tell a rate limit apart from a broken response. */
+export function readRateLimit(error: unknown): { retryAfterSeconds: number | null } | null {
+  // What generateText throws after exhausting its OWN retries is a RetryError
+  // wrapping the real one, and `APICallError.isInstance` on that is false - so
+  // the status code and every rate-limit header are one level down. Missing this
+  // is how a 429 reached the client as an untyped 502 from a phone: the message
+  // read "Failed after 3 attempts. Last error: AI_APICallError: ...".
+  const apiError = APICallError.isInstance(error)
+    ? error
+    : RetryError.isInstance(error) && APICallError.isInstance(error.lastError)
+      ? error.lastError
+      : null;
+
+  const statusCode = apiError?.statusCode;
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const lower = rawMessage.toLowerCase();
+
+  // Groq has two phrasings for the same OTPM ceiling and only one of them says
+  // "rate limit": a spent window gives "Rate limit reached ... on output tokens
+  // per minute (OTPM)", while a single oversized request gives "Request too large
+  // ... on output tokens per minute (OTPM)". Both are 429s, and both are waits.
+  const isRateLimited =
+    statusCode === 429 ||
+    lower.includes("rate limit") ||
+    lower.includes("quota") ||
+    lower.includes("too many requests") ||
+    lower.includes("tokens per minute") ||
+    lower.includes("requests per minute");
+  if (!isRateLimited) return null;
+
+  return { retryAfterSeconds: retryAfterSeconds(apiError?.responseHeaders) };
+}
+
+/** Seconds from a `retry-after` (seconds, or an HTTP date) or `retry-after-ms`
+ * header. Capped at two minutes: a provider asking for longer than that is
+ * asking for longer than anyone will hold a phone still for, and the client's own
+ * ceiling should decide from there. */
+function retryAfterSeconds(headers: Record<string, string> | undefined): number | null {
+  if (!headers) return null;
+  const cap = (seconds: number) => Math.min(Math.max(Math.ceil(seconds), 1), 120);
+
+  const ms = Number(headers["retry-after-ms"]);
+  if (Number.isFinite(ms) && ms > 0) return cap(ms / 1000);
+
+  const raw = headers["retry-after"];
+  if (!raw) return null;
+
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) return cap(seconds);
+
+  const date = Date.parse(raw);
+  if (Number.isFinite(date)) {
+    const delta = (date - Date.now()) / 1000;
+    if (delta > 0) return cap(delta);
+  }
+  return null;
+}
+
 type FriendlyErrorOptions = {
   /** Provider name shown to the user, e.g. "Groq", "OpenAI", "Anthropic". */
   provider?: string;
@@ -107,9 +173,15 @@ export function getFriendlyErrorMessage(error: unknown, options: FriendlyErrorOp
     return `The ${provider} service is temporarily unavailable. Please try again later.`;
   }
 
-  const isRateLimited = statusCode === 429 || lower.includes("quota") || lower.includes("rate limit");
-  if (isRateLimited) {
-    return `You've hit ${provider}'s rate limit. Wait exactly 60 seconds and try again.`;
+  // Delegated so this agrees with what the routes act on, and so it recognises
+  // the same phrasings and the same RetryError wrapping - a phone showed the raw
+  // "Failed after 3 attempts. Last error: AI_APICallError: Request too large ...
+  // OTPM: Limit 1000, Requested 1456 ... Upgrade to Dev Tier" because this branch
+  // only looked for the words "rate limit".
+  const rateLimit = readRateLimit(error);
+  if (rateLimit) {
+    const wait = rateLimit.retryAfterSeconds ?? 60;
+    return `You've hit ${provider}'s rate limit. Wait about ${wait} seconds and try again.`;
   }
 
   return rawMessage || `Something went wrong talking to ${provider}.`;

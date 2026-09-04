@@ -13,7 +13,9 @@ import {
   isProModel,
   providerLabel,
   parseModelJson,
+  readRateLimit,
 } from "@/lib/ai";
+import { APICallError } from "ai";
 import { ConceptsResponseSchema, buildConceptsPrompt } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
 import { FREE_DECKS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
@@ -119,16 +121,33 @@ export async function POST(request: Request) {
 
   try {
     const model = getProviderModel(plan, requestedModel);
-    // Raised from 1500 when misconception/whyItMatters/sourceQuote were added -
-    // roughly 80 more tokens per card, and a truncated response is not a degraded
-    // card but a dead batch, since parseModelJson's balanced-brace fallback cannot
-    // repair an object that stops mid-string. Still sized for 3 cards; if the 60s
-    // limit ever starts biting, the lever is the client's 1500-char chunk size
-    // (see MAX_CHUNKS in src/app/ingest/page.tsx), not this.
+    // A truncated response is not a degraded card but a dead batch: parseModelJson's
+    // balanced-brace fallback cannot repair an object that stops mid-string. 2400 is
+    // sized for the 3 cards buildConceptsPrompt asks for, and MEASURED against the
+    // pinned free model on a real 2706-character chunk off the user's phone: actual
+    // output was 868-1000 tokens with finishReason "stop" at every cap from 900 to
+    // 2400, i.e. the model self-limits and never comes near this number.
+    //
+    // Do not raise it hoping to dodge a rate limit. Groq's free tier rejects on
+    // output tokens per MINUTE (OTPM), not on this cap: the same chunk succeeded
+    // identically at max_tokens 900, 1200 and 2400, and failed only when a second
+    // request landed inside the same minute. The lever for that is the client's
+    // spacing (see RATE_LIMIT_BACKOFF_MS in src/lib/ingestChunks.ts), not this.
     const { text: rawText } = await generateText({
       model,
       prompt: buildConceptsPrompt(text),
       maxOutputTokens: 2400,
+      // The client is the retry layer now, deliberately - see runChunks. The SDK's
+      // default (2 retries) is actively harmful here: it honours Groq's
+      // `retry-after: 43`, so a rate-limited chunk sat inside ONE request for 27-58
+      // seconds against this route's own `maxDuration = 60`. Measured on the user's
+      // phone: round trips of 58527ms, 58606ms and 56102ms, i.e. within 1.5s of
+      // Vercel killing the function and turning a 43-second wait into a 504.
+      //
+      // At 0 a rate limit comes back in ~200ms with its Retry-After intact, and the
+      // waiting happens on the client - which is not on a serverless clock and can
+      // tell the student what it is waiting for.
+      maxRetries: 0,
       providerOptions: GROQ_PROVIDER_OPTIONS,
     });
 
@@ -137,8 +156,17 @@ export async function POST(request: Request) {
       rawJson = parseModelJson(rawText);
     } catch (parseError) {
       console.error("Ingest JSON parse failed", parseError, "raw text:", rawText);
+      // `retryable`, here and in the two answers below, is what lets the client
+      // send this same chunk again rather than abandoning the rest of the book on
+      // one bad roll of the dice - see MAX_CHUNK_ATTEMPTS in the ingest page. All
+      // three of these return before the allowance is claimed, so a retry can
+      // never cost a FREE account a second deck.
       return Response.json(
-        { error: "The model returned a response we couldn't understand. Please try again." },
+        {
+          error: "The model returned a response we couldn't understand. Please try again.",
+          code: "MODEL_UNPARSEABLE",
+          retryable: true,
+        },
         { status: 502 },
       );
     }
@@ -147,7 +175,11 @@ export async function POST(request: Request) {
     if (!validated.success) {
       console.error("Ingest schema validation failed", validated.error, "raw text:", rawText);
       return Response.json(
-        { error: "The model's response didn't match the expected format. Please try again." },
+        {
+          error: "The model's response didn't match the expected format. Please try again.",
+          code: "MODEL_SCHEMA",
+          retryable: true,
+        },
         { status: 502 },
       );
     }
@@ -161,7 +193,11 @@ export async function POST(request: Request) {
     }
     if (gated.concepts.length === 0) {
       return Response.json(
-        { error: "The model's cards didn't pass our quality checks. Please try again." },
+        {
+          error: "The model's cards didn't pass our quality checks. Please try again.",
+          code: "QUALITY_GATE",
+          retryable: true,
+        },
         { status: 502 },
       );
     }
@@ -192,12 +228,32 @@ export async function POST(request: Request) {
     return Response.json({ concepts });
   } catch (error) {
     console.error("Ingest failed", error);
+    const message = getFriendlyErrorMessage(error, {
+      provider: providerLabel(plan, requestedModel),
+    });
+
+    // A rate limit leaves as a 429 with the provider's own wait, not as a 502.
+    // Flattening it into the generic failure is what turned "wait four seconds"
+    // into "the rest of your book is gone": the client cannot back off against an
+    // error it cannot recognise.
+    const rateLimit = readRateLimit(error);
+    if (rateLimit) {
+      const { retryAfterSeconds } = rateLimit;
+      return Response.json(
+        { error: message, code: "RATE_LIMITED", retryable: true, retryAfterSeconds },
+        {
+          status: 429,
+          headers: retryAfterSeconds ? { "Retry-After": String(retryAfterSeconds) } : undefined,
+        },
+      );
+    }
+
+    // The SDK already decides this for transport-level failures (timeouts, 5xx,
+    // connection resets are retryable; a rejected key is not), so defer to it and
+    // only assume retryable for errors it never saw.
+    const retryable = APICallError.isInstance(error) ? error.isRetryable : true;
     return Response.json(
-      {
-        error: getFriendlyErrorMessage(error, {
-          provider: providerLabel(plan, requestedModel),
-        }),
-      },
+      { error: message, code: "PROVIDER_FAILED", retryable },
       { status: 502 },
     );
   }

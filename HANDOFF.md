@@ -61,8 +61,121 @@ Stack exhaustion when merging recursive object graphs; advisory range `<8.0.0`. 
 
 *Decision Made:* We are **leaving `epubjs` at `0.3.93`** for now. The exposure risk (XML injection inside a student-selected EPUB) is minimal, and a major version bump on a finished, unmaintained reader poses a much larger regression risk. We will revisit if `0.4.x` is ever promoted to latest.
 
-**Immediate Task: Phase 3 — flashcard understanding.** Unchanged from the earlier handoff:
+**Immediate Task 1: Fix PDF Ingest & Model Crashes — DONE, 2026-09-04. Not committed; the working tree carries it.**
+
+All three diagnosed causes are fixed, plus two more found on the way: a 429 the client could not recognise, and a second copy of the whole loop in the library. Details in §6.
+
+**Immediate Task 2: Phase 3 — flashcard understanding.** Unchanged from the earlier handoff:
 
 1. **Multiple Choice Questions** — generate distractors from the concept map; build the MCQ UI so recognition can be tested without handing the student a 50/50 guess.
 2. **Starring concepts** — a star button in the review and sheet-browsing UI, driving the FSRS `importance` multiplier off the flat `0.5` and onto the student's own priorities.
 3. **Visual concept graph** — render the existing `concept-map` data, including its edge kinds ("Build on first", "This explains", "Don't confuse").
+
+## 6. The flashcard fix (Task 1), in detail — 2026-09-04
+
+**Tests**: 447 passed / 447 across 31 files, `npm test` exit 0 — 37 new, in the three new test files below. `npm run build` succeeds, `npx tsc --noEmit` clean, `eslint src` 0 errors (12 warnings, all of them older than this work — the reader's hook deps and an unused `createAnthropic` in `src/lib/ai.ts`).
+
+**a) Extraction moved off the main thread — `src/components/PdfDropzone.tsx`.**
+
+It had its own inline `extractPdfText`: `getDocument`, then a `for` loop over every page calling `getTextContent` and joining `item.str` with spaces, all on the UI thread. On a 476-page book that is a minute-plus of frozen WebView, which on Android is indistinguishable from a crashed app.
+
+It now calls `startPdfExtraction` from `src/lib/pdfExtractClient.ts` — the reader's pipeline, called rather than copied, per the standing rule. Four things come with it that the inline loop could not offer:
+
+- The page decoding, geometric paragraph grouping and Type3 cipher recovery all run in `src/workers/pdfExtract.worker.ts`. The UI thread only ever receives finished strings.
+- pdf.js gets `cMapUrl` and `standardFontDataUrl`. The inline loop passed neither, so a CID-keyed or non-embedded-font PDF extracted as mojibake — and every card built from it was nonsense. This was a silent correctness bug, not just a speed one.
+- Real progress (`pagesDone` / `totalPages`) instead of an unbounded spinner, so a minute of reading does not look like a hang.
+- `classifyPdfError`, so a password-protected PDF is named as one instead of "Failed to read that PDF", and `assessPdfText`, so a page-scan is refused **before** generation rather than spending one of a FREE account's monthly decks on stray glyphs.
+
+**b) Chunk edges now land on sentence boundaries — `src/lib/chunkText.ts` (new), `src/lib/chunkText.test.ts` (new, 16 tests).**
+
+`chunkText` lived inside `src/app/ingest/page.tsx` and hard-sliced any paragraph longer than the budget at fixed character offsets — mid-word, mid-clause. That is not a cosmetic problem: the ingest prompt demands a verbatim `sourceQuote` and a `cloze` whose blank `answer` fills exactly, and neither is satisfiable against a fragment starting mid-clause. The model either invents the missing half or abandons the JSON shape, and the route answers 502. This is the "model failure" in the bug report, and its cause was on the client.
+
+The new module breaks on paragraphs where it can, sentences where it must, and whitespace only when a single sentence exceeds the whole budget. The sentence splitter is the interesting part: only a lone `.` is ever ambiguous, and every test answers "not a boundary" on doubt, because refusing a break only makes one piece longer while taking a false one mutilates a sentence. It rejects single capitals (`J. R. R. Tolkien`), a 60-entry abbreviation list, and — the rule that actually carries it — any period whose next character is lower-case or a digit, which covers the abbreviations no list survives contact with.
+
+**Verified on real content**, not fixtures — the 476-page `The 48 Laws Of Power` PDF in `~/Downloads`, run through the real extraction and then both chunkers, auditing every chunk edge for a break inside a paragraph that is not also a sentence end:
+
+| | chunks | mid-sentence breaks |
+|---|---|---|
+| old, 1500 chars | 1326 | **484 of 1325 edges (36.5%)** |
+| new, 4500 chars | 372 | **0 of 371 edges** |
+
+(That book also extracts with scrambled word order in its front matter — a geometric-grouping limitation inside the reader's extraction library, unrelated to chunking and out of scope.)
+
+**c) Chunk size 4500, and pacing that reacts instead of guessing — `src/lib/ingestChunks.ts` (new), `src/lib/ingestChunks.test.ts` (new, 11 tests).**
+
+`DEFAULT_CHUNK_SIZE` is 4500, up from 1500. Free output tokens: the prompt caps the model at 3 cards per chunk regardless of chunk length, so a bigger chunk costs nothing extra to generate — it just gives the model more material to choose its 3 best cards from. `MAX_CHUNKS` on /ingest drops 40 → 20, which is ~90,000 characters of a book in ~20 requests: half the requests the old 40 × 1500 spent, across 1.5× the text.
+
+The delay was a flat `CHUNK_DELAY_MS = 1000`. Nothing on the client can know whether a given account is closer to Groq's per-minute *request* limit or its per-minute *token* limit, so guessing a single number was always going to be wrong in one direction. It now starts at 1500ms and **doubles on the first 429**, capped at 30s, and keeps the widened gap for the rest of the run — once an account has shown where its limit is there is nothing to gain from rediscovering it on every remaining chunk.
+
+The loop itself is now `runChunks` in the new module, because **two screens generate cards, not one** — see (e).
+
+*One tradeoff to know about:* 3 cards per 4500 characters is a third of the old card density per page of source. In exchange a deck covers 1.5× the text and the truncation banner fires far less often. If decks come back feeling thin, the lever is the "MAXIMUM of 3 flashcards" line in `buildConceptsPrompt` (and then `maxOutputTokens`), not the chunk size.
+
+**d) The fourth cause: a 429 could not be recognised, so it ended the deck — `src/app/api/ingest/route.ts`, `src/lib/ai.ts`, `src/lib/ai.test.ts` (new, 10 tests).**
+
+This is the one the diagnosis missed, and it is why a single rate limit cost a whole book. The route's `catch` flattened *every* provider failure into a 502 with a friendly string. A rate limit is a "wait, then it will work" answer, but the client could not tell it apart from a broken response, so it threw, and the run ended at part 3 of 20.
+
+- New `readRateLimit(error)` in `src/lib/ai.ts` recognises a rate limit (status **or** message, since the Pro path's AICredits gateway does not always surface a code) and reads the provider's own wait from `retry-after` (seconds or HTTP-date) or `retry-after-ms`, capped at 120s.
+- The route now answers **429** with `code: "RATE_LIMITED"`, `retryAfterSeconds` and a `Retry-After` header. Its parse / schema / quality-gate 502s carry `retryable: true`, and the generic 502 defers to `APICallError.isRetryable` so a rejected key is not retried three times.
+- The client retries a retryable chunk up to 3 attempts, preferring the provider's `Retry-After` over its own backoff, and shows what it is waiting for rather than sitting on the same part in silence for 45 seconds.
+
+**Retrying costs a FREE user nothing**, and that is load-bearing: every one of those failure paths returns *before* `claimDeckAllowance`, so the monthly allowance is only ever claimed by a chunk that actually succeeded.
+
+`maxOutputTokens` went 2400 → 3000. A truncated response is a dead batch, not a degraded card, and each chunk now carries three times as much source material for a model to be tempted past its 3-card cap by. A cap is not a target, so a well-behaved response costs nothing for the headroom.
+
+**Confirmed unrelated**: `reasoningEffort: "none"` still works on `qwen/qwen3.6-27b` — `test-models.mjs` (untracked scratch, left in place) returns a clean short answer with no `<think>` block. The pinned free model was never part of this.
+
+**e) The library's "Generate Next Section" had the same bug, and lost more when it fired — `src/app/page.tsx`.**
+
+`handleGenerateNextSection` was a second copy of the same loop: its own flat `CHUNK_DELAY_MS`, a bare `throw` on any non-2xx, and `await res.json()` (which throws its own unhelpful `Unexpected token '<'` on a gateway HTML page). This is the path the ingest screen's own error message sends students to — "tap Generate Next Section to finish this deck" — so leaving it unfixed would have meant the reported bug simply moving to a different screen.
+
+Worse than /ingest's version: on any failure it discarded `newConcepts` entirely and left `pendingChunks` untouched, so a 429 on part 3 of 4 threw away three chunks of cards that had already cost real tokens, and the next tap re-generated and re-paid for them.
+
+Both screens now call `runChunks`. The continuation keeps whatever succeeded and requeues only from the chunk that actually failed, and its button says which part it is on (and what it is waiting for) instead of "Generating..." for up to a minute.
+
+## 7. On the phone, 2026-09-04 — and the root cause the diagnosis missed
+
+Built with `DEVTOOLS=1 npm run build:apk`, `./gradlew assembleRelease`, installed over the existing app on the CPH2001 (Android 11, WebView 150). Signature matched (`e1f4352f…bc09`), **library survived** — 2 decks, still signed in, plan PRO. Driven over CDP with the real `/sdcard/Download/The Book of Wisdom (Osho)….pdf` staged into the app's own external dir (`/sdcard/Android/data/app.flowrecall.android/files/`), because the app holds no storage permission and `DOM.setFileInputFiles` is read by the app's own process.
+
+**What the run proved**
+
+| | before | after |
+|---|---|---|
+| Cards from one run | 22 | **44** |
+| Chunks for the whole book | 1023 + 40 | **404 + 20** |
+| Chunk sizes | 1125, 1500, 1399, 1500, 809, 1500 … | 2126–3045, every edge sentence-bounded |
+| Worst main-thread stall, whole 11-min run | *(never measured; the loop was synchronous)* | **1022 ms**, 1 stall over 1s, 2 over 250ms, 41,289 frames at ~60fps |
+
+The UI freeze is gone and the chunker is doing what §6b claimed. Note the effective chunk size is **~2600, not 4500**: this book's paragraphs run 2000–2600 characters, and the packer refuses to split one unless it must, so one paragraph per chunk is the binding constraint. The 4500 cap is a ceiling this book never reaches.
+
+**Then part 16 of 20 failed, and it named the real cause.**
+
+```
+Request too large … on output tokens per minute (OTPM): Limit 1000, Requested 1456
+```
+
+Reproduced locally against the pinned model on that same 2706-character chunk off the phone:
+
+- One ingest request costs **868–1000 output tokens** (3 cards, each with a paragraph of explanation). `finishReason` was `stop` at every cap tested.
+- Groq's free tier allows **1000 output tokens per minute**. So the sustainable rate is **about one request per minute**, full stop.
+- Two requests inside one window: the second returns `429`, `Rate limit reached … OTPM: Limit 1000, Used 833, Requested 868. Please try again in 42.05`, with **`retry-after: 43`**.
+- **`max_tokens` is irrelevant to this.** The same chunk succeeded identically at 900, 1200 and 2400. So the §6d note about raising it to 3000 was wrong on its own terms — **reverted to 2400.**
+
+The run had been pacing at 40–58s between chunks, just fast enough to accumulate, and tripped at part 16. This — not chunk mutilation — is the `429` in the original bug report. Mutilation was real (36.5% of edges) and worth fixing, but it was not what killed the deck.
+
+**Corrections made after the device run**
+
+- `readRateLimit` now **unwraps the AI SDK's `RetryError`**. This is why the 429 reached the client as an untyped 502 even in principle: `generateText` spends its own three fast retries inside the same one-minute window, then throws a `RetryError`, and `APICallError.isInstance` on that is `false` — so the status code and every rate-limit header sat one level down, unread.
+- It also matches Groq's **two** phrasings for the same ceiling: a spent window says "Rate limit reached", a single oversized request says "Request too large", and only the first contains the words "rate limit".
+- `getFriendlyErrorMessage` delegates to it, so the student stops seeing `AI_APICallError … Upgrade to Dev Tier today at console.groq.com/settings/billing`, and gets the provider's actual wait instead of a hardcoded "exactly 60 seconds".
+- The rate-limit backoff is **62s** (was 6s, 12s) with a 125s ceiling, and the inter-chunk delay now adopts **the longer of the provider's `Retry-After` and a full window** as the run's spacing, instead of doubling 1500 → 3000. Doubling was useless against a per-minute window: it re-tripped the limit and spent both remaining attempts inside it. `Retry-After` alone is not enough either — it says when the *current* window clears, and a rolling per-minute budget needs spacing of at least cost/limit × 60s, so pacing at the 43s Groq asks for trips again on every chunk.
+- **`maxRetries: 0` on the route's `generateText`.** This is the one that removes a 504 waiting to happen. The SDK's default is 2 retries and it *honours* `retry-after: 43`, so a rate-limited chunk sat inside a single request for 27–58 seconds against this route's own `maxDuration = 60`. The phone measured round trips of **58527 ms, 58606 ms and 56102 ms** — within 1.5 s of Vercel killing the function. It also means most of that run was already absorbing OTPM 429s invisibly inside single requests, which is why 15 chunks that each cost ~2.5 s of real model time took 40–58 s apiece. At 0 the 429 returns in ~200 ms with its header intact and the client does the waiting, off the serverless clock and in front of the student.
+
+**Tests**: 459 / 459 across 31 files, `npm test` exit 0. `npm run build` succeeds, `tsc --noEmit` clean, `eslint src` 0 errors / 12 pre-existing warnings.
+
+## 8. Do this next, in this order
+
+1. **Deploy.** The APK calls the live API (`NEXT_PUBLIC_API_URL`), so every server-side fix above — the 429 pass-through, the `retryable` flags, the friendly message — is inert until `main` is deployed. The device run above exercised the client half against the *old* route. Nothing is committed yet.
+2. **Decide the PRO default.** `DEFAULT_MODEL` in `src/app/ingest/page.tsx` is the free Qwen model for everyone, so this PRO account spent an 11-minute run inside Groq's free-tier OTPM ceiling. Defaulting a PRO plan to `claude-haiku-latest` is a one-line change and probably the single biggest speed win available — but the Pro path goes through the AICredits gateway and **its rate limits were not measured** (it bills real credits; not spent without asking).
+3. **Accept the free-tier ceiling, or lower the output.** At ~900 output tokens a request and 1000 OTPM, a 20-part deck on the free tier takes ~20 minutes and no retry logic can change that. The only client-side lever is fewer cards per chunk or a shorter `explanation` — both in `buildConceptsPrompt`. Worth a decision rather than a drift.
+4. `scripts/build-capacitor.mjs` clears `out/` but not `.next/`, so a plain `npm run build` followed by `npm run build:apk` fails type-checking on a stale `.next/dev/types/validator.ts` that references the API routes the script has moved aside. One line; not touched.

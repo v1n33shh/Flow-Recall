@@ -7,9 +7,10 @@ import { useSession } from "next-auth/react";
 import type { Concept } from "@/lib/types";
 import { saveDeck, setStudyDeck } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
-import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 import { vibrateTap } from "@/lib/haptics";
 import { FREE_DECKS_PER_MONTH } from "@/lib/freeQuota";
+import { chunkText, DEFAULT_CHUNK_SIZE } from "@/lib/chunkText";
+import { runChunks } from "@/lib/ingestChunks";
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -21,53 +22,16 @@ const MODEL_OPTIONS = [
   { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
 ] as const;
 
-// Time to wait between chunk requests - Groq's free tier enforces per-minute
-// request/token limits, and firing chunks back-to-back (or via Promise.all)
-// trips a 429 almost immediately on anything book-sized.
-const CHUNK_DELAY_MS = 1000;
-
-// Speed-First Cap: sequential chunking is safe from rate limits.
-// We use smaller chunks (1500 chars) so Claude Haiku doesn't hit
-// Vercel's 60-second timeout. 40 chunks * 1500 = ~60,000 total chars.
-const MAX_CHUNKS = 40;
+// Coverage cap. Sequential chunking is safe from rate limits, but 40 requests is
+// five minutes of standing still on a phone. At the 4500-character chunk size
+// (DEFAULT_CHUNK_SIZE) this is ~90,000 characters of a book in ~20 requests -
+// half the requests the old 40 x 1500 spent, across 1.5x the text. Whatever is
+// left over is saved as pendingChunks and finished from the library on demand.
+const MAX_CHUNKS = 20;
 
 function titleFromFileName(fileName: string): string {
   const withoutExtension = fileName.replace(/\.pdf$/i, "");
   return withoutExtension.trim() || "Untitled Notes";
-}
-
-/** Splits raw text into model-sized chunks, preferring to break on paragraph
- * boundaries (blank lines) so a chunk edge doesn't land mid-sentence. A
- * single paragraph longer than chunkSize (e.g. a wall of text with no blank
- * lines) has to be hard-split on its own, since there's nothing else to break on. */
-function chunkText(text: string, chunkSize = 1500): string[] {
-  const paragraphs = text.split(/\n{2,}/);
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.length > chunkSize) {
-      if (current) {
-        chunks.push(current);
-        current = "";
-      }
-      for (let i = 0; i < paragraph.length; i += chunkSize) {
-        chunks.push(paragraph.slice(i, i + chunkSize));
-      }
-      continue;
-    }
-
-    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (candidate.length > chunkSize) {
-      chunks.push(current);
-      current = paragraph;
-    } else {
-      current = candidate;
-    }
-  }
-
-  if (current) chunks.push(current);
-  return chunks;
 }
 
 export default function IngestPage() {
@@ -94,6 +58,10 @@ export default function IngestPage() {
   // 1-indexed - currentChunk is 0 whenever we're not mid-generation.
   const [currentChunk, setCurrentChunk] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
+  // Set while a retry is sleeping off a rate limit. Without it the progress bar
+  // sits at the same part for up to 45 seconds with nothing to say, which reads
+  // as a hang - and a student who force-quits there loses the whole deck.
+  const [waitingReason, setWaitingReason] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
 
   const selectedIsPro = MODEL_OPTIONS.find((m) => m.id === selectedModel)?.pro ?? false;
@@ -124,7 +92,7 @@ export default function IngestPage() {
     const trimmed = sourceText.trim();
     if (trimmed.length === 0) return;
 
-    const allChunks = chunkText(trimmed);
+    const allChunks = chunkText(trimmed, DEFAULT_CHUNK_SIZE);
     const wasTruncated = allChunks.length > MAX_CHUNKS;
     const chunks = wasTruncated ? allChunks.slice(0, MAX_CHUNKS) : allChunks;
     const pendingChunks = wasTruncated ? allChunks.slice(MAX_CHUNKS) : [];
@@ -135,58 +103,28 @@ export default function IngestPage() {
     setConcepts(null);
     setTruncated(wasTruncated);
     setTotalChunks(chunks.length);
+    setWaitingReason(null);
 
-    // Chunks are sent one at a time, in order - Promise.all-ing these would
-    // fire them all at once and trip Groq's free-tier rate limit instantly.
-    const accumulated: Concept[] = [];
-    // Tracks which chunk was in flight when a failure happened, so the catch
-    // block can recover the unprocessed remainder instead of discarding it -
-    // see the comment on the catch block below for why this matters.
+    // Chunks are sent one at a time, in order, retrying the failures worth
+    // retrying - see runChunks. `failedAtIndex` is which chunk was in flight when
+    // it gave up, so the catch block can recover the unprocessed remainder
+    // instead of discarding it; see the comment on that block for why it matters.
+    let accumulated: Concept[] = [];
     let failedAtIndex = chunks.length;
 
     try {
-      for (let i = 0; i < chunks.length; i++) {
-        failedAtIndex = i;
-        setCurrentChunk(i + 1);
+      const run = await runChunks(chunks, {
+        model: selectedModel,
+        countsFirstChunk: true,
+        onProgress: ({ current, waitingReason }) => {
+          setCurrentChunk(current);
+          setWaitingReason(waitingReason);
+        },
+      });
+      accumulated = run.concepts;
+      failedAtIndex = run.failedAtIndex;
+      if (run.error) throw new Error(run.error);
 
-        const res = await fetch(apiUrl("/api/ingest"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          // Only the first chunk of a deck counts against the FREE monthly
-          // allowance - continuation chunks are part of the same deck. The offset
-          // decides which calendar month that allowance is counted in.
-          body: JSON.stringify({
-            text: chunks[i],
-            model: selectedModel,
-            isFirstChunk: i === 0,
-            timezoneOffsetMinutes: new Date().getTimezoneOffset(),
-          }),
-          credentials: API_FETCH_CREDENTIALS,
-        });
-
-        const rawText = await res.text();
-        let data;
-        try {
-          data = JSON.parse(rawText);
-        } catch (e) {
-          console.error("Failed to parse JSON. Raw response:", rawText);
-          throw new Error(`Server crashed: ${rawText.slice(0, 80)}...`);
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error ?? `Something went wrong on part ${i + 1} of ${chunks.length}.`);
-        }
-
-        accumulated.push(...data.concepts);
-
-        if (i < chunks.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
-        }
-      }
-
-      // Every chunk in this batch succeeded - nothing left to recover if
-      // saveDeck itself throws below, so there's no "failed at" index anymore.
-      failedAtIndex = chunks.length;
       setConcepts(accumulated);
       // Auto-persist immediately so a refresh (even before the user clicks
       // "Start studying") never loses a freshly generated deck.
@@ -233,6 +171,7 @@ export default function IngestPage() {
       setLoading(false);
       setCurrentChunk(0);
       setTotalChunks(0);
+      setWaitingReason(null);
     }
   }
 
@@ -368,6 +307,10 @@ export default function IngestPage() {
             style={{ width: `${(currentChunk / totalChunks) * 100}%` }}
           />
         </div>
+      )}
+
+      {loading && waitingReason && (
+        <p className="mt-2 text-center text-xs text-muted-foreground">{waitingReason}</p>
       )}
 
       {truncated && (

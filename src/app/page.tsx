@@ -5,7 +5,7 @@ import { startTransition, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import type { Concept, Deck } from "@/lib/types";
+import type { Deck } from "@/lib/types";
 import {
   appendConceptsToDeck,
   clearProgress,
@@ -14,7 +14,7 @@ import {
   setStudyDeck,
   useSavedDecks,
 } from "@/lib/storage";
-import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { runChunks } from "@/lib/ingestChunks";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
 import DeckExamDate from "@/components/DeckExamDate";
@@ -25,11 +25,12 @@ import TodaySession from "@/components/TodaySession";
 // into place instead of gently fading in - used for every entrance below.
 const SNAP = { type: "spring" as const, stiffness: 700, damping: 18 };
 
-// Mirrors the Speed-First Cap in ingest/page.tsx: JIT-generating a deck's
-// pending chunks processes the same bounded batch size, for the same
-// blazing-fast-and-rate-limit-safe reasons.
+// How many pending chunks one tap of "Generate Next Section" works through.
+// Smaller than /ingest's cap on purpose: this runs from the library, where the
+// student is standing in front of a list waiting for a button to come back, not
+// watching a deck being built. At the 4500-character chunk size that is ~18,000
+// characters a tap. The pacing and retrying inside the batch are runChunks'.
 const MAX_CHUNKS = 4;
-const CHUNK_DELAY_MS = 1000;
 
 // Keep in sync with layout.tsx's metadataBase.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
@@ -522,6 +523,10 @@ export default function Home() {
 
   const [generatingDeckIds, setGeneratingDeckIds] = useState<Set<string>>(new Set());
   const [jitErrors, setJitErrors] = useState<Record<string, string>>({});
+  // What each in-flight continuation is doing, keyed by deck id. "Generating..."
+  // for four chunks with a rate-limit wait inside it is up to a minute of a button
+  // that looks stuck; this says which part, and what it is waiting for.
+  const [jitProgress, setJitProgress] = useState<Record<string, string>>({});
 
   function handleStudyNow(deck: Deck, isFullyMastered: boolean) {
     // A 100%-mastered session resuming normally would hydrate a queue with
@@ -569,48 +574,63 @@ export default function Home() {
 
     const batch = pending.slice(0, MAX_CHUNKS);
     const remaining = pending.slice(MAX_CHUNKS);
-    const newConcepts: Concept[] = [];
 
     try {
-      // Sequential, not Promise.all - same rate-limit reasoning as the
-      // original ingest flow applies here too.
-      for (let i = 0; i < batch.length; i++) {
-        const res = await fetch(apiUrl("/api/ingest"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          // isFirstChunk: false - this is continuing a deck the user already
-          // spent one of their monthly generations on, not starting a new one.
-          // Without this, the server's allowance gate (which only checks on a
-          // first chunk) defaults to treating every unmarked request as a first
-          // chunk and wrongly re-blocks a free user mid-way through their own
-          // already-started deck.
-          // model: deck.model - without this, an unset model falls back to the
-          // free model server-side regardless of plan, silently downgrading a
-          // Pro user's continuation chunks to the cheap model they didn't pick.
-          body: JSON.stringify({ text: batch[i], isFirstChunk: false, model: deck.model }),
-          credentials: API_FETCH_CREDENTIALS,
-        });
+      // Sequential, retried, and paced by runChunks - the same runner /ingest
+      // uses, so a 429 here costs one chunk's wait rather than the batch. It also
+      // never throws, which is what lets a partial batch be kept below.
+      //
+      // countsFirstChunk: false - this is continuing a deck the user already
+      // spent one of their monthly generations on, not starting a new one.
+      // Without it the server's allowance gate (which only checks on a first
+      // chunk) treats an unmarked request as a first chunk and wrongly re-blocks
+      // a free user mid-way through their own already-started deck.
+      //
+      // model: deck.model - without this an unset model falls back to the free
+      // model server-side regardless of plan, silently downgrading a Pro user's
+      // continuation chunks to the cheap model they didn't pick.
+      const run = await runChunks(batch, {
+        model: deck.model,
+        countsFirstChunk: false,
+        onProgress: ({ current, total, waitingReason }) => {
+          setJitProgress((prev) => ({
+            ...prev,
+            [deck.id]: waitingReason ?? `Generating part ${current} of ${total}...`,
+          }));
+        },
+      });
 
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error ?? `Something went wrong on part ${i + 1} of ${batch.length}.`);
-        }
-
-        newConcepts.push(...data.concepts);
-
-        if (i < batch.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
-        }
+      // Keep what succeeded even when a later chunk did not. Those cards cost real
+      // tokens and are already paid for; discarding them and leaving their text in
+      // pendingChunks means the next tap regenerates - and re-pays for - work that
+      // has already been done. Requeue only from the chunk that actually failed.
+      if (run.concepts.length > 0) {
+        appendConceptsToDeck(deck.id, run.concepts, [
+          ...batch.slice(run.failedAtIndex),
+          ...remaining,
+        ]);
       }
-
-      appendConceptsToDeck(deck.id, newConcepts, remaining);
+      const failure = run.error;
+      if (failure) {
+        const kept = run.concepts.length;
+        setJitErrors((prev) => ({
+          ...prev,
+          [deck.id]: kept
+            ? `${failure} We kept the ${kept} cards that did come through - tap again to carry on.`
+            : failure,
+        }));
+      }
     } catch (err) {
       setJitErrors((prev) => ({
         ...prev,
         [deck.id]: err instanceof Error ? err.message : "Something went wrong.",
       }));
     } finally {
+      setJitProgress((prev) => {
+        const next = { ...prev };
+        delete next[deck.id];
+        return next;
+      });
       setGeneratingDeckIds((prev) => {
         const next = new Set(prev);
         next.delete(deck.id);
@@ -826,7 +846,7 @@ export default function Home() {
                           className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {generatingDeckIds.has(deck.id)
-                            ? "Generating..."
+                            ? jitProgress[deck.id] ?? "Generating..."
                             : `Generate Next Section (${deck.pendingChunks.length} chunks left)`}
                         </button>
                         {jitErrors[deck.id] && (

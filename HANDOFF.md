@@ -1092,6 +1092,29 @@ should carry `importance` with it; `recallSync.ts` already reads it per unit for
 alongside `ConceptAsk` — both are features of their own with their own files). 562/562 across 36
 files, tsc and eslint clean, clean build.
 
-**Not device-verified.** It is client-side, so it needs a `DEVTOOLS=1` APK rebuild and a study
-session on the phone to confirm the control appears at the right moment and the star survives a
-reopen.
+### Verified on the device
+
+`DEVTOOLS=1` release APK, cert checked, library intact (5 decks, 347 cards). Answered a card in the
+`Cardiac cycle - lecture 4` deck — chosen because its concepts are the only ones on this phone with
+memory rows, which is what the re-dating needs — then tapped the star. Rows for that deck before and
+after:
+
+| concept | importance | desiredRetention | due in |
+|---|---|---|---|
+| Frank-Starling Mechanism | 0.5 → 0.5 | 0.905 → 0.905 | −4 → −4 |
+| **Stroke Volume Calculation** | **0.5 → 1** | **0.905 → 0.95** | **−2 → −3** (cloze) |
+| Heart Sound Origin | 0.5 → 0.5 | 0.905 → 0.905 | −4 → −4 |
+
+So all five things hold on hardware: the control appears the moment a card resolves, it toggles
+("☆ Star this concept" → "★ Starred - shown more often", `aria-pressed` following), the unit is
+written with `updatedAt`, **both** of the concept's memory rows are re-dated in the same transaction,
+and the due date moves **earlier** — which is the entire point, since a higher retention target
+allows less forgetting. The other two concepts in the same deck are untouched, so the write is
+scoped to one unit rather than the deck.
+
+One row (the swipe path, already 4 days overdue) kept its date: its recomputed interval rounded to
+the same day. Expected — `setUnitImportance` skips a row whose values do not actually change.
+
+Worth knowing for whoever tests this next: only 7 memory rows exist on the phone across 228 units,
+because almost nothing there has been reviewed. Starring a *new* card writes the unit and finds no
+rows to move, which is correct but proves nothing — pick a deck with history.

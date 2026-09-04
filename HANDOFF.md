@@ -267,7 +267,12 @@ worse outcome.
 
 ---
 
-## 5. The one unresolved problem: Groq says Developer, the key gets Free
+## 5. ~~The one unresolved problem~~: Groq said Developer, the key got Free — RESOLVED
+
+**Resolved 2026-09-05.** A live header check returns `x-ratelimit-limit-tokens: 250000` and
+`x-ratelimit-limit-requests: 500000` — the Developer values — and a 20-part device run took 218 s with zero
+429s. Kept below for the diagnosis, because it is the reference for what the free tier gives and what a fresh
+key or a lapsed plan would get again. §6 step 1 is moot; skip it.
 
 The Developer plan **is** active — the Billing page offers **Downgrade** (only possible from a paid plan) and
 there is a live billing period, 04/09/2026 – 01/10/2026, at $0.00. Organization Limits shows
@@ -307,9 +312,10 @@ it is gone now; re-run it if useful.**
 
 ## 6. Exact next steps, in order
 
-### 1. Settle the Groq limits (blocks a Play Store launch, nothing else)
+### 1. ~~Settle the Groq limits~~ — DONE, see §5. Skip this whole step.
 
-Do these in order and stop at the first that resolves it.
+Kept only because the procedure is the right one if it ever recurs. Do these in order and stop at the first
+that resolves it.
 
 - **Groq console → API Keys.** What is listed, and which project owns each key? **If the page is empty**, the
   account you upgraded does not own the 63-day-old key and that single fact explains every symptom. Create a
@@ -509,10 +515,10 @@ recursive merges. Build- and CLI-time config merging, not the request path. The 
 
 ### Smaller things worth a decision
 
-- **`DAILY_GRADE_CAP = 200`** is the loosest cap in the app and the largest cost exposure per student (§4).
-- **`gpt-oss-120b` supports `structured_outputs` and `json_mode`**, which qwen did not — which is the entire
-  reason seven routes hand-parse JSON and return 502s when it fails. Switching to real structured outputs
-  would delete that failure mode.
+- ~~**`DAILY_GRADE_CAP = 200`**~~ — **halved to 100 on 2026-09-05, sized from cost. See §14.**
+- ~~**structured outputs / `json_mode`**~~ — **measured and rejected on 2026-09-05. See §13.** It does not
+  reduce the failure rate, the token saving was an artefact, and Groq turns a bad response into a
+  non-retryable 400. Do not revisit without reading §13 first.
 - **Output volume is the real cost lever** — ~75% of the bill. `explanation` (3–4 sentences) is most of the
   886–1079 output tokens. Trimming it or dropping to 2 cards a chunk trades card quality, so it is a product
   decision rather than an optimisation.

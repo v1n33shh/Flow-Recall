@@ -1,7 +1,11 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { claimDeckAllowance, claimLookupAllowance } from "./freeQuotaDb";
-import { FREE_DECKS_PER_MONTH, FREE_LOOKUPS_PER_MONTH } from "./freeQuota";
+import { claimDeckAllowance, claimGenerationRequest, claimLookupAllowance } from "./freeQuotaDb";
+import {
+  FREE_DECKS_PER_MONTH,
+  FREE_GENERATION_REQUESTS_PER_MONTH,
+  FREE_LOOKUPS_PER_MONTH,
+} from "./freeQuota";
 
 // Integration test against real Postgres, for the same reason
 // clozeGradeRateLimit.test.ts is one: everything these two functions do IS Prisma's
@@ -43,6 +47,8 @@ type Counters = {
   lastDeckGeneratedDate?: Date | null;
   definitionsUsed?: number;
   lookupsResetAt?: Date | null;
+  generationRequestsUsed?: number;
+  generationResetAt?: Date | null;
 };
 
 const createdUserIds: string[] = [];
@@ -81,6 +87,8 @@ async function read(userId: string) {
       lastDeckGeneratedDate: true,
       definitionsUsed: true,
       lookupsResetAt: true,
+      generationRequestsUsed: true,
+      generationResetAt: true,
     },
   });
   if (!row) throw new Error("the disposable test user vanished mid-test");
@@ -293,5 +301,121 @@ describe("both allowances", () => {
     const ghost = "deleted-user-id-that-cannot-exist";
     expect(await claimDeckAllowance(ghost, NOW, IST)).toBe(false);
     expect(await claimLookupAllowance(ghost, NOW)).toBe(false);
+  });
+});
+
+// The allowance that actually bounds spend. FREE_DECKS_PER_MONTH counts DECKS, and a
+// deck is up to MAX_CHUNKS requests - while "Generate Next Section" sent four more per
+// tap under isFirstChunk: false and was counted by nothing at all. On the free Groq
+// tier that only cost time. Against a paid model it is the bill, so this one counts
+// every request on either plan, and the limit is a parameter rather than a constant.
+describe("claimGenerationRequest", () => {
+  // A small limit keeps the round-trips down; the guard being tested is the `lt`, not
+  // the number. FREE_GENERATION_REQUESTS_PER_MONTH is asserted separately below.
+  const LIMIT = 3;
+
+  it("allows the first request a student ever makes", async () => {
+    // NULL marker, count 0. `lt` never matches NULL, so the reset cannot fire here -
+    // this proves the claim does not depend on a marker having been written first.
+    const userId = await makeTestUser();
+    expect(await claimGenerationRequest(userId, NOW, IST, LIMIT)).toBe(true);
+    expect((await read(userId)).generationRequestsUsed).toBe(1);
+  });
+
+  it("allows exactly the limit and blocks the next one", async () => {
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT - 1,
+      generationResetAt: EARLIER_THIS_MONTH,
+    });
+    expect(await claimGenerationRequest(userId, NOW, IST, LIMIT)).toBe(true);
+    expect(await claimGenerationRequest(userId, NOW, IST, LIMIT)).toBe(false);
+    expect((await read(userId)).generationRequestsUsed).toBe(LIMIT);
+  });
+
+  it("returns the whole budget at the start of a new month", async () => {
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT,
+      generationResetAt: LAST_MONTH,
+    });
+    expect(await claimGenerationRequest(userId, NOW, IST, LIMIT)).toBe(true);
+    // 1, not LIMIT + 1: the reset zeroed it before the increment.
+    expect((await read(userId)).generationRequestsUsed).toBe(1);
+  });
+
+  it("does not roll over inside the same month", async () => {
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT,
+      generationResetAt: EARLIER_THIS_MONTH,
+    });
+    expect(await claimGenerationRequest(userId, NOW, IST, LIMIT)).toBe(false);
+    expect((await read(userId)).generationRequestsUsed).toBe(LIMIT);
+  });
+
+  it("counts the month in the student's timezone, not the server's", async () => {
+    // 00:30 IST on 1 September is still 19:00 UTC on 31 August. A student in IST is in
+    // a new month and must get their budget back; the server's UTC clock disagrees.
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT,
+      generationResetAt: LATE_ON_IST_AUG_31,
+    });
+    expect(await claimGenerationRequest(userId, JUST_AFTER_IST_MIDNIGHT, IST, LIMIT)).toBe(true);
+    expect((await read(userId)).generationRequestsUsed).toBe(1);
+
+    // Same instant, same stored marker, but a UTC student is still in August.
+    const utcUser = await makeTestUser({
+      generationRequestsUsed: LIMIT,
+      generationResetAt: LATE_ON_IST_AUG_31,
+    });
+    expect(await claimGenerationRequest(utcUser, JUST_AFTER_IST_MIDNIGHT, UTC, LIMIT)).toBe(false);
+  });
+
+  it("cannot let two concurrent requests both take the last slot", async () => {
+    // The whole reason this is a DB guard and not a read-then-write. Two chunks of the
+    // same deck are sequential in runChunks, but two tabs, two devices, or an /ingest
+    // run racing an Infinite Recall tap are not.
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT - 1,
+      generationResetAt: EARLIER_THIS_MONTH,
+    });
+
+    const results = await Promise.all([
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect((await read(userId)).generationRequestsUsed).toBe(LIMIT);
+  });
+
+  it("hands out one budget at a month boundary, not one per concurrent request", async () => {
+    // The other money-losing race: an unconditional reset-to-1 would give each of
+    // these its own fresh month. The reset is conditional and idempotent instead - see
+    // claimDeckAllowance's comment.
+    const userId = await makeTestUser({
+      generationRequestsUsed: LIMIT,
+      generationResetAt: LAST_MONTH,
+    });
+
+    const results = await Promise.all([
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+      claimGenerationRequest(userId, NOW, IST, LIMIT),
+    ]);
+
+    // A fresh budget of LIMIT, shared - not LIMIT each.
+    expect(results.filter(Boolean).length).toBeLessThanOrEqual(LIMIT);
+    expect((await read(userId)).generationRequestsUsed).toBeLessThanOrEqual(LIMIT);
+  });
+
+  it("fails closed for a user who no longer exists", async () => {
+    expect(await claimGenerationRequest("nonexistent-user-id", NOW, IST, LIMIT)).toBe(false);
+  });
+
+  it("is wired to a budget that covers the free tier's own deck allowance", async () => {
+    // The number is arithmetic, not taste: 3 decks x 20 chunks is 60, and a budget
+    // below that would refuse a student their third deck halfway through. Guards the
+    // constant against being lowered without redoing that sum.
+    expect(FREE_GENERATION_REQUESTS_PER_MONTH).toBeGreaterThanOrEqual(FREE_DECKS_PER_MONTH * 20);
   });
 });

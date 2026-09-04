@@ -52,6 +52,11 @@ type ChunkOutcome =
   | {
       ok: false;
       message: string;
+      /** The route's machine-readable reason, where it sent one. Callers branch on
+       * this rather than on the message text - "GENERATION_BUDGET_REACHED" has to be
+       * told apart from an ordinary failure, because the advice differs: one says
+       * "tap again to finish", and the other means the next tap is refused too. */
+      code: string | null;
       /** Worth sending this same text again - see MAX_CHUNK_ATTEMPTS. */
       retryable: boolean;
       /** Specifically a rate limit, which also widens the gap between chunks. */
@@ -63,6 +68,7 @@ type ChunkOutcome =
 type IngestBody = {
   concepts?: Concept[];
   error?: string;
+  code?: string;
   retryable?: boolean;
   retryAfterSeconds?: number;
 };
@@ -99,6 +105,7 @@ export async function requestChunk(
     return {
       ok: false,
       message: err instanceof Error ? err.message : "Couldn't reach the server.",
+      code: null,
       retryable: true,
       rateLimited: false,
       retryAfterMs: null,
@@ -118,6 +125,7 @@ export async function requestChunk(
     return {
       ok: false,
       message: `The server returned something we couldn't read: ${rawText.slice(0, 80)}`,
+      code: null,
       retryable: res.status >= 500,
       rateLimited: false,
       retryAfterMs: null,
@@ -135,6 +143,7 @@ export async function requestChunk(
   return {
     ok: false,
     message: data.error ?? "Something went wrong generating that part.",
+    code: data.code ?? null,
     retryable: data.retryable === true || res.status === 429,
     rateLimited: res.status === 429,
     retryAfterMs:
@@ -163,6 +172,8 @@ export type ChunkRunResult = {
   failedAtIndex: number;
   /** The failure, or null when every chunk succeeded. */
   error: string | null;
+  /** The route's code for that failure, where it sent one - see ChunkOutcome.code. */
+  code: string | null;
 };
 
 /** Sends `chunks` in order, retrying the retryable failures and widening the gap
@@ -202,6 +213,7 @@ export async function runChunks(
           concepts,
           failedAtIndex: i,
           error: outcome.message || `Something went wrong on part ${i + 1} of ${chunks.length}.`,
+          code: outcome.code,
         };
       }
 
@@ -256,5 +268,5 @@ export async function runChunks(
     if (i < chunks.length - 1) await sleep(delayMs);
   }
 
-  return { concepts, failedAtIndex: chunks.length, error: null };
+  return { concepts, failedAtIndex: chunks.length, error: null, code: null };
 }

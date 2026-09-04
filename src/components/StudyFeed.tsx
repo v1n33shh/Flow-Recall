@@ -242,7 +242,10 @@ export default function StudyFeed({
       const res = await fetch(apiUrl(`/api/decks/${deckId}/shuffle`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ concepts: seed }),
+        body: JSON.stringify({
+          concepts: seed,
+          timezoneOffsetMinutes: new Date().getTimezoneOffset(),
+        }),
         credentials: API_FETCH_CREDENTIALS,
       });
       const data = await res.json();

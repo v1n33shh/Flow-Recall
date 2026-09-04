@@ -201,7 +201,37 @@ What that means in practice, at ~1.1 requests/minute org-wide and 20 parts to a 
 
 The fix is capacity, and it is a billing decision, not a code one: Groq's paid tier, or routing students to the Pro model. Reducing output per request (fewer cards, shorter `explanation` in `buildConceptsPrompt`) buys a factor of ~1.5, which changes nothing about the shape of the problem.
 
-## 9. Do this next, in this order
+## 9. The generation budget, 2026-09-04 — two uncapped paths closed
+
+Asked before binding a paid model: what does a free student cost, and can it run away? It could, two ways, and neither was visible on the free tier because there the only currency was time.
+
+- **Continuation chunks were free of the quota.** `/api/ingest` gates and counts `isFirstChunk` only, so "Generate Next Section" was uncounted, forever. Finishing the 424-chunk Osho PDF is ~1.5M tokens against **one** of three monthly decks.
+- **`/api/decks/[id]/shuffle` was metered by nothing at all.** PRO-gated is not bounded, and at `maxOutputTokens: 5200` it is the largest single response the app asks for — so an unlimited tap was the most expensive uncapped path in the product.
+
+**Added: a second allowance that counts requests, not decks.** `FREE_GENERATION_REQUESTS_PER_MONTH = 100` (3 decks × 20 chunks = 60, plus 40 of continuation headroom) and `PRO_GENERATION_REQUESTS_PER_MONTH = 2000` as a fair-use ceiling — an ordinary PRO month is ~200 requests and never sees it. `claimGenerationRequest` in `src/lib/freeQuotaDb.ts` copies `claimLookupAllowance`'s two-statement idempotent-reset shape, and both spending routes claim through it.
+
+Two things about that claim are deliberate and worth not undoing:
+
+- It runs **before** the model call, the opposite of `claimDeckAllowance`. That one claims afterwards so a model failure cannot cost a student one of their three decks. This one meters money, and the money is gone the moment the request goes out — a failed generation still burned the tokens. Claiming afterwards would leave the ceiling advisory.
+- The refusal carries `code: "GENERATION_BUDGET_REACHED"` and **no** `retryable`, so `runChunks` stops instead of spending three refusals on it. The code is threaded through `ChunkRunResult` because both screens need to say something different for it: "tap Generate Next Section to finish" is right for a rate limit and wrong here, where the next tap is refused for the same reason.
+
+Migration `20260904150000_add_generation_request_allowance` is **applied to Supabase**. Additive only (`generationRequestsUsed INTEGER NOT NULL DEFAULT 0`, `generationResetAt TIMESTAMP(3)` nullable), so existing rows read as count 0 with no marker and get their first fresh allowance at the next month boundary.
+
+**Also in:** `console.log` of `usage` in both generating routes — nothing recorded token spend before, and the measured baseline to compare against is **1435 input / 886 output** per ingest request. And `FREE_MODEL` now reads `GROQ_FREE_MODEL` (client: `NEXT_PUBLIC_GROQ_FREE_MODEL`) with the current id as the default, because Groq lists `qwen3.6-27b` under **Preview** — "not for production" — and §6/§7's history is two decommissions that each needed an app release to fix. The next one is a Vercel config change. **Both vars must be set to the same value**; the route's request enum comes from the server one and the dropdown from the public one, and drift means a 400.
+
+**Tests**: 474 / 474 across 31 files. The nine new live-Postgres cases include both money-losing races — two concurrent requests cannot both take the last slot, and four at a month boundary get one shared budget rather than one each.
+
+**The economics, for the record.** Measured per ingest request: 1435 in, 886 out.
+
+| | input $/1M | output $/1M | per request | per deck (20) | 3 decks |
+|---|---|---|---|---|---|
+| Groq free | — | — | $0 | $0 | but ~86 requests/**day** org-wide |
+| Groq paid `qwen3.6-27b` | $0.60 | $3.00 | $0.0035 | $0.070 | **$0.21** |
+| Claude Haiku 4.5 | $1.00 | $5.00 | $0.0059 | $0.117 | $0.35 |
+
+A fully-utilising free student is ~$0.35/month on Groq paid against ₹299 (~$3.40) PRO revenue. **Prompt caching does not help** and was checked rather than assumed: Haiku 4.5 needs a 4096-token minimum cacheable prefix and the fixed part of `buildConceptsPrompt` is ~730 tokens, so a marker would silently never cache; Groq's cached-input discount only touches input, which is 25% of the bill. The real efficiency lever is output volume — `explanation` is most of the 886 — and that trades card quality, so it is left as its own decision.
+
+## 10. Do this next, in this order
 
 1. **Deploy.** The APK calls the live API (`NEXT_PUBLIC_API_URL`), so every server-side fix above — the 429 pass-through, the `retryable` flags, the friendly message — is inert until `main` is deployed. The device run above exercised the client half against the *old* route. Nothing is committed yet.
 2. **Decide the PRO default.** `DEFAULT_MODEL` in `src/app/ingest/page.tsx` is the free Qwen model for everyone, so this PRO account spent an 11-minute run inside Groq's free-tier OTPM ceiling. Defaulting a PRO plan to `claude-haiku-latest` is a one-line change and probably the single biggest speed win available — but the Pro path goes through the AICredits gateway and **its rate limits were not measured** (it bills real credits; not spent without asking).

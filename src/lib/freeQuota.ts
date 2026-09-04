@@ -36,6 +36,34 @@ export const FREE_DECKS_PER_MONTH = 3;
  * is still bounded spend on the free Groq model. */
 export const FREE_LOOKUPS_PER_MONTH = 60;
 
+/** How many AI *generation requests* an account may spend per calendar month -
+ * every call to /api/ingest and /api/decks/[id]/shuffle, on either plan.
+ *
+ * This is a second ceiling beside FREE_DECKS_PER_MONTH, not a replacement, because
+ * the deck count structurally cannot bound spend. A deck is one allowance however
+ * many requests it takes, and a book is not one request: the ingest page sends up to
+ * MAX_CHUNKS of them for the first section, and "Generate Next Section" sends four
+ * more per tap, forever, marked isFirstChunk: false so the deck gate never sees them.
+ * On the free Groq tier that only cost time, which is why it went unnoticed. Measured:
+ * finishing the 424-chunk Osho PDF is ~1.5 million tokens against ONE of three decks.
+ *
+ * 100 is arithmetic, not a round number: 3 decks x 20 chunks is 60, and the remaining
+ * 40 is continuation headroom, so a FREE student can carry one book a fair way past
+ * its first section. At the measured 1435 input + 886 output tokens a request, 100 is
+ * about $0.35 a month on Groq's paid tier.
+ *
+ * PRO is a fair-use ceiling rather than a product limit. An ordinary PRO month - ten
+ * decks, say - is ~200 requests and never comes near it; what it exists for is the one
+ * account that would otherwise run an unbounded bill, which at ₹299/month revenue is
+ * a real exposure and not a hypothetical one. */
+export const FREE_GENERATION_REQUESTS_PER_MONTH = 100;
+export const PRO_GENERATION_REQUESTS_PER_MONTH = 2000;
+
+/** The generation ceiling that applies to a plan. PRO is bounded too - see above. */
+export function generationLimitForPlan(plan: string): number {
+  return plan === "PRO" ? PRO_GENERATION_REQUESTS_PER_MONTH : FREE_GENERATION_REQUESTS_PER_MONTH;
+}
+
 /** The count that applies right now, treating a stored count from an earlier month
  * as spent-and-expired. Shared by both allowances above.
  *

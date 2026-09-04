@@ -71,3 +71,39 @@ export async function claimLookupAllowance(userId: string, now: Date): Promise<b
   });
   return result.count > 0;
 }
+
+/** Spends one generation request from this month's allowance, or returns false if it
+ * is gone. Drawn on by /api/ingest for EVERY chunk and by /api/decks/[id]/shuffle,
+ * with the caller's plan deciding the ceiling (generationLimitForPlan).
+ *
+ * Called BEFORE the model call, which is the opposite of claimDeckAllowance and
+ * deliberate. That one claims afterwards so a model failure cannot cost a student one
+ * of their three decks. This one is metering money, and the money is spent the moment
+ * the request goes out - a generation that fails still burned the tokens. Claiming
+ * afterwards would leave the ceiling advisory, since a stream of failures would spend
+ * without ever being counted.
+ *
+ * Same two-statement, idempotent-reset shape as the two allowances above - see
+ * claimDeckAllowance for why the reset is conditional rather than an unconditional
+ * set-to-1. The month follows the student's own timezone like the deck allowance
+ * does, not UTC like the lookup one: both of this allowance's callers already send
+ * `timezoneOffsetMinutes`, so there is no finished-work constraint to work around. */
+export async function claimGenerationRequest(
+  userId: string,
+  now: Date,
+  timezoneOffsetMinutes: number,
+  limit: number,
+): Promise<boolean> {
+  const monthStart = startOfLocalMonth(now, timezoneOffsetMinutes);
+
+  await prisma.user.updateMany({
+    where: { id: userId, generationResetAt: { lt: monthStart } },
+    data: { generationRequestsUsed: 0, generationResetAt: monthStart },
+  });
+
+  const result = await prisma.user.updateMany({
+    where: { id: userId, generationRequestsUsed: { lt: limit } },
+    data: { generationRequestsUsed: { increment: 1 }, generationResetAt: now },
+  });
+  return result.count > 0;
+}

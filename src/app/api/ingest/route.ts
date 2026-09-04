@@ -18,8 +18,8 @@ import {
 import { APICallError } from "ai";
 import { ConceptsResponseSchema, buildConceptsPrompt } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
-import { FREE_DECKS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
-import { claimDeckAllowance } from "@/lib/freeQuotaDb";
+import { FREE_DECKS_PER_MONTH, countInCurrentMonth, generationLimitForPlan } from "@/lib/freeQuota";
+import { claimDeckAllowance, claimGenerationRequest } from "@/lib/freeQuotaDb";
 import { parseTimezoneOffsetMinutes } from "@/lib/localDay";
 
 const requestSchema = z.object({
@@ -119,6 +119,29 @@ export async function POST(request: Request) {
     return Response.json({ error: "FREE_LIMIT_REACHED" }, { status: 403 });
   }
 
+  // The second ceiling, and the one that actually bounds spend: every chunk counts,
+  // on either plan, claimed BEFORE the model call because that call is where the
+  // money goes. The deck gate above cannot do this job - it is per deck, and a deck
+  // is up to MAX_CHUNKS requests, while "Generate Next Section" sends four more per
+  // tap under isFirstChunk: false and was never counted at all. See freeQuota.ts.
+  //
+  // No `retryable` on the answer, deliberately: runChunks retries a 429 and a
+  // model-output 502 because those come good on a second attempt, and this one never
+  // will. Retrying it three times would only delay the message by two minutes.
+  const generationLimit = generationLimitForPlan(plan);
+  if (!(await claimGenerationRequest(session.user.id, now, timezoneOffsetMinutes, generationLimit))) {
+    return Response.json(
+      {
+        error:
+          plan === "PRO"
+            ? `You've generated ${generationLimit} sections this month, which is our fair-use ceiling. It resets at the start of next month - reply to your receipt if you need it raised.`
+            : "You've used this month's generation budget. Your allowance resets at the start of next month, and everything you've already made stays free to study.",
+        code: "GENERATION_BUDGET_REACHED",
+      },
+      { status: 403 },
+    );
+  }
+
   try {
     const model = getProviderModel(plan, requestedModel);
     // A truncated response is not a degraded card but a dead batch: parseModelJson's
@@ -133,7 +156,7 @@ export async function POST(request: Request) {
     // identically at max_tokens 900, 1200 and 2400, and failed only when a second
     // request landed inside the same minute. The lever for that is the client's
     // spacing (see RATE_LIMIT_BACKOFF_MS in src/lib/ingestChunks.ts), not this.
-    const { text: rawText } = await generateText({
+    const { text: rawText, usage } = await generateText({
       model,
       prompt: buildConceptsPrompt(text),
       maxOutputTokens: 2400,
@@ -149,6 +172,18 @@ export async function POST(request: Request) {
       // tell the student what it is waiting for.
       maxRetries: 0,
       providerOptions: GROQ_PROVIDER_OPTIONS,
+    });
+
+    // Nothing else in this app records what a generation cost. Logged rather than
+    // stored because the question it answers is "what is the bill doing this week",
+    // and the measured baseline to compare against is 1435 input / 886 output tokens
+    // per request on the free model.
+    console.log("Ingest usage", {
+      plan,
+      model: requestedModel,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+      sourceChars: text.length,
     });
 
     let rawJson: unknown;

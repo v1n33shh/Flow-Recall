@@ -9,6 +9,9 @@ import { resolveEffectivePlan } from "@/lib/billing";
 import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
+import { generationLimitForPlan } from "@/lib/freeQuota";
+import { claimGenerationRequest } from "@/lib/freeQuotaDb";
+import { parseTimezoneOffsetMinutes } from "@/lib/localDay";
 
 // "Infinite Recall Mode": a PRO-only endpoint that generates brand-new,
 // deep-dive flashcards from the concepts a user has already studied - so they
@@ -41,6 +44,11 @@ const seedConceptSchema = z.object({
 
 const requestSchema = z.object({
   concepts: z.array(seedConceptSchema).min(1),
+  // Which calendar month the generation allowance is counted in belongs to the
+  // student, not to the server process (always UTC on Vercel). Same convention as
+  // /api/ingest: the client sends getTimezoneOffset(). Optional, and a missing value
+  // degrades to a UTC month rather than a crash - see parseTimezoneOffsetMinutes.
+  timezoneOffsetMinutes: z.number().optional(),
 });
 
 type SeedConcept = z.infer<typeof seedConceptSchema>;
@@ -148,12 +156,29 @@ export async function POST(
     );
   }
 
+  // Fair-use ceiling, claimed before the model call. This route was metered by
+  // nothing at all, and at maxOutputTokens 5200 it is the largest single response the
+  // app asks for - so an unlimited tap was the most expensive uncapped path in the
+  // product. PRO-gated is not the same as bounded. See freeQuota.ts.
+  const now = new Date();
+  const timezoneOffsetMinutes = parseTimezoneOffsetMinutes(parsed.data.timezoneOffsetMinutes);
+  const generationLimit = generationLimitForPlan(plan);
+  if (!(await claimGenerationRequest(session.user.id, now, timezoneOffsetMinutes, generationLimit))) {
+    return Response.json(
+      {
+        error: `You've generated ${generationLimit} sections this month, which is our fair-use ceiling. It resets at the start of next month - reply to your receipt if you need it raised.`,
+        code: "GENERATION_BUDGET_REACHED",
+      },
+      { status: 403 },
+    );
+  }
+
   // Trim to the most recent concepts so a huge deck can't blow the prompt budget.
   const seed = parsed.data.concepts.slice(-MAX_SEED_CONCEPTS);
 
   try {
     const model = createGroq({ apiKey: process.env.GROQ_API_KEY })(SHUFFLE_MODEL);
-    const { text: rawText } = await generateText({
+    const { text: rawText, usage } = await generateText({
       model,
       prompt: buildShufflePrompt(seed, NEW_CARDS),
       // Raised with the two new one-sentence fields. Five cards each carrying a
@@ -161,6 +186,16 @@ export async function POST(
       // a truncation here is a dead batch rather than a degraded card.
       maxOutputTokens: 5200,
       providerOptions: GROQ_PROVIDER_OPTIONS,
+    });
+
+    // The most expensive single call in the app - see maxOutputTokens above. Logged
+    // for the same reason /api/ingest logs its usage: so the bill is visible weekly
+    // rather than monthly.
+    console.log("Shuffle usage", {
+      deckId,
+      seedConcepts: seed.length,
+      inputTokens: usage?.inputTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
     });
 
     let rawJson: unknown;

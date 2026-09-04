@@ -14,7 +14,19 @@ import { APICallError, RetryError, type LanguageModel } from "ai";
 // about a non-thinking default. See GROQ_PROVIDER_OPTIONS below for how
 // that's suppressed; without it, every route using this model would burn
 // its whole maxOutputTokens budget on reasoning and never reach real output.
-export const FREE_MODEL = "qwen/qwen3.6-27b";
+// Read from the environment, with the current id as the default, because Groq lists
+// this model under PREVIEW - "intended for evaluation purposes only and should not be
+// used in production environments" - and the history above is two decommissions in one
+// year, each of which hard-rejected every request until an app release went out. On the
+// Play Store that is an outage students see. With this, the next one is a Vercel
+// environment change and a redeploy.
+//
+// GROQ_FREE_MODEL and NEXT_PUBLIC_GROQ_FREE_MODEL must be set to the same value: this
+// constant is what the route's request enum is built from, and the client's dropdown
+// reads the public one (see MODEL_OPTIONS in src/app/ingest/page.tsx). If they drift,
+// the client asks for a model the route's schema rejects with a 400.
+export const FREE_MODEL =
+  process.env.GROQ_FREE_MODEL || process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
 
 // Forces Groq's reasoning models (see FREE_MODEL above) to skip their hidden
 // <think> chain-of-thought and go straight to the final answer - required

@@ -613,11 +613,17 @@ export default function Home() {
       const failure = run.error;
       if (failure) {
         const kept = run.concepts.length;
+        // "tap again to carry on" is the right advice for a rate limit or a garbled
+        // response, and the wrong advice for an exhausted monthly budget - the next
+        // tap is refused for the same reason this one was.
+        const budgetReached = run.code === "GENERATION_BUDGET_REACHED";
         setJitErrors((prev) => ({
           ...prev,
-          [deck.id]: kept
-            ? `${failure} We kept the ${kept} cards that did come through - tap again to carry on.`
-            : failure,
+          [deck.id]: !kept
+            ? failure
+            : budgetReached
+              ? `${failure} We kept the ${kept} cards that were generated before it ran out.`
+              : `${failure} We kept the ${kept} cards that did come through - tap again to carry on.`,
         }));
       }
     } catch (err) {

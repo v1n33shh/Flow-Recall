@@ -16,11 +16,25 @@ import { runChunks } from "@/lib/ingestChunks";
 // server-side provider SDKs, and importing it here would drag them into the
 // client bundle. These ids must stay in sync with @/lib/ai's FREE_MODEL and
 // the route's requestSchema (which derives its enum from that same constant).
-const DEFAULT_MODEL = "qwen/qwen3.6-27b";
+// Read from the environment so a Groq model decommission is a config change rather
+// than an app release - see the FREE_MODEL comment in @/lib/ai, which this must stay
+// in lockstep with. The label is derived rather than hardcoded for the same reason.
+const DEFAULT_MODEL = process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
 const MODEL_OPTIONS = [
-  { id: "qwen/qwen3.6-27b", label: "Qwen 3.6 27B (Free)", pro: false },
+  { id: DEFAULT_MODEL, label: `${freeModelLabel(DEFAULT_MODEL)} (Free)`, pro: false },
   { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
 ] as const;
+
+/** "qwen/qwen3.6-27b" -> "Qwen 3.6 27B". Best-effort prettifier: the dropdown should
+ * read like a product name, and hardcoding one would drift from the env var. */
+function freeModelLabel(id: string): string {
+  const name = id.split("/").pop() ?? id;
+  return name
+    .split("-")
+    .map((part) => (/^\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(" ")
+    .replace(/^Qwen(\d)/i, "Qwen $1");
+}
 
 // Coverage cap. Sequential chunking is safe from rate limits, but 40 requests is
 // five minutes of standing still on a phone. At the 4500-character chunk size
@@ -111,6 +125,9 @@ export default function IngestPage() {
     // instead of discarding it; see the comment on that block for why it matters.
     let accumulated: Concept[] = [];
     let failedAtIndex = chunks.length;
+    // The route's machine-readable reason for stopping, where it sent one. The catch
+    // below branches on this rather than on message text - see runChunks.
+    let failureCode: string | null = null;
 
     try {
       const run = await runChunks(chunks, {
@@ -123,6 +140,7 @@ export default function IngestPage() {
       });
       accumulated = run.concepts;
       failedAtIndex = run.failedAtIndex;
+      failureCode = run.code;
       if (run.error) throw new Error(run.error);
 
       setConcepts(accumulated);
@@ -138,20 +156,12 @@ export default function IngestPage() {
       setSavedDeckId(deck.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
-      if (message === "FREE_LIMIT_REACHED") {
-        // Swap the generic error banner for the dedicated upsell block.
-        setError(null);
-        setShowPaywall(true);
-      } else if (accumulated.length > 0) {
-        // A later chunk failed after at least one earlier chunk already
-        // succeeded. Chunk 0 succeeding is exactly what spends one of a FREE
-        // user's monthly decks server-side (see /api/ingest's isFirstChunk
-        // gate) - discarding `accumulated` here would burn that allowance
-        // for nothing. Save what we got instead, and queue the chunk
-        // that failed plus everything after it (both the rest of this batch
-        // and any truncation overflow) as pendingChunks - "Generate Next
-        // Section" on the home page already sends isFirstChunk: false, so
-        // finishing this deck later costs no extra quota.
+      const budgetReached = failureCode === "GENERATION_BUDGET_REACHED";
+
+      // Whatever stopped the run, cards that were generated were paid for - save
+      // them and queue the rest. Done before the branching below so no path can
+      // silently drop them.
+      if (accumulated.length > 0) {
         const deck = saveDeck(
           titleRef.current,
           accumulated,
@@ -161,6 +171,28 @@ export default function IngestPage() {
         );
         setSavedDeckId(deck.id);
         setConcepts(accumulated);
+      }
+
+      if (message === "FREE_LIMIT_REACHED") {
+        // Swap the generic error banner for the dedicated upsell block.
+        setError(null);
+        setShowPaywall(true);
+      } else if (budgetReached) {
+        // Distinct from the snag copy below on purpose: that one says "tap Generate
+        // Next Section to finish", and the next tap is refused for the same reason
+        // this one was. Telling a student to retry into a wall is worse than saying
+        // there is a wall.
+        setError(
+          accumulated.length > 0
+            ? `${message} We saved the ${accumulated.length} cards that were generated before it ran out.`
+            : message,
+        );
+      } else if (accumulated.length > 0) {
+        // A later chunk failed after at least one earlier chunk already succeeded.
+        // Chunk 0 succeeding is what spends one of a FREE user's monthly decks
+        // server-side (see /api/ingest's isFirstChunk gate), so the save above is what
+        // keeps that allowance from being burned for nothing. "Generate Next Section"
+        // sends isFirstChunk: false, so finishing later costs no extra deck.
         setError(
           "Generation hit a snag partway through, but we saved what we got. Go to your library and tap \"Generate Next Section\" to finish this deck - it won't cost you anything extra.",
         );

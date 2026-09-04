@@ -261,6 +261,36 @@ describe("runChunks", () => {
     expect(progress).toContain("Part 1 came back garbled - retrying in 6s.");
   });
 
+  it("stops on an exhausted generation budget without retrying, and keeps the cards", async () => {
+    // The budget is claimed before the model call, so a retry would only spend three
+    // refusals. The code has to reach the caller too: /ingest and the library both show
+    // different copy for this than for a rate limit, because "tap again to carry on" is
+    // wrong advice when the next tap is refused for the same reason.
+    const calls = mockFetch([
+      { status: 200, body: cards("a") },
+      {
+        status: 403,
+        body: {
+          error: "You've used this month's generation budget.",
+          code: "GENERATION_BUDGET_REACHED",
+        },
+      },
+    ]);
+
+    const { result } = await run(["one", "two", "three"]);
+
+    expect(calls).toHaveLength(2);
+    expect(result.code).toBe("GENERATION_BUDGET_REACHED");
+    expect(result.error).toBe("You've used this month's generation budget.");
+    expect(result.concepts.map((c) => c.id)).toEqual(["a"]);
+    expect(result.failedAtIndex).toBe(1);
+  });
+
+  it("reports no code when a run succeeds", async () => {
+    mockFetch([{ status: 200, body: cards("a") }]);
+    expect((await run(["one"])).result.code).toBeNull();
+  });
+
   it("scatters the retry wait so simultaneous clients don't wake together", async () => {
     // One Groq key serves every student and the OTPM ceiling is per organization,
     // so two phones generating at once already 429 each other. Identical backoffs

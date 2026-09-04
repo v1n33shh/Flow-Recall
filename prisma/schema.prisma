@@ -60,6 +60,17 @@ model User {
   // gets its first fresh allowance at the next boundary.
   definitionsUsed       Int       @default(0)
   lookupsResetAt        DateTime?
+  // Monetization: the per-REQUEST generation allowance spent by /api/ingest (every
+  // chunk, not just the first) and /api/decks/[id]/shuffle. Separate from
+  // decksGeneratedToday because that one counts decks and the money is spent per
+  // request - a single deck can be 20 requests, and "Generate Next Section" sends
+  // four more per tap with isFirstChunk: false, which the deck gate never sees.
+  // Both plans are bounded (see generationLimitForPlan); PRO's is fair-use.
+  // generationResetAt is nullable for the same reason lookupsResetAt is: every
+  // existing row is mid-month by definition and gets a fresh allowance at the next
+  // boundary.
+  generationRequestsUsed Int      @default(0)
+  generationResetAt      DateTime?
   // Abuse ceiling for /api/cloze-grade, NOT a plan-gated feature limit like
   // decksGeneratedToday - this fires automatically during normal study
   // whenever a typed answer isn't an exact match, so it applies to FREE and

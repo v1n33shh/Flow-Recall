@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FREE_DECKS_PER_MONTH, FREE_LOOKUPS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
+import {
+  FREE_DECKS_PER_MONTH,
+  FREE_GENERATION_REQUESTS_PER_MONTH,
+  FREE_LOOKUPS_PER_MONTH,
+  PRO_GENERATION_REQUESTS_PER_MONTH,
+  countInCurrentMonth,
+  generationLimitForPlan,
+} from "@/lib/freeQuota";
 import { isNewLocalMonth, startOfLocalMonth } from "@/lib/localDay";
 
 // UTC+5:30, the offset this app is actually used in. getTimezoneOffset() reports
@@ -94,5 +101,26 @@ describe("the two allowances", () => {
     // lifetime cap this replaced.
     expect(FREE_DECKS_PER_MONTH).toBeGreaterThan(1);
     expect(FREE_LOOKUPS_PER_MONTH).toBeGreaterThan(3 * FREE_DECKS_PER_MONTH);
+  });
+});
+
+describe("generationLimitForPlan", () => {
+  it("gives PRO the fair-use ceiling and FREE the budget", () => {
+    expect(generationLimitForPlan("PRO")).toBe(PRO_GENERATION_REQUESTS_PER_MONTH);
+    expect(generationLimitForPlan("FREE")).toBe(FREE_GENERATION_REQUESTS_PER_MONTH);
+  });
+
+  it("treats an unknown plan as FREE", () => {
+    // Fails closed: a plan string this app does not recognise must not be handed the
+    // PRO ceiling. `plan` is a plain String column, so an unexpected value is possible.
+    expect(generationLimitForPlan("")).toBe(FREE_GENERATION_REQUESTS_PER_MONTH);
+    expect(generationLimitForPlan("TRIAL")).toBe(FREE_GENERATION_REQUESTS_PER_MONTH);
+  });
+
+  it("bounds PRO as well as FREE", () => {
+    // The point of the ceiling: uncapped PRO generation is an unbounded bill against a
+    // fixed subscription price. It must be a real number, and above the free budget.
+    expect(Number.isFinite(PRO_GENERATION_REQUESTS_PER_MONTH)).toBe(true);
+    expect(PRO_GENERATION_REQUESTS_PER_MONTH).toBeGreaterThan(FREE_GENERATION_REQUESTS_PER_MONTH);
   });
 });

@@ -44,9 +44,30 @@ export const RawConceptSchema = z.object({
     .optional(),
 });
 
-export const ConceptsResponseSchema = z.object({
-  concepts: z.array(RawConceptSchema).min(1),
-});
+/** The generation response, in either of the two shapes the pinned model actually
+ * emits.
+ *
+ * `openai/gpt-oss-120b` returns a **bare array** instead of the `{concepts: [...]}`
+ * wrapper on roughly one call in eight - measured 2 of 16 against the real prompt on
+ * real chunks off the user's book, both `finish_reason: "stop"` at 704 and 780 output
+ * tokens, the JSON perfectly valid and the cards inside complete and correct. The
+ * envelope was the only thing wrong, and rejecting it charged the student for a
+ * request, threw away three good cards, and told them the response "came back
+ * garbled". Three of those in a row ends the run and loses the rest of the book.
+ *
+ * Normalised here rather than in the prompt, because the prompt already spells the
+ * object out with a literal example and the model overrides it anyway - and here
+ * rather than in each route, because there are two of them (`/api/ingest` and
+ * `/api/decks/[id]/shuffle`) and shuffle asks for the larger response.
+ *
+ * Nothing else is loosened: the cards still go through RawConceptSchema one by one,
+ * and an empty array is still a failure. Only the wrapper is optional. */
+export const ConceptsResponseSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? { concepts: value } : value),
+  z.object({
+    concepts: z.array(RawConceptSchema).min(1),
+  }),
+);
 
 export type RawConcept = z.infer<typeof RawConceptSchema>;
 

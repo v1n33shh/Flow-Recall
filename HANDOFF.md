@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 518 passed / 518 across 32 files, `npm test` exit 0 |
+| **Tests** | 524 passed / 524 across 33 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -751,11 +751,7 @@ it is a snapshot and the progress block is the live count.
 
 ### Two things left open
 
-**gpt-oss-120b garbles JSON at a real rate.** **5 of 26** ingest calls came back 502 across the two runs
-(~19%), and one section burned all 3 attempts and ended a run at part 12 of 20 — 33 cards instead of 60. §8
-lists "switch to structured outputs" as a smaller thing worth a decision; this is the evidence that it is not
-small. `gpt-oss-120b` advertises `structured_outputs` and `json_mode`, which is exactly what the hand-parsing
-and its 502s exist to work around.
+**gpt-oss-120b's 502s were not garbled JSON at all** — diagnosed and fixed, see §12.
 
 **The allowance line is timing-sensitive.** Its effect returns early while `useSession()` is still loading, and
 on one run it never appeared even after the session resolved and `continuing` flipped back. It renders every
@@ -772,3 +768,81 @@ longer near. The analysis in §6 step 5 still holds for the next book — `pendi
 Live decks now: `Atisha Wisdom Slice` (69 cards, 3 pending, **the first deck on this device with a
 `sourceKey`** — `1hzq:9itpyb1b0pxaz`), `wisdom` (98 cards, 386 pending), `KEY PROBE 14:49:34` (15), `Cardiac
 cycle - lecture 4` (3).
+
+---
+
+## 12. The 502s were an envelope, not garbled JSON — fixed 2026-09-05
+
+The "came back garbled" failures were the last thing still breaking a book upload: **5 of 26** ingest calls
+across §11's runs, and on one run a section burned all three attempts and ended it at part 12 of 20 — 33 cards
+instead of 60. §8 and §11 both guessed at structured outputs. Both were wrong about the cause.
+
+### What it actually is
+
+`/api/ingest` has three separate `retryable` 502s and the client shows the same "came back garbled" line for all
+of them, so the message hid which one was firing. Probed by calling Groq directly with the app's real prompt on
+real chunks off the user's book, then running each response through the exact three gates the route does
+(`/tmp/garble-probe.ts`, bundled with esbuild):
+
+```
+  2 MODEL_SCHEMA   704tok stop   : Invalid input: expected object, received array
+  6 MODEL_SCHEMA   780tok stop   : Invalid input: expected object, received array
+ 14 ok
+```
+
+`finish_reason: "stop"`, 704 and 780 output tokens against a 2400 cap, **valid JSON, complete and correct
+cards**. `openai/gpt-oss-120b` simply returns a **bare array** instead of `{"concepts":[…]}` about one call in
+eight. So:
+
+- Nothing was garbled. `parseModelJson` parsed it fine.
+- Nothing was truncated. The token-budget comment in the route is right and needs no change.
+- It is not a quality-gate drop, and not a rate limit.
+- The app threw away three good cards, **charged the student a generation request for them**, and reported a
+  garble.
+
+The prompt is not the lever: it already ends with a literal `{"concepts":[{…}]}` example, and the model
+overrides it anyway.
+
+### The fix
+
+`ConceptsResponseSchema` now normalises the envelope with `z.preprocess`: a top-level array is lifted into
+`{concepts: […]}`, anything else passes through unchanged. Nothing else is loosened — cards still go through
+`RawConceptSchema` one at a time and an empty array is still a failure.
+
+Placed on the schema rather than in either route because **both** `/api/ingest` and `/api/decks/[id]/shuffle`
+validate with it, and shuffle asks for the larger response (`maxOutputTokens: 5200`).
+
+**Measured after the fix: 24 of 24 calls succeeded**, against 2 failures in 16 before. (One of the 24 returned
+2 cards rather than 3 — that is the prompt's own "return just that one card rather than padding with a
+near-duplicate" instruction working, not a failure.)
+
+### What this means for the original bug
+
+The reported flashcard bug is fixed and verified end to end on the device — §11 and the full run below. This
+was the last remaining way a book upload could still die partway through, and it was doing so at roughly a
+1-in-15 rate: a section only fails after 3 consecutive bad calls, so at a ~13% per-call rate that is ~0.2% per
+section and ~4-7% across a 20-section deck. It should now be effectively zero.
+
+### The full run that proved the original bug fixed
+
+Real 444-page Osho PDF, dropped into the release APK, before this envelope fix:
+
+| | |
+|---|---|
+| Extraction | 444 pages in **21 s**, live page count, no freeze |
+| Parts completed | **20 of 20** |
+| Cards | **60** — the full 3-per-section yield |
+| 429s | **zero** |
+| 502s | 3, **all three recovered on retry** ("Part 6 came back garbled - retrying in 7s") |
+| Total | **218 s** end to end |
+| Deck | new row, `sourceKey: qdz7:12au8cr1gel0sj`, 399 sections queued, `openai/gpt-oss-120b` |
+| Duplicate check | it did **not** match the old same-titled `wisdom` deck, which has no `sourceKey` — the no-backfill fallback behaving correctly on a real collision |
+
+Against the original report — a frozen phone and a run that died at part 16 of 20 with 22 cards — and against
+09-04's best measurement of 44 cards.
+
+### Still worth doing, but no longer urgent
+
+`gpt-oss-120b` advertises `structured_outputs` and `json_mode`. Adopting them would make the envelope
+impossible rather than tolerated, and would delete the hand-parsing in all seven routes. That is now a
+cleanup with a known payoff rather than a fix for a live failure.

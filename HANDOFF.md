@@ -374,6 +374,21 @@ with `DEVTOOLS=1`. `adb` lives at `~/Android/Sdk/platform-tools/adb` and is not 
 routes fetch through native OkHttp, so **CDP sees no network events at all** — patch `window.fetch` in-page to
 observe API traffic.
 
+**A build can "Compile successfully" and still fail.** `next build` compiles, then type-checks, then
+prerenders static pages — and a prerender failure comes *after* the success line. Grepping the log for
+`Compiled successfully` reported a green build while `/ingest` was failing to prerender, and the bug reached
+production (it failed there, safely — Vercel does not promote a failed build). **Check the exit code:**
+
+```bash
+rm -rf .next && npm run build > /tmp/build.log 2>&1; echo "exit: $?"
+```
+
+The bug itself is worth knowing as a class: `MODEL_OPTIONS` in `src/app/ingest/page.tsx` calls
+`freeModelLabel()` during module evaluation, and that function read a `const` declared *below* it — a
+temporal-dead-zone `ReferenceError`, not `undefined`. Function declarations hoist; `const` bindings do not.
+`tsc --noEmit` stayed clean throughout, because TypeScript does not model TDZ across a call. The map is now
+declared above its consumer and there is a comment there saying why the order matters.
+
 **Checking the rate limits without the console:**
 
 ```bash

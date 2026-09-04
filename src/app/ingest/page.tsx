@@ -12,22 +12,16 @@ import { FREE_DECKS_PER_MONTH } from "@/lib/freeQuota";
 import { chunkText, DEFAULT_CHUNK_SIZE } from "@/lib/chunkText";
 import { runChunks } from "@/lib/ingestChunks";
 
-// Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
-// server-side provider SDKs, and importing it here would drag them into the
-// client bundle. These ids must stay in sync with @/lib/ai's FREE_MODEL and
-// the route's requestSchema (which derives its enum from that same constant).
-// Read from the environment so a Groq model decommission is a config change rather
-// than an app release - see the FREE_MODEL comment in @/lib/ai, which this must stay
-// in lockstep with. The label is derived rather than hardcoded for the same reason.
-const DEFAULT_MODEL = process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
-const MODEL_OPTIONS = [
-  { id: DEFAULT_MODEL, label: `${freeModelLabel(DEFAULT_MODEL)} (Free)`, pro: false },
-  { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
-] as const;
-
 // The ids this app is realistically pinned to, with the names their makers use. A map
 // rather than a clever transform because "gpt-oss" prettifies to "Gpt Oss" and no
 // amount of casing rules fixes that.
+//
+// DECLARED BEFORE MODEL_OPTIONS, and it has to stay that way: MODEL_OPTIONS calls
+// freeModelLabel() during module evaluation, and a `const` read from inside a function
+// called before its own declaration is a temporal-dead-zone ReferenceError, not
+// undefined. Function declarations hoist; const bindings do not. Getting this order
+// wrong broke a production build with "Cannot access 'x' before initialization" while
+// `tsc --noEmit` stayed perfectly clean - TypeScript does not model TDZ across a call.
 const FREE_MODEL_LABELS: Record<string, string> = {
   "qwen/qwen3.6-27b": "Qwen 3.6 27B",
   "openai/gpt-oss-120b": "GPT-OSS 120B",
@@ -45,6 +39,19 @@ function freeModelLabel(id: string): string {
     .map((part) => (/^\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
     .join(" ");
 }
+
+// Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
+// server-side provider SDKs, and importing it here would drag them into the
+// client bundle. These ids must stay in sync with @/lib/ai's FREE_MODEL and
+// the route's requestSchema (which derives its enum from that same constant).
+// Read from the environment so a Groq model decommission is a config change rather
+// than an app release - see the FREE_MODEL comment in @/lib/ai, which this must stay
+// in lockstep with. The label is derived rather than hardcoded for the same reason.
+const DEFAULT_MODEL = process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
+const MODEL_OPTIONS = [
+  { id: DEFAULT_MODEL, label: `${freeModelLabel(DEFAULT_MODEL)} (Free)`, pro: false },
+  { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
+] as const;
 
 // Coverage cap. Sequential chunking is safe from rate limits, but 40 requests is
 // five minutes of standing still on a phone. At the 4500-character chunk size

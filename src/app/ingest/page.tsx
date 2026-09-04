@@ -8,6 +8,7 @@ import type { Concept, Deck } from "@/lib/types";
 import {
   appendConceptsToDeck,
   findDeckBySourceKey,
+  getSavedDecks,
   saveDeck,
   setStudyDeck,
 } from "@/lib/storage";
@@ -373,13 +374,16 @@ export default function IngestPage() {
               : `${run.error} We kept the ${kept} cards that came through - tap again to carry on.`,
         );
       }
-      // Reflect the deck as it now stands, so a second Continue works off the
-      // shrunken leftovers rather than the list this run started with.
-      setRecognised((prev) =>
-        prev && prev.deck.id === deck.id
-          ? { ...prev, deck: { ...prev.deck, pendingChunks: run.remaining } }
-          : prev,
-      );
+      // Read the deck back rather than patching the snapshot. onBatch has already
+      // written it and storage is the only thing that knows what actually landed:
+      // patching `pendingChunks` alone left the card saying "33 cards · 7 sections
+      // left" when the deck had grown to 57 cards, and adding `run.concepts` instead
+      // would be wrong the other way, since on a persist failure those are cards the
+      // deck does not have.
+      const stored = getSavedDecks().find((candidate) => candidate.id === deck.id);
+      if (stored) {
+        setRecognised((prev) => (prev && prev.deck.id === deck.id ? { ...prev, deck: stored } : prev));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -655,13 +659,18 @@ function RecognisedSourceCard({
         ✦ You&apos;ve studied this before
       </span>
       <p className="mt-3 text-lg font-semibold text-foreground">{deck.title}</p>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        {finished
-          ? `Fully generated · ${deck.concepts.length} cards`
-          : `${deck.concepts.length} cards · ${sectionsLeft} ${sectionsLeft === 1 ? "section" : "sections"} left`}
-        {" · last added "}
-        {lastTouchedLabel(deck.updatedAt ?? deck.createdAt)}
-      </p>
+      {/* Hidden while a run is going, because it cannot keep up with one: the deck is
+          rewritten every batch and this line is a snapshot taken when the card
+          appeared. The progress block below is the live count. */}
+      {!continuing && (
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          {finished
+            ? `Fully generated · ${deck.concepts.length} cards`
+            : `${deck.concepts.length} cards · ${sectionsLeft} ${sectionsLeft === 1 ? "section" : "sections"} left`}
+          {" · last added "}
+          {lastTouchedLabel(deck.updatedAt ?? deck.createdAt)}
+        </p>
+      )}
 
       {/* What one tap will actually be able to finish. Continuous generation makes it
           easy to spend a month's allowance without meaning to, and being stopped

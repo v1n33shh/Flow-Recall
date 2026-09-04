@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 514 passed / 514 across 32 files, `npm test` exit 0 |
+| **Tests** | 518 passed / 518 across 32 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -694,9 +694,7 @@ permanently**. Swapping the free model is not a config change; it adds an id to 
   "2 decks" was stale — there are four.)
 - The storage numbers in §6 step 5.
 
-**Still unconfirmed:** everything downstream of the tap — batching, the Stop semantics, the resume invariant,
-and the recognition card itself. The fix has to reach production before any of it can be tested, since the APK
-talks to `www.flowrecall.app`. **No APK rebuild is needed** — the fix is server-side.
+Everything downstream of the tap was tested once this reached production — §11.
 
 ### Clicking this app over CDP, for the next session
 
@@ -705,3 +703,72 @@ All three work on this WebView, contrary to §7's note about Playwright timing o
 against the session-length pills. The earlier "the click did nothing" was the click working perfectly — the
 run started, 400'd in 922 ms, and the UI was back before a 2-second poll could see it. **Watch the console
 and a patched `window.fetch`, not the DOM, for anything that can fail this fast.**
+
+---
+
+## 11. The device test — 2026-09-05, release APK on the CPH2001
+
+Release APK, `DEVTOOLS=1`, cert `e1f4352f…bc09` verified before install, library survived. Driven over CDP
+against production. Generation usage went 5 → 54 of 2000.
+
+### Confirmed working
+
+| | |
+|---|---|
+| Worker extraction | 444 pages in **~25 s**, real progress ("412 of 444 pages"), no frozen WebView |
+| Type3 cipher recovery | Text came out clean English. Raw pdf.js on the same file gives `GLVDSSHDUHG` — a uniform −29 glyph offset — so the worker's recovery is doing real work |
+| `/api/account/usage` | 200 from the APK, and the card renders it: "Your plan allows 1946 more sections this month - enough to finish this" |
+| **Nothing spent before the choice** | `/api/ingest` calls after tapping Generate on a recognised source: **0**. The central guarantee |
+| Recognition card | "63 cards · 5 sections left · last added today", matching the deck exactly |
+| Continue from the card | 63 → 69 cards, 5 → 3 sections, **0 new library rows** |
+| Batch persistence | Every run: cards +3 per section, `pendingChunks` down by exactly the sections consumed |
+| Resume invariant | `after.pendingChunks[0] === before.pendingChunks[N]` on every run, with the following six lining up in order |
+| Partial keep on failure | Part 12 of 20 exhausted its 3 attempts; the deck kept 33 cards from 11 sections and requeued from 12 — nothing paid for was discarded |
+| Round trips | **5.3–7.9 s**, against 27–58 s before 09-04's work. §6 hoped for ~2.5 s; this deck runs on qwen, which is slower than gpt-oss-120b |
+| Groq limits | **§5 is resolved.** The key now returns `limit-tokens: 250000`, `limit-requests: 500000` — Developer values, not the free tier's 8000/1000 |
+| Both model env vars | The dropdown offers `openai/gpt-oss-120b` and `claude-haiku-latest`, and the route accepts the same — so §6 step 2 is answered: they are set and identical |
+
+### Two defects found and fixed
+
+**a) "Stop" ran on for three more sections.** `shouldStop` was polled only between batches, so a Stop during
+section 2 of a 4-section batch still sent 3 and 4 — measured at **40 seconds and 12 more cards after the tap**,
+under a button reading "Finishing this section". The comment justified this as "the requests in a batch in
+flight are already paid for", which is true of the one in flight and false of the three after it: sending
+those spends the allowance the student just asked us to stop spending.
+
+`runChunks` now takes `shouldStop` and polls it **before each request**, never mid-flight. A batch that stops
+early returns `failedAtIndex` at the first unsent section with `error: null`, and `runChunksContinuous` returns
+`stoppedBy: "user"` from there rather than advancing `offset` by the batch length — which would have dropped
+the unsent sections silently. Re-measured on the device: **0 requests after the tap**, run over in 7 s,
+2 sections consumed, invariant intact.
+
+**b) The recognition card's counts went stale.** It patched `pendingChunks` into its snapshot and left
+`concepts` alone, so after continuing it read "**33** cards · 7 sections left" with 57 cards in the deck — and
+would have said "Fully generated · 33 cards" at the end. It now reads the deck back from storage (the only
+thing that knows what actually landed; adding `run.concepts` would be wrong the other way, since on a persist
+failure those are cards the deck does not have), and the summary line is hidden while a run is going, because
+it is a snapshot and the progress block is the live count.
+
+### Two things left open
+
+**gpt-oss-120b garbles JSON at a real rate.** **5 of 26** ingest calls came back 502 across the two runs
+(~19%), and one section burned all 3 attempts and ended a run at part 12 of 20 — 33 cards instead of 60. §8
+lists "switch to structured outputs" as a smaller thing worth a decision; this is the evidence that it is not
+small. `gpt-oss-120b` advertises `structured_outputs` and `json_mode`, which is exactly what the hand-parsing
+and its 502s exist to work around.
+
+**The allowance line is timing-sensitive.** Its effect returns early while `useSession()` is still loading, and
+on one run it never appeared even after the session resolved and `continuing` flipped back. It renders every
+time on a settled session. Cosmetic — the ceiling is enforced server-side either way — but the effect deps
+deserve a look.
+
+### Storage, after the user deleted the obsolete deck
+
+The 2.64M-char old-chunker Osho deck was tombstoned during the session, which is what §6 step 5 said would free
+67% of the library. `flowrecall:savedDecks` is now **1,373,689 chars**, down from 3,915,306, so the quota is no
+longer near. The analysis in §6 step 5 still holds for the next book — `pendingChunks` is the cost, one book is
+~1.19M chars of it — but there is room again.
+
+Live decks now: `Atisha Wisdom Slice` (69 cards, 3 pending, **the first deck on this device with a
+`sourceKey`** — `1hzq:9itpyb1b0pxaz`), `wisdom` (98 cards, 386 pending), `KEY PROBE 14:49:34` (15), `Cardiac
+cycle - lecture 4` (3).

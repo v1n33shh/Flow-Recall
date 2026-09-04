@@ -175,8 +175,10 @@ export type ChunkProgress = {
 export type ChunkRunResult = {
   /** Everything that succeeded, whether or not the run finished. */
   concepts: Concept[];
-  /** Index of the chunk that failed, or `chunks.length` when none did. Callers
-   * queue this one and everything after it rather than dropping them. */
+  /** The first chunk this run did not complete: the one that failed, `chunks.length`
+   * when none did, or - since Stop is polled before each chunk goes out - the section
+   * a Stop landed on, in which case `error` is null. Callers queue this one and
+   * everything after it rather than dropping them. */
   failedAtIndex: number;
   /** The failure, or null when every chunk succeeded. */
   error: string | null;
@@ -204,10 +206,13 @@ export async function runChunks(
     /** Spacing to start at, for a caller continuing where an earlier run left off.
      * Defaults to BASE_CHUNK_DELAY_MS, i.e. optimistic. */
     initialDelayMs?: number;
+    /** Polled before each chunk goes out, so a Stop lands on the next section rather
+     * than on the end of the batch. Omitted by /ingest, which has no Stop. */
+    shouldStop?: () => boolean;
     onProgress: (progress: ChunkProgress) => void;
   },
 ): Promise<ChunkRunResult> {
-  const { model, countsFirstChunk, initialDelayMs, onProgress } = options;
+  const { model, countsFirstChunk, initialDelayMs, shouldStop, onProgress } = options;
   const concepts: Concept[] = [];
   // Widened for the rest of the run the first time a 429 proves the current
   // spacing is too tight for this account. Kept across chunks deliberately: once
@@ -219,6 +224,15 @@ export async function runChunks(
   );
 
   for (let i = 0; i < chunks.length; i++) {
+    // Before the request goes out, never mid-flight. A request already sent is paid
+    // for either way - but the ones after it are not, and sending them spends the
+    // allowance the student just asked us to stop spending. Measured on the device
+    // before this check existed: a Stop at section 5 ran on to section 8, 40 seconds
+    // and 12 cards later, under a button that said "Finishing this section".
+    if (shouldStop?.()) {
+      return { concepts, failedAtIndex: i, error: null, code: null, delayMs };
+    }
+
     onProgress({ current: i + 1, total: chunks.length, waitingReason: null });
 
     for (let attempt = 1; ; attempt++) {
@@ -391,6 +405,7 @@ export async function runChunksContinuous(
       model,
       countsFirstChunk: countsFirstChunk && batchOffset === 0,
       initialDelayMs: delayMs,
+      shouldStop,
       onProgress: ({ current, waitingReason }) =>
         onProgress({
           currentSection: batchOffset + current,
@@ -433,6 +448,20 @@ export async function runChunksContinuous(
         error: run.error,
         code: run.code,
         stoppedBy: "error",
+      };
+    }
+
+    // A batch that stopped short of its own length was stopped by the student, not by
+    // a failure - runChunks polls shouldStop before each section. Returning here
+    // rather than falling through keeps `offset` honest: the sections it never sent
+    // must stay in `remaining`, and advancing past them would drop them silently.
+    if (run.failedAtIndex < batch.length) {
+      return {
+        concepts: generated,
+        remaining,
+        error: null,
+        code: null,
+        stoppedBy: "user",
       };
     }
 

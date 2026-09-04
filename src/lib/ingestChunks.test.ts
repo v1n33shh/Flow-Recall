@@ -343,16 +343,22 @@ async function runContinuous(
     stopAfterBatches?: number;
     /** 1-based batch whose persist throws, standing in for a full device. */
     throwOnBatch?: number;
+    /** Stop once this many sections have been requested, mid-batch on purpose. */
+    stopAfterSections?: number;
   } = {},
 ) {
   const batches: { concepts: string[]; remaining: string[] }[] = [];
   const progress: ContinuousProgress[] = [];
+  // How many sections have actually been requested so far, which is what a Stop has
+  // to be measured against - `batches.length` only moves at batch boundaries.
+  const sent = () => (globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
   const promise = runChunksContinuous(chunks, {
     model: "qwen/qwen3.6-27b",
     countsFirstChunk: options.countsFirstChunk ?? false,
     batchSize: options.batchSize ?? 2,
     shouldStop: () =>
-      options.stopAfterBatches !== undefined && batches.length >= options.stopAfterBatches,
+      (options.stopAfterBatches !== undefined && batches.length >= options.stopAfterBatches) ||
+      (options.stopAfterSections !== undefined && sent() >= options.stopAfterSections),
     onBatch: (concepts, remaining) => {
       if (options.throwOnBatch !== undefined && batches.length + 1 === options.throwOnBatch) {
         throw new Error("Your device is out of space for saved decks.");
@@ -524,5 +530,68 @@ describe("runChunksContinuous", () => {
     // Two requests, not eight. Every later batch would generate cards the same write
     // is going to drop, and each one costs a student a generation request.
     expect(calls.map((c) => c.text)).toEqual(["a", "b"]);
+  });
+});
+
+describe("stopping lands on the next section, not the end of the batch", () => {
+  it("sends no further sections once shouldStop goes true mid-batch", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    const { result } = await runContinuous(["a", "b", "c", "d", "e", "f", "g", "h"], {
+      batchSize: 4,
+      stopAfterSections: 2,
+    });
+
+    // Two sections requested, not four. Before shouldStop reached runChunks, a Stop
+    // during section 2 still paid for sections 3 and 4 - measured on the device as
+    // 40 seconds and 12 cards after the tap, under a button reading "Finishing this
+    // section".
+    expect(calls.map((c) => c.text)).toEqual(["a", "b"]);
+    expect(result.stoppedBy).toBe("user");
+  });
+
+  it("keeps the sections it never sent in remaining", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { result, batches } = await runContinuous(["a", "b", "c", "d", "e", "f"], {
+      batchSize: 4,
+      stopAfterSections: 2,
+    });
+
+    // The invariant that makes an interrupted run safe to resume: c-f were never
+    // generated, so they must all still be queued. Advancing offset by the batch
+    // length here would have dropped c and d for good.
+    expect(result.remaining).toEqual(["c", "d", "e", "f"]);
+    expect(batches).toHaveLength(1);
+    expect(batches[0].remaining).toEqual(["c", "d", "e", "f"]);
+    expect(batches[0].concepts).toHaveLength(2);
+  });
+
+  it("does not report a stop as a failure", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { result } = await runContinuous(["a", "b", "c", "d"], {
+      batchSize: 4,
+      stopAfterSections: 1,
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.code).toBeNull();
+    expect(result.concepts).toHaveLength(1);
+  });
+
+  it("stops runChunks on its own, before the first request of a batch", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    const promise = runChunks(["a", "b", "c"], {
+      model: undefined,
+      countsFirstChunk: false,
+      shouldStop: () => calls.length >= 1,
+      onProgress: () => {},
+    });
+    await vi.runAllTimersAsync();
+    const result = await promise;
+
+    expect(calls.map((c) => c.text)).toEqual(["a"]);
+    // failedAtIndex doubles as "first section not completed", so a caller queues from
+    // here whether the run ended in a failure or in a Stop.
+    expect(result.failedAtIndex).toBe(1);
+    expect(result.error).toBeNull();
   });
 });

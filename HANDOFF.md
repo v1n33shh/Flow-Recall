@@ -1174,6 +1174,30 @@ build.
 shape from a pair list. Lower value than the contrasts: the learning path already implies some of that
 structure, and `ConceptRelations` shows it per concept. Worth doing, not urgent.
 
-**Not device-verified.** Client-side, so it needs a `DEVTOOLS=1` rebuild and a mapped deck on the phone. Note
-none of the five decks there has a `conceptMap` yet, so testing it means spending one AI lookup to map a deck
-first - the small `Cardiac cycle - lecture 4` deck is the cheap choice.
+### Verified on the device
+
+`DEVTOOLS=1` rebuild, cert checked. Mapped the real `Atisha Wisdom Slice` deck (63 concepts) from the
+revision sheet — reached by **"Read"** on a deck card, not an obviously named control; it is `handleRead` →
+`setStudyDeck` → `/revise`, using the same sessionStorage handoff `/study` uses because `output: "export"`
+cannot build a dynamic route for localStorage deck ids.
+
+Two `/api/concept-map` calls, both 200 — 63 concepts is two passes at `MAP_BATCH_SIZE`, still one AI lookup,
+exactly as designed. It returned 12 edges: 9 `explains`, 2 `prerequisite`, **1 `contrast`**. So on a real deck
+of a student's own material, the section is the only place one of those three relations is visible at all.
+
+What rendered:
+
+```
+Don't confuse
+One pair in this deck gets mixed up. Knowing which is which is worth more than either alone.
+[effort drop]  vs  [rushing ahead]
+```
+
+Both chips are real `<button>` elements and tapping one jumps to that concept. Note the order: the stored edge
+is `rushing ahead → effort drop`, and it renders **effort drop first** because `contrastPairs` puts the earlier
+concept in deck order first — the stability property, working on live data.
+
+**One gotcha for the next session.** `document.body.innerText` did NOT contain the section, twice, while
+`querySelectorAll` found it immediately. `innerText` is render-aware and drops content scrolled out of view,
+and the revision sheet is 55,000 characters long. **Search this page with `textContent` or a DOM query, never
+`innerText`** - it reads exactly like a component that failed to render.

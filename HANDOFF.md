@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 552 passed / 552 across 35 files, `npm test` exit 0 |
+| **Tests** | 562 passed / 562 across 36 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -502,8 +502,7 @@ recursive merges. Build- and CLI-time config merging, not the request path. The 
 
 1. **Multiple Choice Questions** — generate distractors from the concept map; build the MCQ UI so recognition
    can be tested without handing the student a 50/50 guess.
-2. **Starring concepts** — a star button in the review and sheet-browsing UI, driving the FSRS `importance`
-   multiplier off the flat `0.5` and onto the student's own priorities.
+2. ~~**Starring concepts**~~ — **done 2026-09-05, see §16.**
 3. **Visual concept graph** — render the existing `concept-map` data, including its edge kinds ("Build on
    first", "This explains", "Don't confuse").
 
@@ -1027,3 +1026,72 @@ server refusing a real FREE account end to end. The caps themselves are covered 
 tests in `freeQuotaDb.test.ts`. What is untested anywhere is the seam: `/api/ingest` answering
 `403 FREE_LIMIT_REACHED` and `/ingest` swapping the error banner for the upsell block. That needs
 either a second test account on the phone or a plan flip on the live one, so it is the user's call.
+
+---
+
+## 16. Starring concepts — Phase 3 item 2, done 2026-09-05
+
+Storage was measured first, to decide whether the localStorage ceiling had become the
+more urgent thing. It has not: **54% full, ~2.36M chars of headroom against a ~5.14M cap**,
+which is one more book (~1.19M) but not two. And 85% of the consumption is `pendingChunks`
+for **two copies of the same book** — the pre-`sourceKey` `wisdom` deck (382 sections
+queued) beside the one made after it (367). That duplication is the thing §9 now prevents,
+so a new student does not accumulate it, and the wall only reaches someone juggling three
+unfinished books — where it fails cleanly with an actionable message. So: features next.
+
+### Why this one, and why it was nearly free
+
+The scheduler already consumed `importance` and nothing ever wrote it. `desiredRetentionFor`
+turns it into a retention target (`0.86 + 0.09 × importance`), `recallStorage` read it when
+scheduling, and `recallSync`'s comment even said "starring a concept later correctly re-dates
+it" — the whole mechanism was built and inert, every unit carrying the flat `0.5` that
+`unitsFromDeck` gives it. Only the write path was missing.
+
+### What was added
+
+- **`IMPORTANCE_DEFAULT` (0.5) and `IMPORTANCE_STARRED` (1)** in `recallModel.ts`, because the
+  scheduler, the store and the control all have to agree on them. 0.5 → a 0.905 retention
+  target, 1 → 0.95: roughly a third less forgetting allowed before the card comes back round.
+- **`setUnitImportance(userId, unitId, importance)`** in `recallStorage.ts`, modelled directly
+  on `applyExamDateToMemory`. It writes the unit **and re-dates that unit's memory rows in the
+  same transaction**, which is the part that is easy to miss: a retention target that is not
+  applied to the row it governs changes nothing until the next review, so starring would look
+  like it did nothing for days. Returns `false` when the value is unchanged, so a second tap
+  does not rewrite rows and wake every listener.
+- **Ownership is checked inside the transaction**, not trusted from the caller: the units store
+  is keyed by unit id alone and a unit id is just `deckId::conceptId`, so a stale session could
+  otherwise re-date another account's rows.
+- **`unitImportance(userId, unitId)`** for the control's initial state, `null` for a concept the
+  engine has never imported.
+- **`ConceptStar`** in `ConceptDebrief` — the shared post-answer surface, which is the right
+  moment: the student has just found out whether they know this, which is the only time they
+  can say whether it matters. Labelled ("Star this concept" / "Starred - shown more often"),
+  not a bare glyph, for the reason recorded in `feedback_no_hover_only_affordances`: there is
+  no hover on the phone this ships to, so a lone star cannot say whether it is state or an
+  action. Optimistic, and it puts the star back if the write throws.
+
+### Two judgment calls worth knowing
+
+**Unstarring returns to `IMPORTANCE_DEFAULT`, never to 0.** Zero is a real statement —
+"actively deprioritise this" — and no control in the app makes it. Unstarring means "no
+signal", which is the midpoint. Asserted in the tests.
+
+**The control renders nothing until the store answers.** A star that shows unstarred while the
+read is in flight flips under the student's thumb, and a tap in that window writes the value it
+is already at.
+
+### The limitation to state plainly
+
+**A star is device-local and does not survive a reinstall.** Units live in IndexedDB and do not
+sync yet — `recallStorage`'s own header says syncing these stores to Postgres is "the next
+phase". `reviews` is the asset that survives, and importance is the one thing a review log
+cannot be used to re-derive, because it is intent rather than evidence. Whoever lands unit sync
+should carry `importance` with it; `recallSync.ts` already reads it per unit for its re-dating.
+
+19 new tests (10 on the control, 9 unchanged on the debrief once `ConceptStar` was stubbed there
+alongside `ConceptAsk` — both are features of their own with their own files). 562/562 across 36
+files, tsc and eslint clean, clean build.
+
+**Not device-verified.** It is client-side, so it needs a `DEVTOOLS=1` APK rebuild and a study
+session on the phone to confirm the control appears at the right moment and the star survives a
+reopen.

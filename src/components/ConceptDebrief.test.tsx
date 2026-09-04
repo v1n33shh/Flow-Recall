@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { Concept } from "@/lib/types";
 
-// ConceptAsk is a whole feature of its own (a textarea, a fetch, saved history);
-// stubbed so this file tests the debrief's asymmetry and nothing else.
+// Both of the debrief's composed features are whole features of their own - a textarea
+// and a fetch, an IndexedDB read and a scheduler write - and both reach for a session.
+// Stubbed so this file tests the debrief's asymmetry and nothing else; each has its own
+// file beside it.
 vi.mock("@/components/ConceptAsk", () => ({ default: () => null }));
+vi.mock("@/components/ConceptStar", () => ({ default: () => null }));
 
 const { default: ConceptDebrief } = await import("@/components/ConceptDebrief");
 

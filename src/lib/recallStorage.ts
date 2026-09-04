@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Deck } from "./types";
 import { coupleSibling, COUPLING_ON_LAPSE, COUPLING_ON_SUCCESS, desiredRetentionFor, intervalFor, nextState, AGAIN } from "./fsrs";
 import {
+  IMPORTANCE_DEFAULT,
   type Confidence,
   type KnowledgeUnit,
   type MemoryRecord,
@@ -782,6 +783,80 @@ export async function applyExamDateToMemory(
   await txDone(tx);
   if (moved > 0) notifyRecallUpdate();
   return moved;
+}
+
+/** Star, or unstar, one concept.
+ *
+ * `importance` is the one input the scheduler takes from the student rather than from
+ * their answers: `desiredRetentionFor` turns it into a retention target, so a starred
+ * concept is allowed to be forgotten less and therefore comes back round sooner and
+ * more often. Nothing wrote it before this - every unit carried the flat
+ * IMPORTANCE_DEFAULT that `unitsFromDeck` gives it, so the whole mechanism was inert.
+ *
+ * Re-dates the concept's memory rows in the SAME transaction, exactly as
+ * applyExamDateToMemory does for a deck's exam date and for the same reason: a
+ * retention target that is not applied to the row it governs changes nothing until the
+ * next review, so starring would appear to do nothing for days.
+ *
+ * Returns false when nothing changed - a second tap on an already-starred concept must
+ * not rewrite rows and wake every listener for a repaint that says the same thing.
+ *
+ * Device-local, like everything else in this file: units do not sync yet (see the
+ * header), so a star does not reach the student's other devices and does not survive a
+ * reinstall. `reviews` is the asset that survives; importance is intent, and intent is
+ * the one thing a review log cannot be used to re-derive. */
+export async function setUnitImportance(
+  userId: string,
+  unitId: string,
+  importance: number,
+  now = Date.now(),
+): Promise<boolean> {
+  const db = await openDb();
+  const tx = db.transaction([UNITS_STORE, MEMORY_STORE], "readwrite");
+  const units = tx.objectStore(UNITS_STORE);
+
+  const unit = await requestToPromise<KnowledgeUnit | undefined>(units.get(unitId));
+  // Ownership checked here rather than trusted from the caller: the units store is
+  // keyed by unit id alone, and a unit id is derivable from a deck id and a concept id,
+  // so a stale session could otherwise re-date another account's rows.
+  if (!unit || unit.userId !== userId) return false;
+
+  const next = clampImportance(importance);
+  if (unit.importance === next) return false;
+  units.put({ ...unit, importance: next, updatedAt: now } satisfies KnowledgeUnit);
+
+  // Same computation as applyExamDateToMemory - the exam date and the star are two
+  // inputs to one retention target, so both have to be read to move either.
+  const examDays = examDaysByDeck(now).get(unit.sourceDeckId) ?? null;
+  const desiredRetention = desiredRetentionFor(next, examDays);
+  const memory = tx.objectStore(MEMORY_STORE);
+  const mine = await requestToPromise<MemoryRecord[]>(
+    memory.index(USER_UNIT_INDEX).getAll(IDBKeyRange.only([userId, unitId])),
+  );
+  for (const row of mine) {
+    const dueAt = row.lastReviewedAt + intervalFor(row.stability, desiredRetention) * MS_PER_DAY;
+    if (row.desiredRetention === desiredRetention && row.dueAt === dueAt) continue;
+    memory.put({ ...row, desiredRetention, dueAt } satisfies MemoryRecord);
+  }
+
+  await txDone(tx);
+  notifyRecallUpdate();
+  return true;
+}
+
+/** The star's current state for one concept, or null when the unit has never been
+ * imported - which is what the feed sees for a card being reviewed straight off a deck
+ * that predates the engine. */
+export async function unitImportance(userId: string, unitId: string): Promise<number | null> {
+  const db = await openDb();
+  const tx = db.transaction(UNITS_STORE, "readonly");
+  const unit = await requestToPromise<KnowledgeUnit | undefined>(tx.objectStore(UNITS_STORE).get(unitId));
+  return unit && unit.userId === userId ? unit.importance : null;
+}
+
+function clampImportance(value: number): number {
+  if (!Number.isFinite(value)) return IMPORTANCE_DEFAULT;
+  return Math.min(1, Math.max(0, value));
 }
 
 // ── Sync ─────────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import type { Concept } from "@/lib/types";
 import type { Confidence } from "@/lib/recallModel";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
+import ConceptStar from "./ConceptStar";
 
 /** What the student is told once a card is resolved, shared by every challenge
  * format so no two of them can disagree about it.
@@ -197,6 +198,12 @@ export default function ConceptDebrief({
         </>
       )}
 
+      {/* Both live here rather than in each challenge format, for the reason this whole
+          component exists: three formats resolving a card three different ways is how
+          they come to disagree. This is also the moment a star is worth offering - the
+          student has just found out whether they know this, which is the only time they
+          can say whether it matters. */}
+      <ConceptStar unitId={unitId} />
       <ConceptAsk unitId={unitId} concept={concept} />
     </div>
   );

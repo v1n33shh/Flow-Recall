@@ -64,14 +64,31 @@ export type Confidence = "guessed" | "knew-it";
  * unchanged while the engine tracks units underneath. `sourceDeckId` is the
  * provenance available today - a real span reference into the source document
  * replaces it once generation carries one. */
+/** What a unit's `importance` is worth before the student has said anything.
+ *
+ * 0.5 rather than 0: the midpoint is "no signal either way", and `desiredRetentionFor`
+ * reads it as a 0.905 retention target. Zero is a real statement - "actively
+ * deprioritise this" - and no control in the app makes it, which is why unstarring
+ * returns here rather than to the floor. */
+export const IMPORTANCE_DEFAULT = 0.5;
+
+/** A starred concept. The top of the range, giving a 0.95 retention target against
+ * 0.905 - roughly a third less forgetting allowed before it comes back round. */
+export const IMPORTANCE_STARRED = 1;
+
 export type KnowledgeUnit = {
   id: string;
   userId: string;
   sourceDeckId: string;
   label: string;
-  /** 0-1. Uniform for now: nothing measures it yet, so pretending otherwise
-   * would be a fabricated signal. Wired to real evidence (source dwell,
-   * highlights, syllabus match) in a later phase. */
+  /** 0-1, and the one number the scheduler takes from the student rather than from
+   * their answers - `desiredRetentionFor` turns it into a retention target, so a
+   * higher value is scheduled to be forgotten less and therefore reviewed sooner.
+   *
+   * IMPORTANCE_DEFAULT until the student stars the concept, which is currently the
+   * only thing that writes it (see setUnitImportance). Automatic evidence - source
+   * dwell, highlights, syllabus match - is a later phase; inventing it before it is
+   * measured would be a fabricated signal. */
   importance: number;
   concept: Concept;
   createdAt: number;
@@ -149,7 +166,7 @@ export function unitsFromDeck(deck: Deck, userId: string, now = Date.now()): Kno
     userId,
     sourceDeckId: deck.id,
     label: concept.concept,
-    importance: 0.5,
+    importance: IMPORTANCE_DEFAULT,
     concept,
     createdAt: now,
   }));

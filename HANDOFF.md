@@ -1,7 +1,11 @@
 # FlowRecall — Handoff
 
-**Written 2026-09-04, end of day. Supersedes the 2026-09-03 version entirely** — earlier ones are in
-`git log --follow -- HANDOFF.md`. Everything still open from that version is carried forward in §8.
+**Written 2026-09-04, end of day; §1, §6 and §9 rewritten 2026-09-05. Supersedes the 2026-09-03
+version entirely** — earlier ones are in `git log --follow -- HANDOFF.md`. Everything still open from
+that version is carried forward in §8.
+
+§2 through §5, §7 and §8 are 09-04's and still stand; they are history and measurements, not status.
+**§1, §6 and §9 are the only sections that describe where things are now.**
 
 ---
 
@@ -9,45 +13,52 @@
 
 | | |
 |---|---|
-| **Tests** | 478 passed / 478 across 31 files, `npm test` exit 0 |
+| **Tests** | 509 passed / 509 across 32 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
-| **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating today (reader hook deps, unused `createAnthropic`) |
-| **Build** | `npm run build` succeeds |
-| **Git** | 3 commits **ahead** of `origin/main`. Tree clean apart from untracked `test-models.mjs` (scratch, deliberately uncommitted) |
-| **Deployed** | `06c662c` **is live** — pushed and auto-deployed to production at 14:27 IST, three minutes after the 14:24 commit |
-| **Database** | Migration `20260904150000_add_generation_request_allowance` **applied to Supabase**. `prisma migrate status` → up to date |
-| **Device** | Release APK (`DEVTOOLS=1` build) installed on the CPH2001. Library intact — 2 decks, signed in, plan PRO |
+| **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
+| **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
+| **Git** | **1 commit ahead** of `origin/main`: the deck-deduplication and continuous-generation work, §9. Tree clean. `test-models.mjs` is now gitignored rather than untracked-and-easily-committed |
+| **Deployed** | `0f60bd0` is live. **Everything described in §2 is serving students** — see below |
+| **Database** | All 10 migrations applied to Supabase, `20260904210000_add_deck_source_key` among them (applied 09-05). `prisma migrate status` → up to date |
+| **Device** | Release APK (`DEVTOOLS=1` build) installed on the CPH2001. Library intact — 2 decks, signed in, plan PRO. **Nothing has been re-tested on it since the 09-04 run** — §6 |
 | **Groq** | Developer plan **active** (billing confirmed). But the API key still receives free-tier limits — the one unresolved problem, §5 |
-
-**A correction to what I said repeatedly during the session.** I kept saying "four commits unpushed, none of
-the server-side work is live." That was wrong, and it matters for reading the rest of this file. `06c662c`
-was pushed and has been in production since 14:27, and it is the largest of the four: the worker extraction,
-the sentence-aware chunker, `runChunks`, the 429 pass-through, the `RetryError` unwrap and `maxRetries: 0`.
-**The core fix is already serving students.** Only the three later commits are not.
 
 ### What is and is not deployed
 
-| commit | time | contents | live? |
-|---|---|---|---|
-| `06c662c` | 14:24 | PdfDropzone worker extraction, `chunkText`, `runChunks`, route 429 + `retryable`, `RetryError` unwrap, `maxRetries: 0` | **yes** |
-| `a885db3` | 14:35 | ±25% jitter on the retry wait | no |
-| `1d6cd31` | 15:15 | per-request generation budget, usage logging, `FREE_MODEL` env var | no |
-| `72a69b0` | 16:20 | `gpt-oss-120b` switch, `groqProviderOptions()` / `reasoningEffortFor()` | no |
+**All of 2026-09-04 shipped.** `origin/main` is at `0f60bd0`. The 09-04 version of this section listed
+`a885db3`, `1d6cd31` and `72a69b0` as unpushed; they went out, along with two commits made after it was
+written:
 
-The migration is applied while the code that reads those columns (`1d6cd31`) is **not** deployed. That is
-safe — extra columns with defaults are invisible to the old code — but it does mean the generation budget is
-not yet enforcing anything in production.
+| commit | contents | live? |
+|---|---|---|
+| `06c662c` | PdfDropzone worker extraction, `chunkText`, `runChunks`, route 429 + `retryable`, `RetryError` unwrap, `maxRetries: 0` | yes |
+| `a885db3` | ±25% jitter on the retry wait | yes |
+| `1d6cd31` | per-request generation budget, usage logging, `FREE_MODEL` env var | yes |
+| `72a69b0` | `gpt-oss-120b` switch, `groqProviderOptions()` / `reasoningEffortFor()` | yes |
+| `829b25e` | the temporal-dead-zone fix that broke the production build — §7 | yes |
+| `0f60bd0` | rebuild so `NEXT_PUBLIC_GROQ_FREE_MODEL` is inlined | yes |
+| `fda0719` | deck deduplication + continuous generation — §9 | **no** |
 
-### The 478 tests include live-database integration tests
+So the per-request generation budget **is** enforcing in production now, which the 09-04 note said it was
+not, and `gpt-oss-120b` is what free requests are billed at.
+
+**One thing left unverified.** Whether `GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL` are actually
+set on Vercel production. `0f60bd0`'s message strongly implies they are — that rebuild has no other
+purpose — but reading the production environment was not permitted during the 09-05 session, so it is an
+inference, not a check. `vercel env ls production` settles it, and until it does, do not treat "the free
+model in production is `gpt-oss-120b`" as confirmed. Both must be identical; §6 explains why.
+
+### The 509 tests include live-database integration tests
 
 `src/lib/freeQuotaDb.test.ts` and `src/lib/clozeGradeRateLimit.test.ts` hit the real Supabase Postgres on
 purpose: the guarantee under test is Postgres taking a row lock and re-evaluating an `UPDATE`'s `WHERE`
 against the committed row, which no mock can demonstrate. They are ~180s of the ~195s run and they fail
-whenever the pooler is unreachable. **Check connectivity before reading a red run as a regression.**
+whenever the pooler is unreachable. **Check connectivity before reading a red run as a regression.** They
+run about 140s of the ~145s total, so a full `npm test` is not a fast loop — `npx vitest run <file>` is.
 
 ---
 
-## 2. What today changed
+## 2. What 2026-09-04 changed
 
 The task was "fix the flashcard issue" — uploading a large PDF froze the phone and then died partway
 through with a 502 or a 429. The 2026-09-03 handoff had diagnosed three causes. There were five, and the
@@ -316,40 +327,71 @@ Do these in order and stop at the first that resolves it.
   > `x-ratelimit-limit-requests: 1000` with `x-ratelimit-reset-requests: 1m26.4s`, which are the free-tier
   > values. Organization `org_01kwhcy15eez7bnn3ddqhka6kj`. Please apply the Developer limits to my API keys.
 
-### 2. Push the three commits
+### 2. Confirm the two Vercel env vars are set (a check, not a change)
+
+```bash
+vercel env ls production | grep GROQ
+```
+
+Both `GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL` should read `openai/gpt-oss-120b`. `0f60bd0` was a
+rebuild made for exactly this reason, so they almost certainly are — but it has not been verified, and the
+failure is silent in a way worth ruling out: they must be **identical**, because the route's request enum is
+built from the server one while the client dropdown reads the public one, so drift produces a 400 from the
+app's own schema rather than a comprehensible error from Groq. `NEXT_PUBLIC_*` is inlined at build time, so
+changing either one needs a redeploy, not just a `vercel env add`.
+
+Vercel CLI is authenticated as `levinblus-2527`, project `flow-recall` (`prj_QwBfxiWwXox7ikfHp37nWTQKzBuV`),
+already linked via `.vercel/repo.json`.
+
+### 3. Deploy §9
+
+The migration it needs is **already applied** (`20260904210000_add_deck_source_key`, 09-05), and it is
+additive and nullable, so the currently-deployed code cannot see it. Nothing else gates the push:
 
 ```bash
 git push origin main
 ```
 
-Vercel auto-deploys from `main` (proven today: 14:24 commit → 14:27 production deploy). Nothing else is
-needed to ship §2f and §2g.
+Vercel auto-deploys from `main` (proven 09-04: a 14:24 commit reached production at 14:27).
 
-### 3. Set the two Vercel env vars — AFTER step 2, not before
-
-```bash
-vercel env add GROQ_FREE_MODEL production              # openai/gpt-oss-120b
-vercel env add NEXT_PUBLIC_GROQ_FREE_MODEL production  # openai/gpt-oss-120b
-```
-
-**Order matters.** The deployed code (`06c662c`) still has `FREE_MODEL` hardcoded to `qwen/qwen3.6-27b` — the
-env-var read arrived in `1d6cd31`. Setting these before pushing does nothing. Setting them after pushing needs
-a redeploy to take effect, since `NEXT_PUBLIC_*` is inlined at build time.
-
-They must be **identical**: the route's request enum is built from the server one and the client dropdown reads
-the public one, and drift means a 400 from the schema rather than from Groq.
-
-Vercel CLI is authenticated as `levinblus-2527`, project `flow-recall` (`prj_QwBfxiWwXox7ikfHp37nWTQKzBuV`),
-already linked via `.vercel/repo.json`.
+`/api/sync` starts writing `Deck.sourceKey` the moment this lands, which is why the migration had to go
+first — a deploy ahead of the `ALTER` would have made every deck push fail.
 
 ### 4. Re-run the device test
 
-Rebuild (`DEVTOOLS=1 npm run build:apk` → `./gradlew assembleRelease` → install the **release** APK only,
-never the debug build), re-run the real Osho PDF, and confirm three things:
+**Two separate things now need it**, and the second has never been on hardware at all.
+
+Rebuild (`rm -rf .next` first — §7 — then `DEVTOOLS=1 npm run build:apk` → `./gradlew assembleRelease` →
+install the **release** APK only, never the debug build) and re-run the real Osho PDF.
+
+Carried over from 09-04, still unverified because the rate limit blocked it:
 
 - all 20 parts complete with no 429
 - per-request round trips drop from 27–58 s to the ~2.5 s the model actually takes
 - `generationRequestsUsed` on the user row lands at exactly 20, and the logged `outputTokens` near 1079
+
+New, for §9 — and note that **the whole point of the feature is a second upload**, so this needs two runs
+of the same PDF, not one:
+
+- upload the Osho PDF a second time and confirm the recognition card appears, naming the existing deck with
+  the right card count and sections-left count, **before any request is sent** (patch `window.fetch` to
+  watch for that — CapacitorHttp means CDP shows no network events; §7)
+- "Continue this deck" appends to that deck and adds no second library row
+- the allowance line on the card matches `/api/account/usage`
+- "Stop" is honoured at the next section boundary, and the deck's `pendingChunks` afterwards is exactly the
+  sections that were not generated — tap again and it resumes there, generating nothing twice
+- kill the app mid-run and confirm the same invariant survives it (this is what batching is *for*)
+- a deck created before this change still has no `sourceKey`, so re-uploading its source must fall back to
+  making a new deck rather than matching the wrong one
+
+### 5. Watch localStorage on that device run
+
+`§9`'s storage handling is the one part with no device evidence behind it, only tests. Read
+`localStorage["flowrecall:savedDecks"].length` over CDP before and after a continuous run. A single book's
+`pendingChunks` is on the order of a megabyte of source text before a single card is added, and the comment
+in `src/lib/sourceKey.ts` records a textbook of 6,027,603 characters on this phone — so the quota is not a
+theoretical concern, and how close a real deck comes to it is worth knowing as a number rather than an
+argument.
 
 ---
 
@@ -448,3 +490,120 @@ recursive merges. Build- and CLI-time config merging, not the request path. The 
 - **Play Store**: internal testing release "1 (1.0)" is live. `versionCode` **must** be bumped in
   `android/app/build.gradle` for every upload. Play App Signing re-signs, so a sideloaded APK cannot upgrade
   in place — say so wherever the APK is offered.
+
+---
+
+## 9. Deck deduplication and continuous generation — `fda0719`, committed, not deployed
+
+One commit, ahead of `origin/main`. Started in the session after the 09-04 handoff and wound down
+mid-flight by a gateway error; reviewed, finished and verified on 09-05. The 09-04 version of this section
+called it "partially built" and listed nine files — it is neither partial nor nine files, and it is larger
+than its stated goal.
+
+### The problem it solves
+
+`/ingest` had no idea it had seen a source before. Re-uploading a PDF — which is what a student does to
+carry on with a book, because `MAX_CHUNKS = 20` means one upload only ever generates the first 20 sections —
+produced a **brand new deck** beside the old one, with its own review history, and re-paid for cards the
+student already owned. Finishing a 404-section book meant either ~20 uploads each spawning a library row, or
+~100 taps of "Generate Next Section" at four sections a tap.
+
+### a) A source has an identity — `src/lib/sourceKey.ts` (new)
+
+`sourceKeyFor(text)` is a whitespace-insensitive 64-bit-ish key (two 32-bit passes plus a character count).
+Nothing else about an upload is stable: the filename is whatever the download was called, the title is typed
+by the student, and the consumed source text is not kept. The text is.
+
+Two things in there are load-bearing and easy to "simplify" wrongly:
+
+- **Whitespace is collapsed during the walk, not by `.replace(/\s+/g, " ")` first.** The comment records a
+  textbook of 6,027,603 characters on the user's phone; normalising first allocates a second copy of that.
+- **The whitespace set is not the ASCII five.** pdf.js reconstructs spacing from glyph positions and emits
+  NBSP, thin/en/em spaces, narrow NBSP and a leading BOM. If those counted as ordinary characters, a
+  re-extraction of the *same file* would key differently — the one thing this must never do.
+
+Not cryptographic on purpose: it matches a student's re-upload against the handful of decks in their own
+library, nobody is constructing collisions against their own flashcards, and `crypto.subtle` is async, which
+would put a promise in the middle of the upload path for no gain.
+
+### b) `Deck.sourceKey`, synced, never backfilled
+
+Schema, migration `20260904210000_add_deck_source_key` (**applied**), `src/lib/types.ts`, and `/api/sync`
+in both directions so a re-upload is recognised on whichever device the student is holding.
+
+**Deliberately not backfilled, and it cannot be.** The source text a deck consumed is not kept, and
+`pendingChunks` is only the shrinking remainder — no identity at all. An old deck therefore never matches,
+which degrades to *today's* behaviour (a new deck) rather than to a wrong match. Anyone tempted to derive a
+key from `pendingChunks` should read that twice.
+
+`findDeckBySourceKey` answers with the **most recently touched** match, because two decks can legitimately
+share a key once a student has chosen "start a separate deck", and "the book I'm working on" is the recent one.
+
+### c) `saveDeck` takes an options bag now
+
+`pendingChunks`, `model`, `userId` and `sourceKey` are all `string | undefined`-ish and would have sat
+adjacent as positional parameters, where transposing two type-checks cleanly and silently records a user id
+as a model. Both call sites are in `src/app/ingest/page.tsx`.
+
+### d) The recognition card — nothing is spent before the student chooses
+
+`handleGenerate` computes the key and, on a match, **returns before chunking**. Every request in that flow
+sits behind a button on the card: "Continue this deck", "Start a separate deck", or "Study this deck" when
+there is nothing left to generate. Continuing generates from **the deck's own `pendingChunks`**, not from the
+text just uploaded — that is the whole point, and it is what makes nothing get regenerated.
+
+The card also shows what one tap can finish, from `/api/account/usage` (new, read-only — it must not roll the
+stored counter over, or a page load becomes a write). Omitted entirely when unknown rather than guessed.
+
+### e) One tap finishes the book — `runChunksContinuous`
+
+`src/app/page.tsx`'s "Generate Next Section (4 chunks)" is now "Generate all N remaining sections", and both
+screens share `runChunksContinuous`. Three properties hold it together:
+
+- **Batches exist for persistence, not pacing.** `onBatch` fires every `CONTINUE_BATCH_SIZE` (4) sections, so
+  cards reach the library as they are made. The invariant every exit path holds: the `remaining` handed to the
+  last `onBatch` is exactly the sections that have not been generated. A run killed at section 90 of 121 has
+  90 saved and resumes at 91.
+- **`shouldStop` is polled between batches, never mid-batch.** The requests in a batch in flight are already
+  paid for. "Stop" means "stop after this section", and the button says so while it finishes.
+- **The widened rate-limit spacing carries across batch boundaries.** Restarting each batch at
+  `BASE_CHUNK_DELAY_MS` would re-trip the same 429 and spend a retry rediscovering it, every batch, for the
+  length of a book.
+
+Both `shouldStop` flags are **refs, not state** — the runner polls them from inside a loop that closed over
+the render that started it, so a state value read there is forever false.
+
+### f) A full device no longer costs money — added 09-05
+
+Found while reviewing (e), not reported by anything. `persistDecks` was a bare
+`localStorage.setItem`, and `runChunksContinuous` called `onBatch` unguarded — so a `QuotaExceededError`
+escaped a function documented as never throwing, the batch's paid-for cards were lost, and because the failed
+write is *also* the write that would have shrunk `pendingChunks`, the next tap regenerated and re-paid for the
+same sections. Forever, four sections at a time, with a raw `DOMException` on screen.
+
+This is not a new bug — `appendConceptsToDeck` has always written this way — but continuous generation is what
+makes the quota reachable, and it is precisely the failure class §2e and §2f exist to close.
+
+- `persistDecks` raises a typed `DeckStorageFullError` (matched on DOMException **name and code**, across
+  Chromium's `QuotaExceededError`/22 and Gecko's `NS_ERROR_DOM_QUOTA_REACHED`/1014 — never on message text).
+  Non-quota failures rethrow untouched, so a real bug is not hidden behind advice that cannot help.
+- `runChunksContinuous` catches `onBatch` and ends the run with `PERSIST_FAILED_CODE`, and its `remaining`
+  starts at **this** batch, not after it — nothing unwritten may be reported as generated.
+- It stops immediately rather than working through the rest of the book: every later batch would spend a
+  generation request on cards the same write is going to drop. Tested — 8 sections queued, 2 requests made.
+- Both screens special-case the code, because for it "tap again to carry on" is wrong *and* "we kept N cards"
+  is false.
+- `/ingest`'s catch-path `saveDeck` is wrapped. It could throw the same error a second time and abandon
+  `handleGenerate` with no message at all — twenty chunks paid for and nothing on screen.
+
+### Verified 09-05
+
+509/509 tests across 32 files (`npm test` exit 0, +31 over 09-04's 478 — sourceKey 8, storage 11,
+runChunksContinuous 12); `tsc --noEmit` clean; `eslint src` 0 errors and the same 12 pre-existing warnings;
+`rm -rf .next && npm run build` exit 0 with `/api/account/usage` in the route manifest; the migration applied.
+
+### Not verified
+
+**None of it has run on the device.** That is §6 step 4, and it is the only thing standing between this commit
+and being finished — the tests cover the runner's invariants, not that the recognition card appears when a
+student re-drops the same PDF into a WebView.

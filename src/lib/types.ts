@@ -88,6 +88,16 @@ export type Deck = {
    * falling back to the free model regardless of the user's actual plan.
    * Optional/undefined for decks saved before this field existed. */
   model?: string;
+  /** Identity of the text this deck was generated from - `sourceKeyFor` in
+   * sourceKey.ts over the whole upload. What makes a second upload of the same
+   * PDF land *in* this deck instead of beside it in the library, which is what a
+   * student means by "continue my book".
+   *
+   * Cannot be backfilled: the source text a deck consumed is not kept, and
+   * `pendingChunks` is only the shrinking remainder, so it is no identity at all.
+   * Decks saved before this field existed therefore never match, and degrade to
+   * exactly today's behaviour - a new deck - rather than to a wrong match. */
+  sourceKey?: string;
   /** Last local change, for sync's last-write-wins. Optional because every deck
    * saved before sync existed has none - such a deck falls back to createdAt,
    * which is the honest reading: nothing has touched it since. */

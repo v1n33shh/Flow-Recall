@@ -154,8 +154,59 @@ export function getSavedDecks(): Deck[] {
   return cachedDecks;
 }
 
+/** A deck write localStorage had no room for.
+ *
+ * Its own type because it is the one storage failure a caller can act on, and the
+ * one that must never surface as a generic "something went wrong". The write that
+ * failed is the same write that would have marked those sections generated, so
+ * without it the student's next tap regenerates - and re-pays for - work that has
+ * already been done, and the tap after that does it again. See runChunksContinuous,
+ * which ends a run on this rather than spending another batch it cannot keep.
+ *
+ * The message is the student-facing one on purpose: every path that catches this
+ * shows it directly, and "delete a deck you've finished" is the only thing that
+ * actually resolves it. */
+export class DeckStorageFullError extends Error {
+  constructor() {
+    super(
+      "Your device is out of space for saved decks. Delete a deck you've finished, then tap again to carry on.",
+    );
+    this.name = "DeckStorageFullError";
+  }
+}
+
+/** Quota exhaustion, under every name browsers actually throw it as.
+ *
+ * Chromium and WebKit raise `QuotaExceededError` (legacy code 22); Gecko raises
+ * `NS_ERROR_DOM_QUOTA_REACHED` (1014). Matched on name and code rather than
+ * message, which is stable nowhere - and the app's Android WebView is whichever
+ * Chromium the device shipped with. */
+function isQuotaExceeded(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return (
+      error.name === "QuotaExceededError" ||
+      error.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      error.code === 22 ||
+      error.code === 1014
+    );
+  }
+  // Not every WebView throws a real DOMException; some throw a plain Error whose
+  // name is all that is left of the quota. Checked by name only - never by message.
+  return error instanceof Error && error.name === "QuotaExceededError";
+}
+
 function persistDecks(next: Deck[]): void {
-  window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  try {
+    window.localStorage.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    // Typed and rethrown, never swallowed. A silent no-op here would be the worst
+    // outcome available: every reader below still returns the decks as they were
+    // before the write, so a run would look like it was saving work it had dropped.
+    if (isQuotaExceeded(error)) throw new DeckStorageFullError();
+    throw error;
+  }
+  // Only on a write that landed. A listener woken by a failed write would re-read
+  // the same unchanged decks and report them as fresh.
   notifyLocalStorageUpdate();
 }
 
@@ -173,14 +224,24 @@ export function mergeRemoteDecks(remote: readonly Deck[]): void {
  * first. `pendingChunks` carries any leftover text the Speed-First Cap
  * didn't process yet - see appendConceptsToDeck for JIT-generating it later.
  * `model` records what generated it, so a later continuation reuses the same
- * model instead of silently falling back to the free one. */
+ * model instead of silently falling back to the free one. `sourceKey` records
+ * which text it came from, so a re-upload finds this deck rather than making a
+ * second one - see findDeckBySourceKey. */
 export function saveDeck(
   title: string,
   concepts: Concept[],
-  pendingChunks: string[] = [],
-  model?: string,
-  userId?: string,
+  // An options bag rather than four more positional parameters. `model`, `userId`
+  // and `sourceKey` are all `string | undefined` and would sit adjacent, where
+  // transposing two of them type-checks cleanly and silently records a user id as
+  // a model - the kind of mistake that only shows up as a deck nobody owns.
+  options: {
+    pendingChunks?: string[];
+    model?: string;
+    userId?: string;
+    sourceKey?: string;
+  } = {},
 ): Deck {
+  const { pendingChunks = [], model, userId, sourceKey } = options;
   const now = Date.now();
   const deck: Deck = {
     id: crypto.randomUUID(),
@@ -191,10 +252,38 @@ export function saveDeck(
     concepts,
     ...(pendingChunks.length > 0 ? { pendingChunks } : {}),
     ...(model ? { model } : {}),
+    ...(sourceKey ? { sourceKey } : {}),
   };
 
   persistDecks([deck, ...getAllDeckRows()]);
   return deck;
+}
+
+/** The deck this text has already been made into cards from, or null.
+ *
+ * Reads `getSavedDecks()` so tombstones are filtered in one place, as everything
+ * above this file relies on. Two decks can share a key - a student who chose
+ * "start a separate deck" has said they want that - so this answers with the most
+ * recently touched one, which is what "the book I'm working on" means.
+ *
+ * `userId` scoping follows the convention Deck.userId already documents: decks
+ * live in localStorage, which is per device, and a deck saved before sync existed
+ * carries no owner and is treated as the current user's. */
+export function findDeckBySourceKey(sourceKey: string, userId?: string): Deck | null {
+  if (!sourceKey) return null;
+  let best: Deck | null = null;
+  for (const deck of getSavedDecks()) {
+    if (deck.sourceKey !== sourceKey) continue;
+    if (userId && deck.userId && deck.userId !== userId) continue;
+    if (!best || touchedAt(deck) > touchedAt(best)) best = deck;
+  }
+  return best;
+}
+
+/** When a deck last changed. `updatedAt` is absent on every deck saved before sync
+ * existed, and createdAt is the honest reading for those: nothing has touched it. */
+function touchedAt(deck: Deck): number {
+  return deck.updatedAt ?? deck.createdAt;
 }
 
 /** Appends a JIT-generated batch of concepts to an already-saved deck and

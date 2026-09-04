@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runChunks } from "./ingestChunks";
+import {
+  PERSIST_FAILED_CODE,
+  runChunks,
+  runChunksContinuous,
+  type ContinuousProgress,
+} from "./ingestChunks";
 
 type Reply = { status: number; body: unknown; headers?: Record<string, string> };
 
@@ -325,5 +330,199 @@ describe("runChunks", () => {
     await vi.runAllTimersAsync();
     await promise;
     expect(seen).toEqual([1, 2, 3]);
+  });
+});
+
+/** Drives runChunksContinuous through fake timers, recording what it persisted and
+ * what it reported, the way a screen would. */
+async function runContinuous(
+  chunks: string[],
+  options: {
+    batchSize?: number;
+    countsFirstChunk?: boolean;
+    stopAfterBatches?: number;
+    /** 1-based batch whose persist throws, standing in for a full device. */
+    throwOnBatch?: number;
+  } = {},
+) {
+  const batches: { concepts: string[]; remaining: string[] }[] = [];
+  const progress: ContinuousProgress[] = [];
+  const promise = runChunksContinuous(chunks, {
+    model: "qwen/qwen3.6-27b",
+    countsFirstChunk: options.countsFirstChunk ?? false,
+    batchSize: options.batchSize ?? 2,
+    shouldStop: () =>
+      options.stopAfterBatches !== undefined && batches.length >= options.stopAfterBatches,
+    onBatch: (concepts, remaining) => {
+      if (options.throwOnBatch !== undefined && batches.length + 1 === options.throwOnBatch) {
+        throw new Error("Your device is out of space for saved decks.");
+      }
+      batches.push({ concepts: concepts.map((c) => c.id), remaining: [...remaining] });
+    },
+    onProgress: (p) => progress.push({ ...p }),
+  });
+  await vi.runAllTimersAsync();
+  return { result: await promise, batches, progress };
+}
+
+describe("runChunksContinuous", () => {
+  it("works through every section and returns all of their cards", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    const { result } = await runContinuous(["a", "b", "c", "d", "e"], { batchSize: 2 });
+
+    expect(calls.map((c) => c.text)).toEqual(["a", "b", "c", "d", "e"]);
+    expect(result.concepts).toHaveLength(5);
+    expect(result.stoppedBy).toBe("exhausted");
+    expect(result.remaining).toEqual([]);
+    expect(result.error).toBeNull();
+  });
+
+  it("persists each batch as it completes, with remaining equal to the ungenerated sections", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { batches } = await runContinuous(["a", "b", "c", "d", "e"], { batchSize: 2 });
+
+    // The invariant the whole feature rests on: after every write, `remaining` is
+    // exactly what has not been generated, so an app kill resumes cleanly.
+    expect(batches.map((b) => b.remaining)).toEqual([["c", "d", "e"], ["e"], []]);
+  });
+
+  it("counts only the very first section against the deck allowance", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    await runContinuous(["a", "b", "c", "d"], { batchSize: 2, countsFirstChunk: true });
+
+    expect(calls.map((c) => c.isFirstChunk)).toEqual([true, false, false, false]);
+  });
+
+  it("stops between batches when asked, keeping everything generated so far", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    const { result, batches } = await runContinuous(["a", "b", "c", "d", "e", "f"], {
+      batchSize: 2,
+      stopAfterBatches: 1,
+    });
+
+    // One batch ran; the sections after it were never sent.
+    expect(calls.map((c) => c.text)).toEqual(["a", "b"]);
+    expect(result.stoppedBy).toBe("user");
+    expect(result.concepts).toHaveLength(2);
+    expect(result.remaining).toEqual(["c", "d", "e", "f"]);
+    expect(batches).toHaveLength(1);
+    expect(result.error).toBeNull();
+  });
+
+  it("stops on a failure with remaining starting at the section that failed", async () => {
+    mockFetch([
+      { status: 200, body: cards("a") },
+      { status: 200, body: cards("b") },
+      // Not retryable, so the run gives up on this section rather than re-sending it.
+      { status: 403, body: { error: "nope", code: "SOMETHING" } },
+    ]);
+    const { result, batches } = await runContinuous(["a", "b", "c", "d", "e"], { batchSize: 2 });
+
+    expect(result.stoppedBy).toBe("error");
+    expect(result.concepts).toHaveLength(2);
+    expect(result.remaining).toEqual(["c", "d", "e"]);
+    // The failing batch produced nothing, so it must not have written - that would
+    // only bump the deck's updatedAt for a remaining list that had not changed.
+    expect(batches).toHaveLength(1);
+    expect(batches[0].remaining).toEqual(["c", "d", "e"]);
+  });
+
+  it("stops immediately on an exhausted generation budget and passes the code up", async () => {
+    const calls = mockFetch([
+      { status: 200, body: cards("a") },
+      { status: 403, body: { error: "out of budget", code: "GENERATION_BUDGET_REACHED" } },
+    ]);
+    const { result } = await runContinuous(["a", "b", "c", "d"], { batchSize: 2 });
+
+    // No `retryable` on that answer, so it is sent once - retrying three times would
+    // only delay the message by two minutes.
+    expect(calls).toHaveLength(2);
+    expect(result.code).toBe("GENERATION_BUDGET_REACHED");
+    expect(result.stoppedBy).toBe("error");
+    expect(result.remaining).toEqual(["b", "c", "d"]);
+  });
+
+  it("carries a widened rate-limit spacing across batch boundaries", async () => {
+    // Without this the next batch restarts at BASE_CHUNK_DELAY_MS and re-trips the
+    // same limit, spending one retry per section for the length of a book.
+    const calls = mockFetch([
+      { status: 429, body: { error: "slow down" } },
+      { status: 200, body: cards("c") },
+    ]);
+    await runContinuous(["a", "b", "c", "d"], { batchSize: 2 });
+
+    const gaps = calls.slice(1).map((call, i) => call.at! - calls[i].at!);
+    // Gap 0 is the retry of the rate-limited section; every gap after it - including
+    // the one spanning the batch boundary - must be a full window, not 1500ms.
+    expect(gaps.every((gap) => gap >= 62_000)).toBe(true);
+    expect(gaps).toHaveLength(4);
+  });
+
+  it("reports that it is stopping while it finishes the current section", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { progress } = await runContinuous(["a", "b", "c", "d"], {
+      batchSize: 2,
+      stopAfterBatches: 1,
+    });
+
+    // The first batch is unaware; the run only learns of the stop once that batch has
+    // written, so the ticks before it read false and the button stays "Stop".
+    expect(progress.some((p) => p.stopping)).toBe(false);
+    // One tick per section (runChunks only ticks again when it has a wait to
+    // announce), and only the two sections of the first batch ever ran.
+    expect(progress.map((p) => p.currentSection)).toEqual([1, 2]);
+    expect(progress.at(-1)?.totalSections).toBe(4);
+  });
+
+  it("counts only cards it has actually persisted", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { progress } = await runContinuous(["a", "b", "c", "d"], { batchSize: 2 });
+
+    // Nothing is claimed before onBatch has had it: a card counted early would
+    // vanish if the app died, and the number would have lied.
+    expect(progress.filter((p) => p.currentSection === 1).every((p) => p.cardsSoFar === 0)).toBe(true);
+    expect(progress.filter((p) => p.currentSection === 3).every((p) => p.cardsSoFar === 2)).toBe(true);
+  });
+
+  it("ends the run when a batch cannot be saved, rather than throwing", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { result } = await runContinuous(["a", "b", "c", "d"], {
+      batchSize: 2,
+      throwOnBatch: 1,
+    });
+
+    // The contract this holds is the whole reason the guard exists: a caller that
+    // relies on "never throws" would otherwise lose the result entirely.
+    expect(result.stoppedBy).toBe("error");
+    expect(result.code).toBe(PERSIST_FAILED_CODE);
+    expect(result.error).toBe("Your device is out of space for saved decks.");
+  });
+
+  it("leaves an unsaved batch's sections in remaining, so they are not paid for twice", async () => {
+    mockFetch([{ status: 200, body: cards("c") }]);
+    const { result, batches } = await runContinuous(["a", "b", "c", "d", "e", "f"], {
+      batchSize: 2,
+      throwOnBatch: 2,
+    });
+
+    // Batch 1 saved and shrank the queue to c-f. Batch 2 generated c and d and could
+    // not save them, so remaining must still start at "c" - reporting c-d as done
+    // would strand cards that do not exist and lose that section for good.
+    expect(batches).toHaveLength(1);
+    expect(batches[0].remaining).toEqual(["c", "d", "e", "f"]);
+    expect(result.remaining).toEqual(["c", "d", "e", "f"]);
+    expect(result.code).toBe(PERSIST_FAILED_CODE);
+  });
+
+  it("stops spending immediately on a full device instead of working through the book", async () => {
+    const calls = mockFetch([{ status: 200, body: cards("c") }]);
+    await runContinuous(["a", "b", "c", "d", "e", "f", "g", "h"], {
+      batchSize: 2,
+      throwOnBatch: 1,
+    });
+
+    // Two requests, not eight. Every later batch would generate cards the same write
+    // is going to drop, and each one costs a student a generation request.
+    expect(calls.map((c) => c.text)).toEqual(["a", "b"]);
   });
 });

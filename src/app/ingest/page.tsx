@@ -1,16 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import type { Concept } from "@/lib/types";
-import { saveDeck, setStudyDeck } from "@/lib/storage";
+import type { Concept, Deck } from "@/lib/types";
+import {
+  appendConceptsToDeck,
+  findDeckBySourceKey,
+  saveDeck,
+  setStudyDeck,
+} from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
 import { vibrateTap } from "@/lib/haptics";
 import { FREE_DECKS_PER_MONTH } from "@/lib/freeQuota";
 import { chunkText, DEFAULT_CHUNK_SIZE } from "@/lib/chunkText";
-import { runChunks } from "@/lib/ingestChunks";
+import {
+  CONTINUE_BATCH_SIZE,
+  PERSIST_FAILED_CODE,
+  runChunks,
+  runChunksContinuous,
+  type ContinuousProgress,
+} from "@/lib/ingestChunks";
+import { sourceKeyFor } from "@/lib/sourceKey";
+import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
 
 // The ids this app is realistically pinned to, with the names their makers use. A map
 // rather than a clever transform because "gpt-oss" prettifies to "Gpt Oss" and no
@@ -94,6 +107,51 @@ export default function IngestPage() {
   // as a hang - and a student who force-quits there loses the whole deck.
   const [waitingReason, setWaitingReason] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
+  // The deck this upload turns out to be a repeat of, held so the student can
+  // choose before anything is spent. Non-null means the recognition card is up and
+  // NO request has been sent - see handleGenerate.
+  const [recognised, setRecognised] = useState<{
+    deck: Deck;
+    text: string;
+    sourceKey: string;
+  } | null>(null);
+  // Progress of a continuous run over a recognised deck's leftovers, and the flag
+  // that asks it to stop. A ref, not state: runChunksContinuous polls it from
+  // inside a loop that closed over its own render, and a state value read there
+  // would be forever false.
+  const [continuing, setContinuing] = useState(false);
+  const [continueProgress, setContinueProgress] = useState<ContinuousProgress | null>(null);
+  const stopRequested = useRef(false);
+  // What is left of this month's generation allowance, for the recognition card.
+  // Null while unknown (not yet fetched, or the request failed) - the card simply
+  // omits the line rather than guessing, because a wrong number here would be worse
+  // than no number.
+  const [allowance, setAllowance] = useState<{ remaining: number; limit: number } | null>(null);
+
+  // Only while the recognition card is up, and re-read when a run finishes so a
+  // second Continue shows what the first one spent. Deliberately not fetched on page
+  // load: nothing else on this screen has a use for it.
+  const recognisedDeckId = recognised?.deck.id ?? null;
+  useEffect(() => {
+    if (!recognisedDeckId || continuing || !isAuthenticated) return;
+    let cancelled = false;
+    const tzOffset = new Date().getTimezoneOffset();
+    fetch(apiUrl(`/api/account/usage?tzOffset=${tzOffset}`), {
+      credentials: API_FETCH_CREDENTIALS,
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data || typeof data.remaining !== "number") return;
+        setAllowance({ remaining: data.remaining, limit: data.limit });
+      })
+      .catch(() => {
+        // A missing allowance line is a cosmetic loss; the server enforces the
+        // ceiling regardless, so there is nothing to recover from here.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recognisedDeckId, continuing, isAuthenticated]);
 
   const selectedIsPro = MODEL_OPTIONS.find((m) => m.id === selectedModel)?.pro ?? false;
   // A free user who picked a Pro model - the one state we hard-block generation on.
@@ -104,7 +162,10 @@ export default function IngestPage() {
     setTitleState(value);
   }
 
-  async function handleGenerate(sourceText: string = text) {
+  async function handleGenerate(
+    sourceText: string = text,
+    options: { skipRecognition?: boolean } = {},
+  ) {
     vibrateTap();
     // Without this, dropping a PDF while a pasted-text generation is still in
     // flight (handlePdfExtracted calls this unconditionally) starts a second
@@ -122,6 +183,24 @@ export default function IngestPage() {
 
     const trimmed = sourceText.trim();
     if (trimmed.length === 0) return;
+
+    // Before anything is chunked or sent: is this a source we have already made
+    // cards from? If so, offer to continue that deck and spend NOTHING until the
+    // student picks. Doing this after generating would mean paying for cards they
+    // already own, which is exactly what re-uploading costs them today.
+    const sourceKey = sourceKeyFor(trimmed);
+    if (!options.skipRecognition) {
+      const existing = findDeckBySourceKey(sourceKey, session?.user?.id);
+      if (existing) {
+        setError(null);
+        setShowPaywall(false);
+        setConcepts(null);
+        setTruncated(false);
+        setRecognised({ deck: existing, text: trimmed, sourceKey });
+        return;
+      }
+    }
+    setRecognised(null);
 
     const allChunks = chunkText(trimmed, DEFAULT_CHUNK_SIZE);
     const wasTruncated = allChunks.length > MAX_CHUNKS;
@@ -163,13 +242,12 @@ export default function IngestPage() {
       setConcepts(accumulated);
       // Auto-persist immediately so a refresh (even before the user clicks
       // "Start studying") never loses a freshly generated deck.
-      const deck = saveDeck(
-        titleRef.current,
-        accumulated,
+      const deck = saveDeck(titleRef.current, accumulated, {
         pendingChunks,
-        selectedModel,
-        session?.user?.id,
-      );
+        model: selectedModel,
+        userId: session?.user?.id,
+        sourceKey,
+      });
       setSavedDeckId(deck.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -179,15 +257,26 @@ export default function IngestPage() {
       // them and queue the rest. Done before the branching below so no path can
       // silently drop them.
       if (accumulated.length > 0) {
-        const deck = saveDeck(
-          titleRef.current,
-          accumulated,
-          [...chunks.slice(failedAtIndex), ...pendingChunks],
-          selectedModel,
-          session?.user?.id,
-        );
-        setSavedDeckId(deck.id);
-        setConcepts(accumulated);
+        try {
+          const deck = saveDeck(titleRef.current, accumulated, {
+            pendingChunks: [...chunks.slice(failedAtIndex), ...pendingChunks],
+            model: selectedModel,
+            userId: session?.user?.id,
+            sourceKey,
+          });
+          setSavedDeckId(deck.id);
+          setConcepts(accumulated);
+        } catch (saveError) {
+          // Saving is what this block exists to do, and it is also one of the things
+          // that can have landed us in it: saveDeck throws when the device has no
+          // room left (DeckStorageFullError). Throwing a second time here would leave
+          // handleGenerate with no message on screen at all - twenty chunks paid for
+          // and nothing to show - so the storage message stands in for the branching
+          // below, which would otherwise tell the student to go and finish a deck
+          // that was never created.
+          setError(saveError instanceof Error ? saveError.message : message);
+          return;
+        }
       }
 
       if (message === "FREE_LIMIT_REACHED") {
@@ -222,6 +311,110 @@ export default function IngestPage() {
       setTotalChunks(0);
       setWaitingReason(null);
     }
+  }
+
+  /** Continue the deck this upload turned out to be a repeat of.
+   *
+   * Generates from the DECK's own pendingChunks, not from the text just uploaded -
+   * that is the whole point. The deck's leftovers are the authoritative record of
+   * what has not been generated, so nothing is re-generated and nothing is paid for
+   * twice, and no second library row appears. */
+  async function handleContinueRecognised() {
+    if (!recognised) return;
+    const { deck } = recognised;
+    const pending = deck.pendingChunks ?? [];
+    if (pending.length === 0) return;
+
+    vibrateTap();
+    stopRequested.current = false;
+    setContinuing(true);
+    setError(null);
+    setConcepts(null);
+    setContinueProgress({
+      currentSection: 1,
+      totalSections: pending.length,
+      cardsSoFar: 0,
+      waitingReason: null,
+      stopping: false,
+    });
+
+    try {
+      const run = await runChunksContinuous(pending, {
+        // The deck's own model, not the dropdown's: continuing a Pro deck on the
+        // free model would silently change what the cards were made by.
+        model: deck.model,
+        // This deck's first chunk was paid for when it was created. Marking one of
+        // these as a first chunk would charge a student a second deck allowance for
+        // the book they are already part-way through.
+        countsFirstChunk: false,
+        batchSize: CONTINUE_BATCH_SIZE,
+        shouldStop: () => stopRequested.current,
+        onBatch: (batchConcepts, remaining) =>
+          appendConceptsToDeck(deck.id, batchConcepts, remaining),
+        onProgress: setContinueProgress,
+      });
+
+      setSavedDeckId(deck.id);
+      setConcepts(run.concepts);
+      if (run.error) {
+        const kept = run.concepts.length;
+        // GENERATION_BUDGET_REACHED is one of two failures where "tap again" is wrong -
+        // the next tap is refused for the same reason this one was.
+        const budgetReached = run.code === "GENERATION_BUDGET_REACHED";
+        // The other is a full device: the next tap would drop what it regenerates, and
+        // the cards this run reports were generated but never saved, so neither the
+        // retry advice nor the "we kept N" count may be shown for it.
+        const persistFailed = run.code === PERSIST_FAILED_CODE;
+        setError(
+          !kept || persistFailed
+            ? run.error
+            : budgetReached
+              ? `${run.error} We kept the ${kept} cards generated before it ran out.`
+              : `${run.error} We kept the ${kept} cards that came through - tap again to carry on.`,
+        );
+      }
+      // Reflect the deck as it now stands, so a second Continue works off the
+      // shrunken leftovers rather than the list this run started with.
+      setRecognised((prev) =>
+        prev && prev.deck.id === deck.id
+          ? { ...prev, deck: { ...prev.deck, pendingChunks: run.remaining } }
+          : prev,
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      stopRequested.current = false;
+      setContinuing(false);
+      setContinueProgress(null);
+    }
+  }
+
+  /** "Stop" - honoured at the next section boundary, never mid-section: the requests
+   * already in flight are paid for either way. */
+  function handleStopContinue() {
+    vibrateTap();
+    stopRequested.current = true;
+    setContinueProgress((prev) => (prev ? { ...prev, stopping: true } : prev));
+  }
+
+  /** "Start a separate deck" - today's behaviour, now explicitly chosen. The new deck
+   * carries the same sourceKey, so the next upload offers to continue the newest. */
+  function handleStartSeparate() {
+    if (!recognised) return;
+    const { text: sourceText } = recognised;
+    setRecognised(null);
+    void handleGenerate(sourceText, { skipRecognition: true });
+  }
+
+  /** For a recognised deck with nothing left to generate: study it rather than
+   * offering a button that would generate nothing. */
+  function handleStudyRecognised() {
+    if (!recognised) return;
+    vibrateTap();
+    setStudyDeck(recognised.deck.id, recognised.deck.concepts);
+    startTransition(() => {
+      router.push("/study");
+    });
   }
 
   function handlePdfExtracted(extractedText: string, fileName: string) {
@@ -325,6 +518,17 @@ export default function IngestPage() {
         {loading ? `Generating part ${currentChunk} of ${totalChunks}...` : "Generate micro-concepts"}
       </button>
 
+      {recognised && <RecognisedSourceCard
+        deck={recognised.deck}
+        allowance={allowance}
+        continuing={continuing}
+        progress={continueProgress}
+        onContinue={handleContinueRecognised}
+        onStop={handleStopContinue}
+        onStartSeparate={handleStartSeparate}
+        onStudy={handleStudyRecognised}
+      />}
+
       {showPaywall && (
         <div className="mt-4 overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/10 via-surface to-surface p-6 shadow-lg shadow-accent/5">
           <div className="flex items-center gap-2">
@@ -404,5 +608,125 @@ export default function IngestPage() {
         </div>
       )}
     </main>
+  );
+}
+
+/** How long ago, in the words a student would use. Relative while that is the more
+ * useful answer, then the same short date the library shows. */
+function lastTouchedLabel(timestamp: number): string {
+  const days = Math.floor((Date.now() - timestamp) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Shown when an upload turns out to be a source the student has already made cards
+ * from - the alternative to silently adding a second copy of their book to the
+ * library, which is what this screen did before.
+ *
+ * Nothing here has spent anything yet. handleGenerate returns before chunking when
+ * it finds a match, so every request in this flow is behind one of these buttons. */
+function RecognisedSourceCard({
+  deck,
+  allowance,
+  continuing,
+  progress,
+  onContinue,
+  onStop,
+  onStartSeparate,
+  onStudy,
+}: {
+  deck: Deck;
+  allowance: { remaining: number; limit: number } | null;
+  continuing: boolean;
+  progress: ContinuousProgress | null;
+  onContinue: () => void;
+  onStop: () => void;
+  onStartSeparate: () => void;
+  onStudy: () => void;
+}) {
+  const sectionsLeft = deck.pendingChunks?.length ?? 0;
+  const finished = sectionsLeft === 0;
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-2xl border border-accent/30 bg-gradient-to-br from-accent/10 via-surface to-surface p-6 shadow-lg shadow-accent/5">
+      <span className="text-xs font-bold uppercase tracking-widest text-accent">
+        ✦ You&apos;ve studied this before
+      </span>
+      <p className="mt-3 text-lg font-semibold text-foreground">{deck.title}</p>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        {finished
+          ? `Fully generated · ${deck.concepts.length} cards`
+          : `${deck.concepts.length} cards · ${sectionsLeft} ${sectionsLeft === 1 ? "section" : "sections"} left`}
+        {" · last added "}
+        {lastTouchedLabel(deck.updatedAt ?? deck.createdAt)}
+      </p>
+
+      {/* What one tap will actually be able to finish. Continuous generation makes it
+          easy to spend a month's allowance without meaning to, and being stopped
+          part-way through a twenty-minute run is a worse way to learn this number.
+          Omitted entirely when unknown rather than guessed. */}
+      {!continuing && !finished && allowance && (
+        <p className="mt-1 text-sm text-muted-foreground">
+          {allowance.remaining === 0
+            ? "You've used this month's generation allowance - it resets at the start of next month."
+            : allowance.remaining < sectionsLeft
+              ? `Your plan allows ${allowance.remaining} more ${allowance.remaining === 1 ? "section" : "sections"} this month, so this won't finish the book in one go.`
+              : `Your plan allows ${allowance.remaining} more sections this month - enough to finish this.`}
+        </p>
+      )}
+
+      {continuing && progress ? (
+        <>
+          <p className="mt-4 text-sm font-medium text-foreground">
+            Generating section {progress.currentSection} of {progress.totalSections}...
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {progress.cardsSoFar} {progress.cardsSoFar === 1 ? "card" : "cards"} so far
+            {progress.stopping ? " · finishing this section" : ""}
+          </p>
+          {/* The rate-limit wait, surfaced for the same reason /ingest surfaces it:
+              a 62-second pause with nothing on screen reads as a hang, and this run
+              can contain many of them. */}
+          {progress.waitingReason && (
+            <p className="mt-1 text-xs text-muted-foreground">{progress.waitingReason}</p>
+          )}
+          <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+            <div
+              className="h-full bg-accent transition-all"
+              style={{
+                width: `${Math.round((progress.currentSection / Math.max(1, progress.totalSections)) * 100)}%`,
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={progress.stopping}
+            className="mt-4 inline-flex items-center justify-center rounded-full border border-border bg-transparent px-6 py-3 text-sm font-semibold text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {progress.stopping ? "Finishing this section..." : "Stop"}
+          </button>
+        </>
+      ) : (
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <button
+            type="button"
+            onClick={finished ? onStudy : onContinue}
+            className="inline-flex items-center justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 active:scale-[0.98]"
+          >
+            {finished ? "Study this deck →" : "Continue this deck"}
+          </button>
+          <button
+            type="button"
+            onClick={onStartSeparate}
+            className="text-sm font-medium text-muted-foreground underline decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-foreground"
+          >
+            Start a separate deck
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

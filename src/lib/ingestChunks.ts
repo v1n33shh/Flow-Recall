@@ -23,6 +23,14 @@ const MAX_CHUNK_DELAY_MS = 90_000;
 // allowance is claimed, so only a chunk that actually succeeded ever spends one.
 const MAX_CHUNK_ATTEMPTS = 3;
 
+/** Sections per persisted batch in a continuous run - the unit of work that reaches
+ * the library, not the unit of the student's patience (they tap once and it keeps
+ * going). Small on purpose: a batch is the most that an app kill can cost, and 4
+ * sections is roughly 30 seconds. Raising it saves localStorage rewrites of a deck
+ * that is already megabytes; lowering it risks less. Shared by /ingest's "Continue
+ * this deck" and the library's "Generate Next Section" so the two cannot drift. */
+export const CONTINUE_BATCH_SIZE = 4;
+
 // Two different waits, because the two failures have nothing in common.
 //
 // A garbled response is instant to re-roll; seconds is the right order.
@@ -174,6 +182,13 @@ export type ChunkRunResult = {
   error: string | null;
   /** The route's code for that failure, where it sent one - see ChunkOutcome.code. */
   code: string | null;
+  /** The chunk spacing this run settled on, after any widening a 429 forced.
+   *
+   * Returned so a caller running several batches back to back can carry it
+   * forward - see runChunksContinuous. Without that, every batch restarts at
+   * BASE_CHUNK_DELAY_MS and rediscovers the same limit, which is the sawtooth the
+   * comment on delayMs below exists to avoid. */
+  delayMs: number;
 };
 
 /** Sends `chunks` in order, retrying the retryable failures and widening the gap
@@ -186,16 +201,22 @@ export async function runChunks(
     /** True on /ingest, where chunk 0 spends the monthly allowance. False for a
      * continuation, which belongs to a deck already paid for. */
     countsFirstChunk: boolean;
+    /** Spacing to start at, for a caller continuing where an earlier run left off.
+     * Defaults to BASE_CHUNK_DELAY_MS, i.e. optimistic. */
+    initialDelayMs?: number;
     onProgress: (progress: ChunkProgress) => void;
   },
 ): Promise<ChunkRunResult> {
-  const { model, countsFirstChunk, onProgress } = options;
+  const { model, countsFirstChunk, initialDelayMs, onProgress } = options;
   const concepts: Concept[] = [];
   // Widened for the rest of the run the first time a 429 proves the current
   // spacing is too tight for this account. Kept across chunks deliberately: once
   // an account has shown where its limit is there is nothing to gain from
   // rediscovering it on every remaining chunk.
-  let delayMs = BASE_CHUNK_DELAY_MS;
+  let delayMs = Math.min(
+    Math.max(initialDelayMs ?? BASE_CHUNK_DELAY_MS, BASE_CHUNK_DELAY_MS),
+    MAX_CHUNK_DELAY_MS,
+  );
 
   for (let i = 0; i < chunks.length; i++) {
     onProgress({ current: i + 1, total: chunks.length, waitingReason: null });
@@ -214,6 +235,7 @@ export async function runChunks(
           failedAtIndex: i,
           error: outcome.message || `Something went wrong on part ${i + 1} of ${chunks.length}.`,
           code: outcome.code,
+          delayMs,
         };
       }
 
@@ -268,5 +290,176 @@ export async function runChunks(
     if (i < chunks.length - 1) await sleep(delayMs);
   }
 
-  return { concepts, failedAtIndex: chunks.length, error: null, code: null };
+  return { concepts, failedAtIndex: chunks.length, error: null, code: null, delayMs };
+}
+
+/** How far through an unbounded run we are. Sections rather than "parts", because
+ * this counts across the whole source rather than within one batch. */
+export type ContinuousProgress = {
+  /** 1-based index of the section in flight, across the whole run. */
+  currentSection: number;
+  totalSections: number;
+  /** Cards **already persisted** by onBatch. Deliberately not "cards generated":
+   * a card that has not been handed to onBatch yet would vanish if the app died,
+   * so counting it would overstate what the student actually has. */
+  cardsSoFar: number;
+  /** From runChunks - a rate-limit or garbled-response wait, while it is waiting.
+   * Matters far more here than in a single batch: a 62-second pause inside a
+   * twenty-minute run reads as a hang unless the screen says what it is for. */
+  waitingReason: string | null;
+  /** shouldStop() has gone true and the current section is being finished. Polled
+   * on every progress tick so the button can say so immediately, even though the
+   * run only acts on it at the next batch boundary. */
+  stopping: boolean;
+};
+
+/** `ContinuousResult.code` when `onBatch` could not save a batch.
+ *
+ * Not a code any route sends - no server knows the device is full. It is separate
+ * from every other failure because it is the only one where the cards a run reports
+ * were NOT kept: they were generated, paid for, and had nowhere to go. Callers must
+ * therefore not tell the student "we kept N cards" or "tap again to carry on" for
+ * it; the thrown message says the one thing that helps instead. */
+export const PERSIST_FAILED_CODE = "PERSIST_FAILED";
+
+export type ContinuousResult = {
+  /** Everything this run generated, across every batch - generated, not necessarily
+   * saved. On PERSIST_FAILED_CODE the last batch is in here and is NOT in the deck,
+   * which is why a caller must not count these as cards the student kept. */
+  concepts: Concept[];
+  /** The sections still ungenerated when the run ended. Already handed to the last
+   * onBatch call; returned so a caller that wants to reconcile can. */
+  remaining: string[];
+  error: string | null;
+  code: string | null;
+  stoppedBy: "exhausted" | "user" | "error";
+};
+
+/** Works through `chunks` until they run out, the student stops it, or something
+ * stops it for them - the whole book from one tap instead of ~115 of them.
+ *
+ * Batches exist for PERSISTENCE, not pacing: `onBatch` fires after each one, so
+ * cards reach the library as they are made and the caller's record of what is left
+ * shrinks in step. The invariant every exit path holds is that the `remaining`
+ * handed to the last `onBatch` is exactly the sections that have not been
+ * generated - which is what makes an unbounded loop safe to offer at all. A run
+ * killed at section 90 of 121 has 90 sections' worth saved and resumes at 91.
+ *
+ * `shouldStop` is polled BETWEEN batches, never mid-batch: the requests in a batch
+ * in flight are already paid for, so abandoning them would burn a student's
+ * allowance for nothing. "Stop" therefore means "stop after this section".
+ *
+ * Never throws, for the same reason runChunks does not - a partial run is a result. */
+export async function runChunksContinuous(
+  chunks: string[],
+  options: {
+    model: string | undefined;
+    /** True only where the very first section spends a monthly deck allowance.
+     * Applied to the first batch alone; every later batch continues a deck that has
+     * already been paid for. */
+    countsFirstChunk: boolean;
+    /** Sections per persisted batch. Small keeps the most recent work safe; large
+     * keeps localStorage rewrites of a growing deck down. */
+    batchSize: number;
+    shouldStop: () => boolean;
+    /** Persist. Called only when a batch actually produced cards - a batch that
+     * failed on its first section leaves `remaining` unchanged, so writing it back
+     * would bump the deck's updatedAt for nothing.
+     *
+     * May throw: storage is finite and a book is large (see DeckStorageFullError).
+     * A throw ends the run with PERSIST_FAILED_CODE rather than escaping, because
+     * the alternative is spending another batch on cards the same write would
+     * drop - and doing that for every remaining section of a book. */
+    onBatch: (concepts: Concept[], remaining: string[]) => void;
+    onProgress: (progress: ContinuousProgress) => void;
+  },
+): Promise<ContinuousResult> {
+  const { model, countsFirstChunk, batchSize, shouldStop, onBatch, onProgress } = options;
+  const generated: Concept[] = [];
+  let offset = 0;
+  // Carried across batches on purpose. Once a 429 has told this account its
+  // spacing is too tight, starting the next batch back at BASE_CHUNK_DELAY_MS
+  // would re-trip the same limit and spend a retry rediscovering it - every batch,
+  // for the length of a book.
+  let delayMs: number | undefined;
+
+  while (offset < chunks.length) {
+    const batch = chunks.slice(offset, offset + Math.max(1, batchSize));
+    const batchOffset = offset;
+
+    const run = await runChunks(batch, {
+      model,
+      countsFirstChunk: countsFirstChunk && batchOffset === 0,
+      initialDelayMs: delayMs,
+      onProgress: ({ current, waitingReason }) =>
+        onProgress({
+          currentSection: batchOffset + current,
+          totalSections: chunks.length,
+          cardsSoFar: generated.length,
+          waitingReason,
+          stopping: shouldStop(),
+        }),
+    });
+
+    generated.push(...run.concepts);
+    delayMs = run.delayMs;
+    const remaining = chunks.slice(batchOffset + run.failedAtIndex);
+
+    if (run.concepts.length > 0) {
+      try {
+        onBatch(run.concepts, remaining);
+      } catch (persistError) {
+        // `remaining` here starts at THIS batch, not after it. Nothing was written,
+        // so nothing may be reported as generated - otherwise the sections this
+        // batch paid for are marked done while their cards do not exist, and they
+        // are gone for good rather than merely unsaved.
+        return {
+          concepts: generated,
+          remaining: chunks.slice(batchOffset),
+          error:
+            persistError instanceof Error
+              ? persistError.message
+              : "The cards were generated but could not be saved on this device.",
+          code: PERSIST_FAILED_CODE,
+          stoppedBy: "error",
+        };
+      }
+    }
+
+    if (run.error) {
+      return {
+        concepts: generated,
+        remaining,
+        error: run.error,
+        code: run.code,
+        stoppedBy: "error",
+      };
+    }
+
+    offset = batchOffset + batch.length;
+    if (offset >= chunks.length) break;
+
+    if (shouldStop()) {
+      return {
+        concepts: generated,
+        remaining: chunks.slice(offset),
+        error: null,
+        code: null,
+        stoppedBy: "user",
+      };
+    }
+
+    // The gap runChunks leaves out after its last chunk. Without it the first
+    // request of the next batch lands with no spacing at all, which on a
+    // rate-limited account is the one place a 429 is guaranteed.
+    await sleep(delayMs);
+  }
+
+  return {
+    concepts: generated,
+    remaining: [],
+    error: null,
+    code: null,
+    stoppedBy: "exhausted",
+  };
 }

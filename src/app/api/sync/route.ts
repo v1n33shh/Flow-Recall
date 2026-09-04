@@ -45,6 +45,10 @@ const deckSchema = z.object({
   concepts: z.array(z.unknown()),
   pendingChunks: z.array(z.string()).optional(),
   model: z.string().max(100).optional(),
+  /** sourceKeyFor() over the deck's original upload - see src/lib/sourceKey.ts.
+   * Synced so a re-upload is recognised on any of the student's devices, not only
+   * the one the deck was made on. */
+  sourceKey: z.string().max(200).optional(),
   createdAt: timestamp,
   updatedAt: timestamp.optional(),
   deletedAt: timestamp.optional(),
@@ -171,6 +175,7 @@ export async function POST(request: Request) {
             concepts: deck.concepts as object[],
             pendingChunks: deck.pendingChunks ?? Prisma.DbNull,
             model: deck.model ?? null,
+            sourceKey: deck.sourceKey ?? null,
             createdAt: new Date(deck.createdAt),
             updatedAt: new Date(deck.updatedAt ?? deck.createdAt),
             deletedAt: deck.deletedAt === undefined ? null : new Date(deck.deletedAt),
@@ -187,6 +192,13 @@ export async function POST(request: Request) {
             // it had already generated. `DbNull` writes the SQL NULL the row means.
             pendingChunks: deck.pendingChunks ?? Prisma.DbNull,
             model: deck.model ?? null,
+            // A plain `?? null` is right here where pendingChunks needs DbNull:
+            // sourceKey is a scalar column (not Json, so no DbNull sentinel), and it
+            // is written once when the deck is created and never cleared, so there
+            // is no clear-through case to protect. What it does have to survive is a
+            // push from a client that predates the field: `null` is the honest value
+            // for a deck whose source was never recorded.
+            sourceKey: deck.sourceKey ?? null,
             updatedAt: new Date(deck.updatedAt ?? deck.createdAt),
             deletedAt: deck.deletedAt === undefined ? null : new Date(deck.deletedAt),
             // Same DbNull reasoning as pendingChunks above: a deck whose map was
@@ -301,6 +313,7 @@ export async function POST(request: Request) {
       title: deck.title,
       concepts: deck.concepts,
       pendingChunks: deck.pendingChunks ?? undefined,
+      sourceKey: deck.sourceKey ?? undefined,
       conceptMap: deck.conceptMap ?? undefined,
       examDate: deck.examDate ? deck.examDate.getTime() : undefined,
       model: deck.model ?? undefined,

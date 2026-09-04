@@ -42,3 +42,8 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# one-off probe scripts. Kept on disk between sessions because re-deriving the
+# exact request that reproduces a provider limit is the expensive part, but they
+# hardcode whichever model was under investigation and go stale within days.
+/test-models.mjs

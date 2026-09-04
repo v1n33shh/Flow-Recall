@@ -1,7 +1,7 @@
 "use client";
 
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { startTransition, useState } from "react";
+import { startTransition, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
@@ -14,7 +14,12 @@ import {
   setStudyDeck,
   useSavedDecks,
 } from "@/lib/storage";
-import { runChunks } from "@/lib/ingestChunks";
+import {
+  CONTINUE_BATCH_SIZE,
+  PERSIST_FAILED_CODE,
+  runChunksContinuous,
+  type ContinuousProgress,
+} from "@/lib/ingestChunks";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
 import DeckExamDate from "@/components/DeckExamDate";
@@ -24,13 +29,6 @@ import TodaySession from "@/components/TodaySession";
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
 // into place instead of gently fading in - used for every entrance below.
 const SNAP = { type: "spring" as const, stiffness: 700, damping: 18 };
-
-// How many pending chunks one tap of "Generate Next Section" works through.
-// Smaller than /ingest's cap on purpose: this runs from the library, where the
-// student is standing in front of a list waiting for a button to come back, not
-// watching a deck being built. At the 4500-character chunk size that is ~18,000
-// characters a tap. The pacing and retrying inside the batch are runChunks'.
-const MAX_CHUNKS = 4;
 
 // Keep in sync with layout.tsx's metadataBase.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://flowrecall.app";
@@ -526,7 +524,11 @@ export default function Home() {
   // What each in-flight continuation is doing, keyed by deck id. "Generating..."
   // for four chunks with a rate-limit wait inside it is up to a minute of a button
   // that looks stuck; this says which part, and what it is waiting for.
-  const [jitProgress, setJitProgress] = useState<Record<string, string>>({});
+  const [jitProgress, setJitProgress] = useState<Record<string, ContinuousProgress>>({});
+  // Deck ids the student has asked to stop. A ref, not state: runChunksContinuous
+  // polls this from inside a loop that closed over the render that started it, so a
+  // state value read there would stay false forever.
+  const stopRequests = useRef<Set<string>>(new Set());
 
   function handleStudyNow(deck: Deck, isFullyMastered: boolean) {
     // A 100%-mastered session resuming normally would hydrate a queue with
@@ -561,10 +563,19 @@ export default function Home() {
     }
   }
 
+  /** Keeps generating this deck's leftovers until they run out, the student taps
+   * Stop, or something stops it for them - one tap instead of the ~115 that
+   * finishing a book used to take at four sections a time.
+   *
+   * Every batch is persisted as it completes (see onBatch), so an interrupted run -
+   * Stop, a failure, a killed app - leaves the deck holding exactly the sections it
+   * has not generated. Tapping again resumes; nothing is repeated and nothing is
+   * paid for twice. */
   async function handleGenerateNextSection(deck: Deck) {
     const pending = deck.pendingChunks;
     if (!pending || pending.length === 0) return;
 
+    stopRequests.current.delete(deck.id);
     setGeneratingDeckIds((prev) => new Set(prev).add(deck.id));
     setJitErrors((prev) => {
       const next = { ...prev };
@@ -572,58 +583,44 @@ export default function Home() {
       return next;
     });
 
-    const batch = pending.slice(0, MAX_CHUNKS);
-    const remaining = pending.slice(MAX_CHUNKS);
-
     try {
-      // Sequential, retried, and paced by runChunks - the same runner /ingest
-      // uses, so a 429 here costs one chunk's wait rather than the batch. It also
-      // never throws, which is what lets a partial batch be kept below.
-      //
-      // countsFirstChunk: false - this is continuing a deck the user already
-      // spent one of their monthly generations on, not starting a new one.
-      // Without it the server's allowance gate (which only checks on a first
-      // chunk) treats an unmarked request as a first chunk and wrongly re-blocks
-      // a free user mid-way through their own already-started deck.
-      //
-      // model: deck.model - without this an unset model falls back to the free
-      // model server-side regardless of plan, silently downgrading a Pro user's
-      // continuation chunks to the cheap model they didn't pick.
-      const run = await runChunks(batch, {
+      const run = await runChunksContinuous(pending, {
+        // model: deck.model - without this an unset model falls back to the free
+        // model server-side regardless of plan, silently downgrading a Pro user's
+        // continuation sections to the cheap model they didn't pick.
         model: deck.model,
+        // countsFirstChunk: false - this continues a deck the student already spent
+        // one of their monthly generations on, not a new one. Without it the
+        // server's allowance gate (which only checks on a first chunk) treats an
+        // unmarked request as a first chunk and wrongly re-blocks a free user
+        // part-way through their own already-started deck.
         countsFirstChunk: false,
-        onProgress: ({ current, total, waitingReason }) => {
-          setJitProgress((prev) => ({
-            ...prev,
-            [deck.id]: waitingReason ?? `Generating part ${current} of ${total}...`,
-          }));
-        },
+        batchSize: CONTINUE_BATCH_SIZE,
+        shouldStop: () => stopRequests.current.has(deck.id),
+        // Keep what succeeded, batch by batch. Those cards cost real tokens and are
+        // already paid for; discarding them and leaving their text in pendingChunks
+        // means the next tap regenerates - and re-pays for - finished work.
+        onBatch: (concepts, remaining) => appendConceptsToDeck(deck.id, concepts, remaining),
+        onProgress: (progress) => setJitProgress((prev) => ({ ...prev, [deck.id]: progress })),
       });
 
-      // Keep what succeeded even when a later chunk did not. Those cards cost real
-      // tokens and are already paid for; discarding them and leaving their text in
-      // pendingChunks means the next tap regenerates - and re-pays for - work that
-      // has already been done. Requeue only from the chunk that actually failed.
-      if (run.concepts.length > 0) {
-        appendConceptsToDeck(deck.id, run.concepts, [
-          ...batch.slice(run.failedAtIndex),
-          ...remaining,
-        ]);
-      }
-      const failure = run.error;
-      if (failure) {
+      if (run.error) {
         const kept = run.concepts.length;
         // "tap again to carry on" is the right advice for a rate limit or a garbled
         // response, and the wrong advice for an exhausted monthly budget - the next
         // tap is refused for the same reason this one was.
         const budgetReached = run.code === "GENERATION_BUDGET_REACHED";
+        // And wrong again for a full device, twice over: the next tap drops what it
+        // regenerates, and the cards this run reports were never kept. Its own
+        // message already says the only thing that helps, so it stands alone.
+        const persistFailed = run.code === PERSIST_FAILED_CODE;
         setJitErrors((prev) => ({
           ...prev,
-          [deck.id]: !kept
-            ? failure
+          [deck.id]: !kept || persistFailed
+            ? run.error!
             : budgetReached
-              ? `${failure} We kept the ${kept} cards that were generated before it ran out.`
-              : `${failure} We kept the ${kept} cards that did come through - tap again to carry on.`,
+              ? `${run.error} We kept the ${kept} cards that were generated before it ran out.`
+              : `${run.error} We kept the ${kept} cards that did come through - tap again to carry on.`,
         }));
       }
     } catch (err) {
@@ -632,6 +629,7 @@ export default function Home() {
         [deck.id]: err instanceof Error ? err.message : "Something went wrong.",
       }));
     } finally {
+      stopRequests.current.delete(deck.id);
       setJitProgress((prev) => {
         const next = { ...prev };
         delete next[deck.id];
@@ -643,6 +641,17 @@ export default function Home() {
         return next;
       });
     }
+  }
+
+  /** Asks a running continuation to stop. Honoured at the next section boundary,
+   * never mid-section: the requests already in flight are paid for either way, so
+   * abandoning them would spend a student's allowance for nothing. */
+  function handleStopGenerating(deck: Deck) {
+    stopRequests.current.add(deck.id);
+    setJitProgress((prev) => {
+      const current = prev[deck.id];
+      return current ? { ...prev, [deck.id]: { ...current, stopping: true } } : prev;
+    });
   }
 
   return (
@@ -845,16 +854,23 @@ export default function Home() {
 
                     {deck.pendingChunks && deck.pendingChunks.length > 0 && (
                       <>
-                        <button
-                          type="button"
-                          onClick={() => handleGenerateNextSection(deck)}
-                          disabled={generatingDeckIds.has(deck.id)}
-                          className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {generatingDeckIds.has(deck.id)
-                            ? jitProgress[deck.id] ?? "Generating..."
-                            : `Generate Next Section (${deck.pendingChunks.length} chunks left)`}
-                        </button>
+                        {generatingDeckIds.has(deck.id) ? (
+                          <ContinuationProgress
+                            progress={jitProgress[deck.id]}
+                            onStop={() => handleStopGenerating(deck)}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleGenerateNextSection(deck)}
+                            className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97]"
+                          >
+                            {/* "all" rather than "next": one tap now works through
+                                every remaining section instead of four. */}
+                            Generate all {deck.pendingChunks.length} remaining{" "}
+                            {deck.pendingChunks.length === 1 ? "section" : "sections"}
+                          </button>
+                        )}
                         {jitErrors[deck.id] && (
                           <p className="mt-2 text-xs text-muted-foreground">{jitErrors[deck.id]}</p>
                         )}
@@ -884,5 +900,52 @@ export default function Home() {
       {/* ============================ FOOTER ============================ */}
       <SiteFooter />
     </main>
+  );
+}
+
+/** Live state of a continuous continuation, on the deck's own card.
+ *
+ * A run can last twenty minutes and contain several 62-second rate-limit waits, so
+ * a spinner is not enough: this says which section, how many cards have actually
+ * been saved, and what it is waiting for when it is waiting. `progress` is
+ * momentarily undefined between the tap and the runner's first tick. */
+function ContinuationProgress({
+  progress,
+  onStop,
+}: {
+  progress: ContinuousProgress | undefined;
+  onStop: () => void;
+}) {
+  const current = progress?.currentSection ?? 1;
+  const total = Math.max(1, progress?.totalSections ?? 1);
+  const stopping = progress?.stopping ?? false;
+
+  return (
+    <div className="mt-2">
+      <p className="text-sm font-medium text-foreground">
+        Generating section {current} of {total}...
+      </p>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {progress?.cardsSoFar ?? 0} {progress?.cardsSoFar === 1 ? "card" : "cards"} so far
+        {stopping ? " · finishing this section" : ""}
+      </p>
+      {progress?.waitingReason && (
+        <p className="mt-0.5 text-xs text-muted-foreground">{progress.waitingReason}</p>
+      )}
+      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+        <div
+          className="h-full bg-accent transition-all"
+          style={{ width: `${Math.round((current / total) * 100)}%` }}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onStop}
+        disabled={stopping}
+        className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {stopping ? "Finishing this section..." : "Stop"}
+      </button>
+    </div>
   );
 }

@@ -126,6 +126,14 @@ model Deck {
    */
   pendingChunks Json?
   model         String?
+  /**
+   * Identity of the text this deck was generated from (sourceKeyFor in
+   * src/lib/sourceKey.ts). Synced so a re-upload is recognised on whichever device
+   * the student is holding, not only the one the deck was made on. NULL for every
+   * deck created before this column existed - such a deck simply never matches,
+   * which degrades to a new deck rather than to a wrong one.
+   */
+  sourceKey     String?
   createdAt     DateTime
   updatedAt     DateTime
   /**

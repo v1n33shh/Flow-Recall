@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Concept, ConceptEdge } from "@/lib/types";
-import { MAX_PER_ROW, groupForConcept, learningPath, validateEdges } from "./conceptGraph";
+import { MAX_PER_ROW, contrastPairs, groupForConcept, learningPath, validateEdges } from "./conceptGraph";
 
 function makeConcept(id: string, label: string): Concept {
   return {
@@ -204,5 +204,61 @@ describe("learningPath", () => {
 
   it("does not emit a duplicated concept id twice", () => {
     expect(learningPath(["a", "a", "b"], [])).toEqual(["a", "b"]);
+  });
+});
+
+describe("contrastPairs", () => {
+  const ids = deck.map((c) => c.id); // p, s, v - deck order
+
+  const edge = (from: string, to: string, relation: ConceptEdge["relation"] = "contrast"): ConceptEdge => ({
+    from,
+    to,
+    relation,
+  });
+
+  it("finds the pairs a student actually mixes up", () => {
+    expect(contrastPairs(ids, [edge("p", "v"), edge("s", "v")])).toEqual([
+      ["p", "v"],
+      ["s", "v"],
+    ]);
+  });
+
+  it("ignores the two relations that are not symmetric", () => {
+    // prerequisite and explains have a direction and belong to the learning path;
+    // reading them as confusable pairs would invent a warning the model never gave.
+    expect(contrastPairs(ids, [edge("p", "s", "prerequisite"), edge("s", "v", "explains")])).toEqual([]);
+  });
+
+  it("shows a pair once however many directions it was asserted in", () => {
+    expect(contrastPairs(ids, [edge("p", "v"), edge("v", "p")])).toEqual([["p", "v"]]);
+  });
+
+  it("puts the earlier concept of each pair first, whichever way the edge points", () => {
+    // Otherwise the same pair reads "Stroke Volume vs Preload" on one render and the
+    // reverse on the next, depending only on which way the model happened to type it.
+    expect(contrastPairs(ids, [edge("v", "p")])).toEqual([["p", "v"]]);
+  });
+
+  it("orders by deck position, so the list does not reshuffle between visits", () => {
+    const shuffled = [edge("s", "v"), edge("p", "s"), edge("p", "v")];
+    expect(contrastPairs(ids, shuffled)).toEqual([
+      ["p", "s"],
+      ["p", "v"],
+      ["s", "v"],
+    ]);
+  });
+
+  it("drops an edge naming a card the deck no longer holds", () => {
+    // validateEdges cannot catch this one: it ran when the card still existed, and the
+    // student deleted it afterwards. A pair naming a concept that is gone is unopenable.
+    expect(contrastPairs(ids, [edge("p", "deleted"), edge("p", "v")])).toEqual([["p", "v"]]);
+  });
+
+  it("ignores an edge from a concept to itself", () => {
+    expect(contrastPairs(ids, [edge("p", "p")])).toEqual([]);
+  });
+
+  it("answers with nothing for a deck that was never mapped", () => {
+    expect(contrastPairs(ids, [])).toEqual([]);
   });
 });

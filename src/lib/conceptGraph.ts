@@ -135,6 +135,54 @@ export function groupForConcept(
   };
 }
 
+/** Every pair of concepts in this deck that get mixed up with each other.
+ *
+ * The deck-level counterpart to `groupForConcept`'s `contrasts` row, and it exists
+ * because that row is the only place these have ever been visible - one concept at a
+ * time, which means a student can only find a confusable pair by already having opened
+ * one of the two cards in it. `learningPath` cannot carry them: it is prerequisites
+ * only, deliberately, and it says so. So of the three relations the model produces, the
+ * deck view rendered exactly one, and its own fallback copy told the student to go and
+ * "see the cards below".
+ *
+ * Pairs rather than a graph on purpose. `contrast` is the one symmetric relation - it
+ * has no direction to draw and no order to walk - so the honest rendering is a list of
+ * two-ended pairs, which also happens to be the thing that loses marks in an exam.
+ *
+ * Ordered by deck position, and each pair with its earlier concept first, so the same
+ * deck and edges produce the same list on every render - the same stability
+ * `learningPath` holds and for the same reason: a list that reshuffles between visits
+ * is not a list. Deduplicated on the unordered pair, so an edge asserted in both
+ * directions appears once. */
+export function contrastPairs(
+  conceptIds: readonly string[],
+  edges: readonly ConceptEdge[],
+): [string, string][] {
+  const position = new Map(conceptIds.map((id, index) => [id, index]));
+  const seen = new Set<string>();
+  const pairs: [string, string][] = [];
+
+  for (const edge of edges) {
+    if (edge.relation !== "contrast") continue;
+    const a = position.get(edge.from);
+    const b = position.get(edge.to);
+    // A concept the deck no longer holds - an edge mapped before a card was deleted.
+    // validateEdges cannot catch this one, because it ran when the card still existed.
+    if (a === undefined || b === undefined || a === b) continue;
+
+    const [first, second] = a < b ? [edge.from, edge.to] : [edge.to, edge.from];
+    const key = `${first}|${second}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push([first, second]);
+  }
+
+  return pairs.sort(
+    (x, y) => (position.get(x[0]) ?? 0) - (position.get(y[0]) ?? 0) ||
+              (position.get(x[1]) ?? 0) - (position.get(y[1]) ?? 0),
+  );
+}
+
 /** The order to learn a deck in: every concept, with prerequisites before the
  * things that need them.
  *

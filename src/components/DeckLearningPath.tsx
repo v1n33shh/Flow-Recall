@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { MasteryLevel } from "@/lib/recallModel";
 import type { Concept, ConceptEdge } from "@/lib/types";
-import { learningPath, validateEdges } from "@/lib/conceptGraph";
+import { contrastPairs, learningPath, validateEdges } from "@/lib/conceptGraph";
 import { MAP_BATCH_SIZE } from "@/lib/conceptGraphSchema";
 import { factSentence } from "@/lib/conceptProse";
 import { API_FETCH_CREDENTIALS, apiUrl } from "@/lib/apiUrl";
@@ -104,6 +104,18 @@ export default function DeckLearningPath({
     );
   }, [concepts, edges]);
 
+  // The deck's confusable pairs. Of the three relations the model produces, this view
+  // rendered only `prerequisite` - `contrast` was visible one concept at a time, in
+  // ConceptRelations, so a student could only find a pair by already having opened one
+  // of the two cards in it.
+  const pairs = useMemo(() => {
+    if (!edges) return [];
+    return contrastPairs(
+      concepts.map((c) => c.id),
+      edges,
+    );
+  }, [concepts, edges]);
+
   if (concepts.length < 2) return null;
 
   return (
@@ -158,8 +170,32 @@ export default function DeckLearningPath({
             ? "Answering every card still leaves you unable to say how any two of these ideas connect. One pass over the whole deck works out what has to be understood first, what explains what, and which pairs get mixed up."
             : edges.length === 0
               ? "We looked, and this deck's ideas do not lean on each other in a way worth drawing. Each concept stands on its own."
-              : "Nothing here has to be learnt before anything else, but some concepts do explain or get confused with others - see the cards below."}
+              : pairs.length > 0
+                ? "Nothing here has to be learnt before anything else - but some of these do get mixed up with each other."
+                : "Nothing here has to be learnt before anything else, but some concepts do explain one another - see the cards below."}
         </p>
+      )}
+
+      {pairs.length > 0 && (
+        <div className="mt-4 border-t border-border pt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Don&apos;t confuse
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {pairs.length === 1
+              ? "One pair in this deck gets mixed up. Knowing which is which is worth more than either alone."
+              : `${pairs.length} pairs in this deck get mixed up. Knowing which is which is worth more than either alone.`}
+          </p>
+          <ul className="mt-2.5 flex flex-col gap-2">
+            {pairs.map(([a, b]) => (
+              <li key={`${a}|${b}`} className="flex min-w-0 items-center gap-1.5">
+                <ConceptChip id={a} labelOf={labelOf} levelOf={levelOf} onJump={onJump} />
+                <span className="shrink-0 text-[10px] font-medium text-muted-foreground">vs</span>
+                <ConceptChip id={b} labelOf={labelOf} levelOf={levelOf} onJump={onJump} />
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {limitReached ? (
@@ -193,5 +229,49 @@ export default function DeckLearningPath({
       )}
       {error && <p className="mt-2 text-[11px] text-danger">{error}</p>}
     </section>
+  );
+}
+
+/** One end of a confusable pair: tappable, bordered, with the same mastery dot the
+ * learning path uses.
+ *
+ * A real button with a visible border rather than plain text, for the reason recorded
+ * all over this repo: this ships on a phone, `hover:` does not exist there, and a
+ * tappable thing that does not look tappable is a thing nobody taps. */
+function ConceptChip({
+  id,
+  labelOf,
+  levelOf,
+  onJump,
+}: {
+  id: string;
+  labelOf: (id: string) => string | null;
+  levelOf: (id: string) => MasteryLevel | null;
+  onJump: (id: string) => void;
+}) {
+  const label = labelOf(id);
+  // contrastPairs already drops a pair naming a card the deck no longer holds, so this
+  // is the belt to that braces - and it renders the id rather than an empty chip, which
+  // is at least something a bug report can quote.
+  if (!label) return null;
+  const level = levelOf(id);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        vibrateTap();
+        onJump(id);
+      }}
+      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border bg-foreground/5 px-2 py-1.5 text-left transition-colors duration-200 active:bg-foreground/10"
+    >
+      <span
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+          level === "solid" ? "bg-accent" : level === "fading" ? "bg-pending" : "bg-foreground/20"
+        }`}
+        aria-hidden
+      />
+      <span className="truncate text-[11px] font-medium text-foreground">{label}</span>
+    </button>
   );
 }

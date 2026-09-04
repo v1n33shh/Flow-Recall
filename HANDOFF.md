@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 562 passed / 562 across 36 files, `npm test` exit 0 |
+| **Tests** | 579 passed / 579 across 37 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -503,8 +503,9 @@ recursive merges. Build- and CLI-time config merging, not the request path. The 
 1. **Multiple Choice Questions** — generate distractors from the concept map; build the MCQ UI so recognition
    can be tested without handing the student a 50/50 guess.
 2. ~~**Starring concepts**~~ — **done 2026-09-05, see §16.**
-3. **Visual concept graph** — render the existing `concept-map` data, including its edge kinds ("Build on
-   first", "This explains", "Don't confuse").
+3. **Visual concept graph** — mostly a false item; see §17. The edge kinds were already rendered, and the
+   real gap (two of three invisible at deck level) is now closed for `contrast`. What remains is `explains`
+   at deck level, which is a smaller thing than the original wording suggests.
 
 ### Smaller things worth a decision
 
@@ -1118,3 +1119,61 @@ the same day. Expected — `setUnitImportance` skips a row whose values do not a
 Worth knowing for whoever tests this next: only 7 memory rows exist on the phone across 228 units,
 because almost nothing there has been reviewed. Starring a *new* card writes the unit and finds no
 rows to move, which is correct but proves nothing — pick a deck with history.
+
+---
+
+## 17. "Visual concept graph" was largely already built — 2026-09-05
+
+Phase 3 item 3 read "render the existing `concept-map` data, including its edge kinds". Before building a
+node-link diagram, it was worth checking what rendered it already. **Two components did:**
+
+- `ConceptRelations` shows one concept's neighbourhood as three rows of tappable chips — "Build on first",
+  "This explains", "Don't confuse" — with mastery dots and jump-to-concept. **All three edge kinds.**
+- `DeckLearningPath` shows the deck-level view: a numbered topological ordering, plus the "Map this deck"
+  control, the never-mapped/empty-map/no-ordering copy, and the free-lookup limit state.
+
+So the item as written was done. **The actual gap was narrower and worse:** at the deck level only
+`prerequisite` was rendered, because `learningPath` is prerequisites-only — correctly, and it says so:
+"`explains` and `contrast` say nothing about sequence, and treating them as order would put a consequence
+before its mechanism half the time." So `contrast` and `explains` existed at deck level nowhere, and the
+fallback copy admitted it in as many words: *"...but some concepts do explain or get confused with others —
+**see the cards below**."* The app held the answer and told the student to go and find it.
+
+A student could therefore only discover a confusable pair by **already having opened one of the two cards in
+it**, which is precisely backwards for the one relation that loses marks in an exam.
+
+### What was built instead of a graph
+
+`contrastPairs(conceptIds, edges)` in `conceptGraph.ts`, rendered as a "Don't confuse" section in
+`DeckLearningPath` beneath the path.
+
+**Pairs rather than a diagram, deliberately.** `contrast` is the one *symmetric* relation - no direction to
+draw, no order to walk - so the honest rendering is a list of two-ended pairs. That is also the readable one:
+a 60-concept node-link diagram on a 360dp screen is a hairball, and `MAX_PER_ROW`'s comment ("a later graph
+view will want all of it") was written before anyone had 60 concepts to look at.
+
+Properties it holds, both matching `learningPath`'s reasoning:
+
+- **Stable** — ordered by deck position, each pair with its earlier concept first, so the same deck and edges
+  give the same list every render. Without that, a pair reads "Stroke Volume vs Preload" on one visit and the
+  reverse on the next, depending only on which way the model happened to type the edge.
+- **Deduplicated on the unordered pair**, so an edge asserted in both directions appears once.
+- Drops an edge naming a card the deck no longer holds. `validateEdges` cannot catch that one - it ran when
+  the card still existed and the student deleted it afterwards.
+
+The fallback copy now says "some of these do get mixed up with each other" and no longer sends anyone off to
+hunt. An `explains`-only deck still points at the cards, because there it is still the only answer.
+
+17 new tests (8 on `contrastPairs`, 9 in a first `DeckLearningPath.test.tsx`, which also covers the path and
+the three empty states that had no assertions at all). 579/579 across 37 files, tsc and eslint clean, clean
+build.
+
+### What is genuinely left of this item
+
+`explains` at deck level - the chains of "this explains that" - which is directional and so wants a different
+shape from a pair list. Lower value than the contrasts: the learning path already implies some of that
+structure, and `ConceptRelations` shows it per concept. Worth doing, not urgent.
+
+**Not device-verified.** Client-side, so it needs a `DEVTOOLS=1` rebuild and a mapped deck on the phone. Note
+none of the five decks there has a `conceptMap` yet, so testing it means spending one AI lookup to map a deck
+first - the small `Cardiac cycle - lecture 4` deck is the cheap choice.

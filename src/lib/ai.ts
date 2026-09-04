@@ -124,6 +124,25 @@ export function providerLabel(plan: string, requestedModel: string): string {
   return "Groq";
 }
 
+/** The app's only Groq client.
+ *
+ * Every Groq call in the app resolves to FREE_MODEL - getProviderModel for both the
+ * non-PRO and the unrecognised-id branches, resolveGradeModel, and shuffle - so there
+ * is exactly one model to reason about and exactly one place to put request-level
+ * policy. Use this rather than calling createGroq directly, or any such policy
+ * silently stops applying to whichever site was missed.
+ *
+ * A `response_format: {"type":"json_object"}` middleware was built here and REJECTED on
+ * measurement: 120 ingest calls in each mode on real chunks gave 0 failures plain
+ * against 1 in json_object mode (Groq answers `400 json_validate_failed` rather than
+ * passing a bad response through), and 920 average output tokens against 909 - a 1.2%
+ * saving, not the 7.6% two smaller runs on different chunks had suggested. So the mode
+ * buys nothing measurable and turns a retryable 502 into a 400 the SDK marks final.
+ * Do not re-add it without a bigger sample that actually shows a difference. */
+export function groqModel(): LanguageModel {
+  return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
+}
+
 /**
  * Routes a generation request to the right provider based on the user's plan.
  * All provider keys (Groq/OpenAI/Anthropic) live in server-side env vars and
@@ -133,7 +152,7 @@ export function providerLabel(plan: string, requestedModel: string): string {
  */
 export function getProviderModel(plan: string, requestedModel: string): LanguageModel {
   if (plan !== "PRO") {
-    return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
+    return groqModel();
   }
 
   switch (requestedModel) {
@@ -153,12 +172,12 @@ export function getProviderModel(plan: string, requestedModel: string): Language
     default:
       // A PRO user who left the free model selected (or sent an unknown id)
       // still gets a working model rather than a hard error.
-      return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
+      return groqModel();
   }
 }
 
 export function resolveGradeModel(): LanguageModel {
-  return createGroq({ apiKey: process.env.GROQ_API_KEY })(FREE_MODEL);
+  return groqModel();
 }
 
 /** A provider's rate-limit answer, and how long it asked us to wait - `null`

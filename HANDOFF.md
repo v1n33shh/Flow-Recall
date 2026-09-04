@@ -876,3 +876,91 @@ as a quick follow-up.**
 Note `ConceptsResponseSchema` is now a `z.preprocess`, which `generateObject` cannot convert to a JSON schema.
 That refactor needs the plain object schema for generation and keeps the tolerant one for validating whatever
 comes back.
+
+---
+
+## 13. json_object mode: measured, and rejected — 2026-09-05
+
+The plan for "the free model with no errors" was to make malformed JSON impossible by adding
+`response_format: {"type":"json_object"}` to every Groq request, via a `fetch` middleware on a single
+`groqModel()` factory. It was built, measured, and **not shipped.** The measurement is the point;
+keep it, so nobody spends the day rediscovering it.
+
+### The seven-route probe
+
+Built at `/tmp/seven-probe.ts` (throwaway, bundled with `esbuild --format=cjs` — CJS because
+importing the route modules drags in `next/server` via `@/auth`, which needs `__dirname`). Every
+route's **real** prompt builder and **real** response schema, called straight at Groq so no auth,
+Prisma or quota row is involved — the pattern `askSchema.ts` already documents.
+
+To make that possible, four things are now exported that were route-local:
+`buildShufflePrompt`, `buildDefinePrompt`, cloze-grade's `buildPrompt` and its `GradeSchema`. Keep
+them exported — the next model swap needs exactly this probe, and `conceptSchema.ts` already
+records the reason ("exported so it can be run against the real model").
+
+### What it found
+
+`json_object` mode, ~10 calls per small route: **no route 400s.** shuffle, concept-map, ask,
+teach-back, define and cloze-grade were all clean, which retires the risk that mattered most —
+the mode requires the prompt to mention JSON, and all seven already end with "Respond with ONLY
+raw JSON".
+
+Then the honest comparison, 120 ingest calls in each mode over the same real chunks:
+
+| mode | failures / 120 | avg output tokens |
+|---|---|---|
+| plain | **0** | 920 |
+| json_object | **1** (`400 json_validate_failed`) | 909 |
+
+Three conclusions, in order of how much they mattered:
+
+1. **The mode does not reduce the failure rate.** It was marginally worse here. Plain mode's
+   record since the envelope fix is now 1 failure in 224 calls (~0.45%).
+2. **The 7.6% token saving was an artefact.** It came from two 30-call runs on *different* chunk
+   slices; over the same sequence it is 1.2%, which is chunk variation.
+3. **Its failures are worse in kind.** json_object mode does not quietly repair a bad response —
+   Groq **rejects the request**: `400 invalid_request_error`, `code: "json_validate_failed"`, the
+   offending text under `failed_generation`. The AI SDK marks 4xx non-retryable (rightly — a
+   rejected key must not be retried forever), so every route's generic branch would answer
+   `retryable: false` and `runChunks` would end the whole run on it. That trades a ~0.45%
+   recoverable hiccup for a ~0.8% run-ender: about a 15% chance of killing any 20-section deck.
+
+A companion fix for (3) was written and then reverted with the mode — `isJsonValidationFailure`
+in `ai.ts`, mapping the 400 back to the retryable `MODEL_UNPARSEABLE` 502, plus a
+`getFriendlyErrorMessage` branch so Groq's `failed_generation` never reaches a student's screen.
+**If json_object mode is ever revisited, it must ship with that mapping or it is a regression.**
+Nothing sends `response_format` now, so the helper would have been dead code.
+
+### What was kept
+
+`groqModel()` — one factory owning the app's only Groq client, replacing four duplicated
+`createGroq({ apiKey })(FREE_MODEL)` sites (`ai.ts` ×3, shuffle ×1, the last via a `SHUFFLE_MODEL`
+alias that is now gone). No behaviour change. It exists because the invariant behind it was
+implicit across four files and is load-bearing: **every Groq call in this app resolves to
+FREE_MODEL**, so there is one model to reason about and one place for request-level policy. The
+rejected middleware and its numbers are recorded in the doc comment there.
+
+### So where does "no errors" actually stand
+
+**Already there, and it was there before this work.** The measured residual is ~0.45% per call,
+recoverable by retry, and a section only fails after three consecutive bad rolls — about 1 in a
+million. Across a 20-section deck that is a ~0.002% chance of a run-ender. The two changes that
+got it there were the envelope tolerance (§12) and the retry loop that predates it. There is no
+remaining error worth code.
+
+## 14. `DAILY_GRADE_CAP` 200 → 100
+
+The loosest cap in the app, and the only one never sized from cost. 200/day is 6,000 grades a
+month; at a measured $0.0000546 a call that is **~$0.33 per student per month — about four times
+the entire card-generation allowance** (100 requests at $0.000867 = $0.087). At 100 it is ~$0.165,
+which puts the two in the same order.
+
+Nothing needed to change with it: the constant has exactly two consumers (its declaration and one
+`where` clause), its tests seed `DAILY_GRADE_CAP - 1` rather than looping, no UI copy renders it,
+and the Prisma comment on `User.clozeGradesToday` does not name it. One comment in
+`/api/teach-back` did quote "200 a day" — now it names the constant instead.
+
+**Do not lower it further.** It counts only answers that were not exact matches, so 100 is already
+well past any real session — and the failure lands in the worst possible place: `/api/cloze-grade`
+answers `429 "Daily grading limit reached."` *mid-study*, so a student who trips it loses grading
+in the middle of a session rather than at a button they chose to press.

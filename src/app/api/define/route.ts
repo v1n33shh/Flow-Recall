@@ -25,7 +25,7 @@ const requestSchema = z.object({
   context: z.string().trim().max(2000).default(""),
 });
 
-function buildDefinePrompt(phrase: string, context: string): string {
+export function buildDefinePrompt(phrase: string, context: string): string {
   return [
     "You are a world-class lexicographer helping a medical/law student who just",
     "highlighted a word or phrase while reading a dense textbook and does not",

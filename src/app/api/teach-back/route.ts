@@ -25,8 +25,10 @@ import {
  *
  * /api/ask and /api/concept-map both spend from `definitionsUsed`, the FREE bucket
  * of FREE_LOOKUPS_PER_MONTH (60 a month, and 20 for life before that). This route
- * uses `isOverDailyCap` instead, the same abuse ceiling /api/cloze-grade uses (200 a
- * day, FREE and PRO alike). Drawing on a monthly allowance shared with reader
+ * uses `isOverDailyCap` instead, the same abuse ceiling /api/cloze-grade uses
+ * (DAILY_GRADE_CAP a day, FREE and PRO alike - named rather than quoted, because the
+ * number moved once already and a stale one here is worse than no number).
+ * Drawing on a monthly allowance shared with reader
  * definitions and concept mapping would make this feature useless at exactly the
  * moment it is worth something: a student working through a hard chapter explains
  * ten concepts back in one sitting, and telling them that cost them a sixth of the

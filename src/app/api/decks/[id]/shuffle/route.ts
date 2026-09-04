@@ -1,12 +1,11 @@
 export const maxDuration = 60;
 
 import { generateText } from "ai";
-import { createGroq } from "@ai-sdk/groq";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
-import { FREE_MODEL, groqProviderOptions, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
+import { groqModel, groqProviderOptions, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
 import { generationLimitForPlan } from "@/lib/freeQuota";
@@ -30,8 +29,6 @@ const NEW_CARDS = 5;
 // sane size on very large decks. The newest/most-recent context is plenty for
 // "generate new angles".
 const MAX_SEED_CONCEPTS = 60;
-// Groq's smartest free model - the one the spec pins Infinite Recall to.
-const SHUFFLE_MODEL = FREE_MODEL;
 
 // The client sends a distilled view of the concepts already in the deck: enough
 // for the model to understand the material and to avoid repeating questions.
@@ -53,7 +50,7 @@ const requestSchema = z.object({
 
 type SeedConcept = z.infer<typeof seedConceptSchema>;
 
-function buildShufflePrompt(seed: SeedConcept[], count: number): string {
+export function buildShufflePrompt(seed: SeedConcept[], count: number): string {
   const material = seed
     .map((c, i) => {
       const answer = c.answer ? ` (answer: ${c.answer})` : "";
@@ -177,7 +174,10 @@ export async function POST(
   const seed = parsed.data.concepts.slice(-MAX_SEED_CONCEPTS);
 
   try {
-    const model = createGroq({ apiKey: process.env.GROQ_API_KEY })(SHUFFLE_MODEL);
+    // groqModel() rather than a local client, so this route cannot drift from the
+    // other three Groq call sites. It resolves to FREE_MODEL, which is the free model
+    // the spec pins Infinite Recall to.
+    const model = groqModel();
     const { text: rawText, usage } = await generateText({
       model,
       prompt: buildShufflePrompt(seed, NEW_CARDS),

@@ -14,7 +14,7 @@ import { isOverDailyCap } from "@/lib/clozeGradeRateLimit";
 // confidently-worded but wrong fact must fail. This is the sole source of
 // truth for "correct" here - unlike SwipeChallenge's self-graded reveal
 // path, nothing downstream lets a button tap override this verdict.
-const GradeSchema = z.object({
+export const GradeSchema = z.object({
   correct: z
     .boolean()
     .describe(
@@ -39,7 +39,7 @@ const SYSTEM_PROMPT = [
   "A confidently-worded answer that names a different or incorrect fact must be graded false.",
 ].join(" ");
 
-function buildPrompt(cloze: string, correctAnswer: string, userAnswer: string): string {
+export function buildPrompt(cloze: string, correctAnswer: string, userAnswer: string): string {
   return [
     "Respond with ONLY raw JSON matching exactly this shape - no markdown, no code blocks, no commentary:",
     '{"correct": true or false}',

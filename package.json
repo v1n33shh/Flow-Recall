@@ -44,7 +44,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.4.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",

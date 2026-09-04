@@ -207,11 +207,18 @@ export async function runChunks(
 
       // The provider's own Retry-After wins where it sent one: it knows when its
       // window rolls over and we are guessing.
-      const waitMs = Math.min(
+      const targetMs = Math.min(
         outcome.retryAfterMs ??
           (outcome.rateLimited ? RATE_LIMIT_BACKOFF_MS : GARBLED_BACKOFF_MS * attempt),
         MAX_RETRY_WAIT_MS,
       );
+
+      // Jittered, because the Groq key is ONE key for every student: the OTPM
+      // ceiling is enforced per organization, so two phones generating at the same
+      // moment already 429 each other (measured - both requests failed, neither
+      // succeeded). Clients that then back off by the same 62 seconds wake together
+      // and collide again. A spread of +/-25% is what breaks that lockstep.
+      const waitMs = Math.round(targetMs * (0.75 + Math.random() * 0.5));
 
       if (outcome.rateLimited) {
         // Self-tuning, and the reason the doubling this replaced was useless:
@@ -224,8 +231,12 @@ export async function runChunks(
         // cost/limit x 60s, and ~900 output tokens against a 1000 OTPM ceiling is
         // ~54s - so pacing at 43s trips again immediately, every chunk, and settles
         // into a sawtooth that spends one retry per chunk to go half as fast.
+        //
+        // Built from targetMs, not the jittered wait: jitter exists to scatter
+        // simultaneous clients, not to talk this run into a spacing it has already
+        // been told is too tight.
         delayMs = Math.min(
-          Math.max(delayMs, waitMs, RATE_LIMIT_BACKOFF_MS),
+          Math.max(delayMs, targetMs, RATE_LIMIT_BACKOFF_MS),
           MAX_CHUNK_DELAY_MS,
         );
       }

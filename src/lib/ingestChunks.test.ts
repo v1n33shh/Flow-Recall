@@ -36,10 +36,18 @@ async function run(chunks: string[], countsFirstChunk = true) {
   return { result: await promise, progress };
 }
 
-beforeEach(() => vi.useFakeTimers());
+beforeEach(() => {
+  vi.useFakeTimers();
+  // The retry wait is jittered +/-25% to keep simultaneous clients from waking in
+  // lockstep. 0.5 is the midpoint, i.e. a factor of exactly 1, so every test below
+  // can assert the real number rather than a range. The jitter itself is covered by
+  // its own test at the end.
+  vi.spyOn(Math, "random").mockReturnValue(0.5);
+});
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("runChunks", () => {
@@ -251,6 +259,26 @@ describe("runChunks", () => {
     const { progress } = await run(["one"]);
 
     expect(progress).toContain("Part 1 came back garbled - retrying in 6s.");
+  });
+
+  it("scatters the retry wait so simultaneous clients don't wake together", async () => {
+    // One Groq key serves every student and the OTPM ceiling is per organization,
+    // so two phones generating at once already 429 each other. Identical backoffs
+    // would then re-collide on every retry, forever.
+    const waits: number[] = [];
+    for (const roll of [0, 0.5, 1]) {
+      vi.spyOn(Math, "random").mockReturnValue(roll);
+      mockFetch([
+        { status: 429, body: { error: "Rate limited", retryable: true, retryAfterSeconds: 60 } },
+        { status: 200, body: cards("a") },
+      ]);
+      const { progress } = await run(["one"]);
+      const said = progress.find((p) => p?.includes("rate limit")) ?? "";
+      waits.push(Number(said.match(/waiting (\d+)s/)?.[1]));
+    }
+
+    expect(waits).toEqual([45, 60, 75]);
+    expect(new Set(waits).size).toBe(3);
   });
 
   it("reports which part it is on", async () => {

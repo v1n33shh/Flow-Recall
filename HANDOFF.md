@@ -171,9 +171,37 @@ The run had been pacing at 40–58s between chunks, just fast enough to accumula
 - The rate-limit backoff is **62s** (was 6s, 12s) with a 125s ceiling, and the inter-chunk delay now adopts **the longer of the provider's `Retry-After` and a full window** as the run's spacing, instead of doubling 1500 → 3000. Doubling was useless against a per-minute window: it re-tripped the limit and spent both remaining attempts inside it. `Retry-After` alone is not enough either — it says when the *current* window clears, and a rolling per-minute budget needs spacing of at least cost/limit × 60s, so pacing at the 43s Groq asks for trips again on every chunk.
 - **`maxRetries: 0` on the route's `generateText`.** This is the one that removes a 504 waiting to happen. The SDK's default is 2 retries and it *honours* `retry-after: 43`, so a rate-limited chunk sat inside a single request for 27–58 seconds against this route's own `maxDuration = 60`. The phone measured round trips of **58527 ms, 58606 ms and 56102 ms** — within 1.5 s of Vercel killing the function. It also means most of that run was already absorbing OTPM 429s invisibly inside single requests, which is why 15 chunks that each cost ~2.5 s of real model time took 40–58 s apiece. At 0 the 429 returns in ~200 ms with its header intact and the client does the waiting, off the serverless clock and in front of the student.
 
-**Tests**: 459 / 459 across 31 files, `npm test` exit 0. `npm run build` succeeds, `tsc --noEmit` clean, `eslint src` 0 errors / 12 pre-existing warnings.
+**Tests**: 460 / 460 across 31 files, `npm test` exit 0. `npm run build` succeeds, `tsc --noEmit` clean, `eslint src` 0 errors / 12 pre-existing warnings.
 
-## 8. Do this next, in this order
+## 8. The free tier cannot serve more than one student at a time
+
+Asked directly, and measured, because it is a different question from "does one upload work".
+
+**Every student's request goes out under one server-side `GROQ_API_KEY`** (`src/lib/ai.ts`, three call sites), and Groq enforces OTPM **per organization** — the 429 says so in as many words: `in organization org_01kwhcy15eez7bnn3ddqhka6kj … on output tokens per minute (OTPM)`. So the 1000-token minute is not per user. It is the whole product's budget.
+
+Two requests fired at the same instant, into a window that had been clear for 70 seconds:
+
+| | result |
+|---|---|
+| student-1 | **429**, `retry-after: 5` |
+| student-2 | **429**, `retry-after: 22` |
+
+Neither succeeded. Two requests each reserving ~886 output tokens exceed 1000 together, so both were rejected rather than one being served and one queued.
+
+Headers off a successful call, for the record: `x-ratelimit-limit-requests: 1000` (reset `1m26.4s`, so per minute — irrelevant here) and `x-ratelimit-limit-tokens: 8000` per minute. At ~1435 input + ~886 output = ~2321 tokens a request, **TPM 8000 caps the whole organization at ~3.4 requests a minute even if OTPM were lifted.** Neither number is per-student, and no client-side change can divide them.
+
+What that means in practice, at ~1.1 requests/minute org-wide and 20 parts to a deck:
+
+- **1 student**: ~20 minutes a book. Works.
+- **2 students at once**: measured above — both fail, then retry into each other. ~40+ minutes each.
+- **10 students**: one request per student per ~10 minutes. A book becomes 3+ hours, with a rate-limit notice on screen almost continuously.
+- **A class**: unusable. Not "slow" — the retry logic keeps it from *losing* work, but there is no capacity to hand out.
+
+**Added because of this**: the retry wait is now jittered ±25%. Without it, every client that trips the shared ceiling backs off by the same 62 seconds, wakes in lockstep and collides again — a thundering herd the previous version would have created and then blamed on the provider.
+
+The fix is capacity, and it is a billing decision, not a code one: Groq's paid tier, or routing students to the Pro model. Reducing output per request (fewer cards, shorter `explanation` in `buildConceptsPrompt`) buys a factor of ~1.5, which changes nothing about the shape of the problem.
+
+## 9. Do this next, in this order
 
 1. **Deploy.** The APK calls the live API (`NEXT_PUBLIC_API_URL`), so every server-side fix above — the 429 pass-through, the `retryable` flags, the friendly message — is inert until `main` is deployed. The device run above exercised the client half against the *old* route. Nothing is committed yet.
 2. **Decide the PRO default.** `DEFAULT_MODEL` in `src/app/ingest/page.tsx` is the free Qwen model for everyone, so this PRO account spent an 11-minute run inside Groq's free-tier OTPM ceiling. Defaulting a PRO plan to `claude-haiku-latest` is a one-line change and probably the single biggest speed win available — but the Pro path goes through the AICredits gateway and **its rate limits were not measured** (it bills real credits; not spent without asking).

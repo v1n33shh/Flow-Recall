@@ -28,6 +28,27 @@ import { APICallError, RetryError, type LanguageModel } from "ai";
 export const FREE_MODEL =
   process.env.GROQ_FREE_MODEL || process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
 
+/** Free-model ids this app has shipped in the past, still accepted on a request.
+ *
+ * A deck records what generated it (`Deck.model`) and a continuation sends that id
+ * back deliberately, so a PRO deck is not silently finished on the free model. That
+ * makes **every id the app has ever written into a deck part of this route's input
+ * contract permanently** — and swapping GROQ_FREE_MODEL to gpt-oss-120b broke it:
+ * every deck created before the swap kept sending `qwen/qwen3.6-27b` into an enum
+ * that no longer listed it, so continuing a half-finished book returned
+ * `400 Invalid option` before a single card was generated. Measured on the device
+ * against production: two books, 402 and 1023 sections left, both dead on the tap.
+ *
+ * Accepting them costs nothing and resolves correctly, because the requested Groq id
+ * is not what picks the model: getProviderModel builds FREE_MODEL for every non-PRO
+ * request and for any unrecognised id on a PRO one, so a retired id runs on whatever
+ * the free model is today. The only question the id is really asked is isProModel,
+ * and the answer for these is a correct "no".
+ *
+ * **Append to this list; never remove from it.** An id dropped here is a 400 on
+ * somebody's half-finished book, and it is silent until they tap Continue. */
+export const RETIRED_FREE_MODELS = ["qwen/qwen3.6-27b"] as const;
+
 /** Keeps Groq's reasoning models from spending the whole output budget on a hidden
  * <think> chain-of-thought before they reach any real answer - required for every
  * plain generateText call this app makes, since none of them parse or budget for
@@ -74,6 +95,22 @@ export const PRO_MODELS = {
 } as const;
 
 export type RequestedModel = typeof FREE_MODEL | keyof typeof PRO_MODELS;
+
+/** Every model id a request is allowed to carry: the current free model, the ones it
+ * replaced, and the PRO models.
+ *
+ * Built from PRO_MODELS rather than repeating "gpt-4o" and "claude-haiku-latest" as
+ * literals, so the set the schema accepts cannot drift from the set isProModel
+ * recognises. De-duplicated because FREE_MODEL is itself a retired id whenever the
+ * env vars are unset — the local-dev default.
+ *
+ * Called during module evaluation by the route's schema, so it is declared below
+ * every const it reads. TypeScript does not model that ordering (see the
+ * temporal-dead-zone note in HANDOFF §7); the placement is the guard. */
+export function acceptedModelIds(): [string, ...string[]] {
+  const ids = new Set<string>([FREE_MODEL, ...RETIRED_FREE_MODELS, ...Object.keys(PRO_MODELS)]);
+  return [...ids] as [string, ...string[]];
+}
 
 /** True for the paid models that require a PRO plan (gpt-4o, Claude 3.5 Sonnet). */
 export function isProModel(requestedModel: string): boolean {

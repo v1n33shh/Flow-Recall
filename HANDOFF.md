@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 509 passed / 509 across 32 files, `npm test` exit 0 |
+| **Tests** | 514 passed / 514 across 32 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -384,14 +384,43 @@ of the same PDF, not one:
 - a deck created before this change still has no `sourceKey`, so re-uploading its source must fall back to
   making a new deck rather than matching the wrong one
 
-### 5. Watch localStorage on that device run
+### 5. Decide what to do about localStorage — measured 09-05, and it is tighter than expected
 
-`§9`'s storage handling is the one part with no device evidence behind it, only tests. Read
-`localStorage["flowrecall:savedDecks"].length` over CDP before and after a continuous run. A single book's
-`pendingChunks` is on the order of a megabyte of source text before a single card is added, and the comment
-in `src/lib/sourceKey.ts` records a textbook of 6,027,603 characters on this phone — so the quota is not a
-theoretical concern, and how close a real deck comes to it is worth knowing as a number rather than an
-argument.
+This was "worth knowing as a number". The number is bad.
+
+| | chars |
+|---|---|
+| `flowrecall:savedDecks` | 3,915,306 |
+| all 8 localStorage keys | 4,050,062 |
+| **headroom before `QuotaExceededError`** | **1,048,576** |
+| implied cap | ~5.1–5.3M |
+
+**`pendingChunks` is 97% of it** — 3,801,609 of the 3,915,306. All the cards in the library together are
+~113K. Per deck:
+
+| deck | cards | pending | total chars | of which pendingChunks | avg chunk |
+|---|---|---|---|---|---|
+| The Book of Wisdom (Osho) | 22 | 1023 | 2,639,527 | 2,611,133 | 1219 |
+| wisdom | 50 | 402 | 1,256,393 | 1,190,476 | 2952 |
+| KEY PROBE 14:49:34 | 15 | 0 | 16,776 | — | — |
+| Cardiac cycle - lecture 4 | 3 | 0 | 2,605 | — | — |
+
+So **one more book does not fit**: a fresh Osho deck needs ~1.19M chars of `pendingChunks` (measured off the
+`wisdom` deck) against 1.05M of headroom. Uploading it would extract fine, generate and pay for 20 sections,
+then throw at `saveDeck` — §9f is what turns that into a message instead of an unhandled rejection, but the
+20 requests are still gone.
+
+The 2.64M-char deck is **obsolete**: `avgPendingChunk: 1219` is the old hard-slicing chunker §2b replaced
+(36.5% mid-sentence edges), and `wisdom` is the same book redone properly. Deleting it would free 67% of the
+library. **That is the user's call, not a cleanup to do unasked.**
+
+**`navigator.storage.estimate()` is a trap here.** It reports 234 MB used of a 10.9 GB quota — that is
+IndexedDB (the FSRS rows). localStorage has its own hard ~5 MB-class cap that `estimate()` does not reflect
+at all, so a future session reading it would conclude there is plenty of room.
+
+The real lever is that `pendingChunks` keeps a whole book's source text in localStorage to re-send it a
+section at a time. IndexedDB has ~10 GB free on this device. Moving leftover source text there would remove
+the ceiling entirely — a real change, worth a decision, not a quick fix.
 
 ---
 
@@ -607,3 +636,72 @@ runChunksContinuous 12); `tsc --noEmit` clean; `eslint src` 0 errors and the sam
 **None of it has run on the device.** That is §6 step 4, and it is the only thing standing between this commit
 and being finished — the tests cover the runner's invariants, not that the recognition card appears when a
 student re-drops the same PDF into a WebView.
+
+---
+
+## 10. The model swap orphaned every existing deck — found on the device 09-05
+
+**A live production regression, not caused by §9.** Introduced by `72a69b0` plus setting `GROQ_FREE_MODEL`,
+and live since that env var was set. Found within minutes of tapping the new button on real decks.
+
+`src/app/api/ingest/route.ts` built its accepted-model enum from the *current* `FREE_MODEL`:
+
+```ts
+model: z.enum([FREE_MODEL, "gpt-4o", "claude-haiku-latest"]).default(FREE_MODEL),
+```
+
+A deck records what generated it (`Deck.model`) and a continuation replays that id — deliberately, so a PRO
+deck is not silently finished on the free model. Every deck created before the swap therefore sends
+`qwen/qwen3.6-27b` into an enum that no longer lists it. Measured against production from the device:
+
+```
+model: qwen/qwen3.6-27b    -> 400  Invalid option: expected one of
+                                   "openai/gpt-oss-120b"|"gpt-4o"|"claude-haiku-latest"
+model: openai/gpt-oss-120b -> 200  3 real cards
+```
+
+So **"Generate all N remaining sections" was dead on every book a student had already started** — on this
+device, 402 sections and 1023 sections, the two decks the feature exists for. It fails in under a second, and
+§2g's claim that "qwen remains the fallback" was not true in practice: the route rejected it before any
+provider was reached.
+
+§6's warning covered a *different* failure — the two env vars drifting from each other. Nobody was watching
+the case where the enum has no room for the id it used to be.
+
+**The fix.** `RETIRED_FREE_MODELS` in `src/lib/ai.ts`, and `acceptedModelIds()` feeding the schema:
+
+- Nothing downstream needed changing, which is what makes it safe: `getProviderModel` ignores the requested
+  Groq id and builds `FREE_MODEL` for every non-PRO request *and* for any unrecognised id on a PRO one, so a
+  retired id runs on today's free model. `providerLabel` falls through to "Groq". `isProModel` correctly says no.
+- The accepted set is built from `PRO_MODELS` instead of repeating `"gpt-4o"`/`"claude-haiku-latest"` as
+  literals, so the schema can no longer drift from the plan gate.
+- De-duplicated, because `FREE_MODEL` *is* a retired id whenever the env vars are unset — the local-dev default.
+- **Append to `RETIRED_FREE_MODELS`, never remove.** An id dropped from it is a 400 on somebody's
+  half-finished book, silent until they tap Continue.
+- `/api/decks/[id]/shuffle` is not affected: it never takes a model from the client (`SHUFFLE_MODEL = FREE_MODEL`).
+  `/api/ingest` is the only route with a client-supplied model enum.
+
+**The general lesson worth carrying:** `Deck.model` is persisted client-side and replayed on every
+continuation, so **every model id this app has ever shipped is part of the ingest route's input contract
+permanently**. Swapping the free model is not a config change; it adds an id to support forever.
+
+### What the device run confirmed before it hit this
+
+- `/api/account/usage` works end to end from the APK against production: `plan PRO, used 5, limit 2000,
+  remaining 1995`.
+- The new library copy renders: "Generate all 402 remaining sections", "Generate all 1023 remaining sections".
+- All four existing decks have `sourceKey: null`, so the no-backfill fallback is real on hardware. (§1's
+  "2 decks" was stale — there are four.)
+- The storage numbers in §6 step 5.
+
+**Still unconfirmed:** everything downstream of the tap — batching, the Stop semantics, the resume invariant,
+and the recognition card itself. The fix has to reach production before any of it can be tested, since the APK
+talks to `www.flowrecall.app`. **No APK rebuild is needed** — the fix is server-side.
+
+### Clicking this app over CDP, for the next session
+
+All three work on this WebView, contrary to §7's note about Playwright timing out: a synthetic
+`MouseEvent{bubbles:true}`, `el.click()`, and `Input.dispatchMouseEvent` at the element's centre. Verified
+against the session-length pills. The earlier "the click did nothing" was the click working perfectly — the
+run started, 400'd in 922 ms, and the UI was back before a 2-second poll could see it. **Watch the console
+and a patched `window.fetch`, not the DOM, for anything that can fail this fast.**

@@ -6,6 +6,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import {
+  acceptedModelIds,
   FREE_MODEL,
   groqProviderOptions,
   getFriendlyErrorMessage,
@@ -26,9 +27,11 @@ const requestSchema = z.object({
   text: z.string().min(1),
   // The model the client requested. FREE plans are pinned to Groq regardless,
   // so this only matters on a PRO plan. Defaults to the free model.
-  model: z
-    .enum([FREE_MODEL, "gpt-4o", "claude-haiku-latest"])
-    .default(FREE_MODEL),
+  //
+  // The accepted set includes the free models this app has retired, because a
+  // continuation replays the id its deck was generated with - see
+  // RETIRED_FREE_MODELS for what listing only the current one cost.
+  model: z.enum(acceptedModelIds()).default(FREE_MODEL),
   // A single deck generation is sent as up to MAX_CHUNKS sequential requests.
   // The daily FREE quota is per *deck*, so only the first chunk of a deck
   // enforces and increments the limit; continuation chunks (false) pass

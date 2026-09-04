@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 import { APICallError, RetryError } from "ai";
-import { getFriendlyErrorMessage, groqProviderOptions, readRateLimit, reasoningEffortFor } from "./ai";
+import {
+  acceptedModelIds,
+  FREE_MODEL,
+  getFriendlyErrorMessage,
+  groqProviderOptions,
+  isProModel,
+  readRateLimit,
+  reasoningEffortFor,
+  RETIRED_FREE_MODELS,
+} from "./ai";
 
 function apiError(statusCode: number, headers?: Record<string, string>, message = "Rate limit reached"): APICallError {
   return new APICallError({
@@ -154,5 +163,38 @@ describe("reasoningEffortFor", () => {
     const options = groqProviderOptions();
     expect(Object.keys(options)).toEqual(["groq"]);
     expect(options.groq.reasoningEffort).toMatch(/^(none|low)$/);
+  });
+});
+
+describe("acceptedModelIds", () => {
+  it("accepts the free model a request would default to", () => {
+    expect(acceptedModelIds()).toContain(FREE_MODEL);
+  });
+
+  it("still accepts every retired free model", () => {
+    // The regression this exists for: a deck records the model that generated it and
+    // replays that id to continue, so dropping an id here returns 400 Invalid option
+    // on every book started before the swap - after the student taps Continue.
+    for (const retired of RETIRED_FREE_MODELS) {
+      expect(acceptedModelIds()).toContain(retired);
+    }
+  });
+
+  it("accepts exactly the PRO models isProModel recognises", () => {
+    // Built from PRO_MODELS rather than repeated as literals, so the schema cannot
+    // accept an id the plan gate does not know about, or reject one it does.
+    const pro = acceptedModelIds().filter((id) => isProModel(id));
+    expect(pro.sort()).toEqual(["claude-haiku-latest", "gpt-4o"]);
+  });
+
+  it("lists nothing twice, even when the free model is itself a retired one", () => {
+    // FREE_MODEL falls back to qwen/qwen3.6-27b when neither env var is set, which is
+    // the local-dev default - so this overlap is the normal case, not a corner one.
+    const ids = acceptedModelIds();
+    expect(ids).toHaveLength(new Set(ids).size);
+  });
+
+  it("is a non-empty tuple, which is what z.enum requires", () => {
+    expect(acceptedModelIds().length).toBeGreaterThan(0);
   });
 });

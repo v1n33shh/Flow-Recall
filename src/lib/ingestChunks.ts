@@ -349,6 +349,42 @@ export type ContinuousResult = {
   stoppedBy: "exhausted" | "user" | "error";
 };
 
+/** `ContinuousResult.code` for a monthly generation budget the route has refused. Sent
+ * by /api/ingest, unlike PERSIST_FAILED_CODE, but named here for the same reason: the
+ * copy below branches on it, and a typo in a bare string is a student told to retry
+ * into a wall. */
+export const BUDGET_REACHED_CODE = "GENERATION_BUDGET_REACHED";
+
+/** What to tell the student when a continuous run ends badly.
+ *
+ * Shared because both screens - /ingest's recognition card and the library's deck card
+ * - end a run the same way and were saying it in four subtly different sentences ("the
+ * cards that came through" against "the cards that did come through"). Copy that tells
+ * someone whether to tap again is not a place for drift.
+ *
+ * The branch that matters is "tap again to carry on", which is right for a rate limit
+ * or a garbled response and wrong for both of the others:
+ *
+ *   - BUDGET_REACHED_CODE: the next tap is refused for the reason this one was, so
+ *     inviting it teaches the student the button is broken.
+ *   - PERSIST_FAILED_CODE: the next tap regenerates cards the same failed write will
+ *     drop again - and the cards this run reports were generated, never saved, so the
+ *     "we kept N" count would be a lie on top of it. The thrown message already says
+ *     the one thing that helps (free some space), so it stands alone.
+ */
+export function continuationMessage(run: {
+  error: string;
+  code: string | null;
+  kept: number;
+}): string {
+  if (run.kept === 0 || run.code === PERSIST_FAILED_CODE) return run.error;
+  const cards = `${run.kept} ${run.kept === 1 ? "card" : "cards"}`;
+  if (run.code === BUDGET_REACHED_CODE) {
+    return `${run.error} We kept the ${cards} generated before it ran out.`;
+  }
+  return `${run.error} We kept the ${cards} that came through - tap again to carry on.`;
+}
+
 /** Works through `chunks` until they run out, the student stops it, or something
  * stops it for them - the whole book from one tap instead of ~115 of them.
  *

@@ -15,13 +15,14 @@ import {
   useSavedDecks,
 } from "@/lib/storage";
 import {
+  continuationMessage,
   CONTINUE_BATCH_SIZE,
-  PERSIST_FAILED_CODE,
   runChunksContinuous,
   type ContinuousProgress,
 } from "@/lib/ingestChunks";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
+import ContinuationProgress from "@/components/ContinuationProgress";
 import DeckExamDate from "@/components/DeckExamDate";
 import MemoryOverview from "@/components/MemoryOverview";
 import TodaySession from "@/components/TodaySession";
@@ -604,24 +605,15 @@ export default function Home() {
         onProgress: (progress) => setJitProgress((prev) => ({ ...prev, [deck.id]: progress })),
       });
 
+      // Shared with /ingest's recognition card, which ends a run the same way - see
+      // continuationMessage for which failures must not say "tap again".
       if (run.error) {
-        const kept = run.concepts.length;
-        // "tap again to carry on" is the right advice for a rate limit or a garbled
-        // response, and the wrong advice for an exhausted monthly budget - the next
-        // tap is refused for the same reason this one was.
-        const budgetReached = run.code === "GENERATION_BUDGET_REACHED";
-        // And wrong again for a full device, twice over: the next tap drops what it
-        // regenerates, and the cards this run reports were never kept. Its own
-        // message already says the only thing that helps, so it stands alone.
-        const persistFailed = run.code === PERSIST_FAILED_CODE;
-        setJitErrors((prev) => ({
-          ...prev,
-          [deck.id]: !kept || persistFailed
-            ? run.error!
-            : budgetReached
-              ? `${run.error} We kept the ${kept} cards that were generated before it ran out.`
-              : `${run.error} We kept the ${kept} cards that did come through - tap again to carry on.`,
-        }));
+        const message = continuationMessage({
+          error: run.error,
+          code: run.code,
+          kept: run.concepts.length,
+        });
+        setJitErrors((prev) => ({ ...prev, [deck.id]: message }));
       }
     } catch (err) {
       setJitErrors((prev) => ({
@@ -900,52 +892,5 @@ export default function Home() {
       {/* ============================ FOOTER ============================ */}
       <SiteFooter />
     </main>
-  );
-}
-
-/** Live state of a continuous continuation, on the deck's own card.
- *
- * A run can last twenty minutes and contain several 62-second rate-limit waits, so
- * a spinner is not enough: this says which section, how many cards have actually
- * been saved, and what it is waiting for when it is waiting. `progress` is
- * momentarily undefined between the tap and the runner's first tick. */
-function ContinuationProgress({
-  progress,
-  onStop,
-}: {
-  progress: ContinuousProgress | undefined;
-  onStop: () => void;
-}) {
-  const current = progress?.currentSection ?? 1;
-  const total = Math.max(1, progress?.totalSections ?? 1);
-  const stopping = progress?.stopping ?? false;
-
-  return (
-    <div className="mt-2">
-      <p className="text-sm font-medium text-foreground">
-        Generating section {current} of {total}...
-      </p>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        {progress?.cardsSoFar ?? 0} {progress?.cardsSoFar === 1 ? "card" : "cards"} so far
-        {stopping ? " · finishing this section" : ""}
-      </p>
-      {progress?.waitingReason && (
-        <p className="mt-0.5 text-xs text-muted-foreground">{progress.waitingReason}</p>
-      )}
-      <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-        <div
-          className="h-full bg-accent transition-all"
-          style={{ width: `${Math.round((current / total) * 100)}%` }}
-        />
-      </div>
-      <button
-        type="button"
-        onClick={onStop}
-        disabled={stopping}
-        className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {stopping ? "Finishing this section..." : "Stop"}
-      </button>
-    </div>
   );
 }

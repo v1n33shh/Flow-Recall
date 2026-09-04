@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  BUDGET_REACHED_CODE,
+  continuationMessage,
   PERSIST_FAILED_CODE,
   runChunks,
   runChunksContinuous,
@@ -593,5 +595,45 @@ describe("stopping lands on the next section, not the end of the batch", () => {
     // here whether the run ended in a failure or in a Stop.
     expect(result.failedAtIndex).toBe(1);
     expect(result.error).toBeNull();
+  });
+});
+
+describe("continuationMessage", () => {
+  const RATE = "Part 3 hit a rate limit.";
+
+  it("invites another tap when another tap would actually help", () => {
+    expect(continuationMessage({ error: RATE, code: "RATE_LIMITED", kept: 6 })).toBe(
+      "Part 3 hit a rate limit. We kept the 6 cards that came through - tap again to carry on.",
+    );
+  });
+
+  it("does not invite another tap when the budget is gone", () => {
+    // The next tap is refused for the reason this one was, so inviting it teaches the
+    // student the button is broken.
+    const message = continuationMessage({ error: "You've used this month's allowance.", code: BUDGET_REACHED_CODE, kept: 6 });
+    expect(message).toBe("You've used this month's allowance. We kept the 6 cards generated before it ran out.");
+    expect(message).not.toContain("tap again");
+  });
+
+  it("says nothing about keeping cards it did not keep", () => {
+    // On a persist failure those cards were generated and never saved, so a count
+    // would be a lie - and the thrown message already says the one thing that helps.
+    const error = "Your device is out of space for saved decks.";
+    expect(continuationMessage({ error, code: PERSIST_FAILED_CODE, kept: 12 })).toBe(error);
+  });
+
+  it("stands alone when nothing came through", () => {
+    expect(continuationMessage({ error: RATE, code: "RATE_LIMITED", kept: 0 })).toBe(RATE);
+    expect(continuationMessage({ error: RATE, code: null, kept: 0 })).toBe(RATE);
+  });
+
+  it("counts one card as a card", () => {
+    expect(continuationMessage({ error: RATE, code: null, kept: 1 })).toContain("the 1 card that came through");
+  });
+
+  it("gives an unrecognised code the retry advice, which is the safe default", () => {
+    // A code this build has never seen is far more likely to be a transient provider
+    // failure than a permanent refusal, and the cost of being wrong is one tap.
+    expect(continuationMessage({ error: RATE, code: "SOMETHING_NEW", kept: 3 })).toContain("tap again");
   });
 });

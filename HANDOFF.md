@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 524 passed / 524 across 33 files, `npm test` exit 0 |
+| **Tests** | 552 passed / 552 across 35 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -964,3 +964,66 @@ and the Prisma comment on `User.clozeGradesToday` does not name it. One comment 
 well past any real session — and the failure lands in the worst possible place: `/api/cloze-grade`
 answers `429 "Daily grading limit reached."` *mid-study*, so a student who trips it loses grading
 in the middle of a session rather than at a button they chose to press.
+
+---
+
+## 15. The states nobody had ever seen — 2026-09-05
+
+The gap named in §11 and §13 was that the free tier's refusals have only ever existed on paper: the
+account on the device is PRO, so every "you have run out" branch was unrendered code. The obvious
+next step looked like a free-plan device pass. **Render tests were the better answer** — this
+project's own note in `vitest.config.ts` already says why: "Every UI defect this project has ever
+found came off the phone by hand... both of them reachable from a render assertion in milliseconds."
+A device pass would have seen each state once; these see them on every run, and they need no phone
+(which is just as well — it was unplugged).
+
+### Three components came out of the page files
+
+`RecognisedSourceCard` and `ContinuationProgress` were local functions inside
+`src/app/ingest/page.tsx` and `src/app/page.tsx`, so nothing could render them without dragging
+next-auth, next/navigation and PdfDropzone along. They are pure presentational components with no
+hooks, so they moved to `src/components/` with their tests beside them, matching every other
+component here. 22 new render assertions.
+
+What they cover that nothing did:
+
+- **The allowance line in all four states** — covers the book, does *not* cover it ("so this won't
+  finish the book in one go"), spent ("it resets at the start of next month"), and unknown (the line
+  omitted rather than guessed). The middle two are what a FREE student actually meets.
+- **A fully generated deck** — "Fully generated · 60 cards" with *no* Continue button, and Study
+  wired instead. No deck on the device has ever reached zero pending, so this branch had never run.
+- **The stale-summary fix from §11b**, asserted rather than eyeballed: the summary line is absent
+  while a run is going.
+- **Stop while stopping** — disabled, and a second click does not reach the handler.
+- Singular/plural on cards and sections, which is the kind of thing that only ever gets noticed by
+  a student.
+
+### And one defect they found
+
+`ContinuationProgress` renders before the runner's first tick with `progress === undefined`, and both
+counts fell back to 1 — so a 386-section run opened on "**Generating section 1 of 1...**" above a bar
+filled to **100%**. Under a second on the device, which is why driving it never caught it, and wrong
+in the one direction that matters: the bar exists to say how much is left. It now reads "Starting..."
+with the bar at 0% until the first tick.
+
+Worth keeping the test-writing mistake too, since it is the trap in this file: `renderProgress()` had
+a default parameter, and a JS default fires for an explicit `undefined` — so `renderProgress(undefined)`
+rendered the *running* state and asserted nothing. It passed six of seven tests while testing the wrong
+thing.
+
+### Copy that was drifting, now shared
+
+Both screens ended a failed run with the same three-way branch, in four subtly different sentences
+("the cards that came through" against "the cards that did come through"). It is now
+`continuationMessage()` in `src/lib/ingestChunks.ts`, with `BUDGET_REACHED_CODE` named beside
+`PERSIST_FAILED_CODE` rather than quoted as a bare string. Six tests, including the two branches that
+must never say "tap again to carry on" and the unrecognised-code default (retry advice, because an
+unknown code is far more likely to be transient than permanent).
+
+### Still not done
+
+**The free plan has still never run on a device** — this covers what the components render, not the
+server refusing a real FREE account end to end. The caps themselves are covered by the live-Postgres
+tests in `freeQuotaDb.test.ts`. What is untested anywhere is the seam: `/api/ingest` answering
+`403 FREE_LIMIT_REACHED` and `/ingest` swapping the error banner for the upsell block. That needs
+either a second test account on the phone or a plan flip on the live one, so it is the user's call.

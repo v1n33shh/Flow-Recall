@@ -753,10 +753,10 @@ it is a snapshot and the progress block is the live count.
 
 **gpt-oss-120b's 502s were not garbled JSON at all** — diagnosed and fixed, see §12.
 
-**The allowance line is timing-sensitive.** Its effect returns early while `useSession()` is still loading, and
-on one run it never appeared even after the session resolved and `continuing` flipped back. It renders every
-time on a settled session. Cosmetic — the ceiling is enforced server-side either way — but the effect deps
-deserve a look.
+**The allowance line is fine** — an earlier note here claimed it was timing-sensitive. It is not. The line
+arrives about 1.6 s after the card, because `/api/account/usage` is fetched when the card mounts; a probe that
+read the DOM in the same tick the card appeared simply missed it. Re-checked with the call log: one request,
+200, and "Your plan allows 1923 more sections this month - enough to finish this" on screen.
 
 ### Storage, after the user deleted the obsolete deck
 
@@ -841,8 +841,38 @@ Real 444-page Osho PDF, dropped into the release APK, before this envelope fix:
 Against the original report — a frozen phone and a run that died at part 16 of 20 with 22 cards — and against
 09-04's best measurement of 44 cards.
 
-### Still worth doing, but no longer urgent
+### Verified after this deployed
 
-`gpt-oss-120b` advertises `structured_outputs` and `json_mode`. Adopting them would make the envelope
-impossible rather than tolerated, and would delete the hand-parsing in all seven routes. That is now a
-cleanup with a known payoff rather than a fix for a live failure.
+| | |
+|---|---|
+| Re-dropping the same 444-page PDF | Recognition card named the right deck — "wisdom · 60 cards · 399 sections left" — after 20 s of extraction, with **0 `/api/ingest` calls** and **0 new library rows** |
+| Continuing it, 16 sections through the live route | **16 requests, 0 failures.** Cards 60 → 108 (+48, three per section), pending 399 → 383, 0 new rows, resume invariant intact |
+| Direct-Groq probe after the fix | **64 of 64 clean** across two runs (24 + 40), against 2 failures in 16 before |
+
+Before this fix, 16 requests would have expected about two failures.
+
+### The one residual, and what would remove it
+
+One call in ~40 still fails as `MODEL_UNPARSEABLE` — genuinely malformed JSON this time
+(`Expected ',' or '}' after property value at position 2386`, `finish_reason: "stop"`, 875 tokens, so not
+truncation). The likely cause is an unescaped `"` inside a string, and `sourceQuote` is the field most exposed
+to it: it asks for a verbatim sentence from a book full of quotation marks.
+
+Retries absorb it — at ~2.5% per call, three consecutive failures on one section is ~1 in 64,000 — so it costs
+a wasted request, not a dead run.
+
+**Removing it properly means `generateObject`, not a bigger regex.** Groq constrains decoding under
+`response_format`, so `JSON.parse` cannot fail on structure. Measured 30 calls in each mode: both clean (too
+small a sample to catch a 2.5% event), but json_object averaged **888 output tokens against 961** — 7.6%
+cheaper on the field that is ~75% of the bill.
+
+The AI SDK route to this is `generateObject` with a Zod schema, not a `response_format` flag on
+`generateText`: `@ai-sdk/groq`'s provider options expose `structuredOutputs` and `strictJsonSchema`, which
+apply to `generateObject`. So it is the change §8 describes — delete `parseModelJson` and the three 502s from
+all seven routes — and it carries the risk §2g warns about, where a provider-options mistake is a hard 400 on
+every request in the app. **Worth doing deliberately, with the same route-by-route verification §4 used, not
+as a quick follow-up.**
+
+Note `ConceptsResponseSchema` is now a `z.preprocess`, which `generateObject` cannot convert to a JSON schema.
+That refactor needs the plain object schema for generation and keeps the tolerant one for validating whatever
+comes back.

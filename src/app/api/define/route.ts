@@ -5,7 +5,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
-import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
+import { FREE_MODEL, groqProviderOptions, getFriendlyErrorMessage, getProviderModel, parseModelJson } from "@/lib/ai";
 import { DefinitionResponseSchema } from "@/lib/definitionSchema";
 import { FREE_LOOKUPS_PER_MONTH, countInCurrentMonth } from "@/lib/freeQuota";
 import { claimLookupAllowance } from "@/lib/freeQuotaDb";
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
       model,
       prompt: buildDefinePrompt(phrase, context),
       maxOutputTokens: 300,
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     let rawJson: unknown;

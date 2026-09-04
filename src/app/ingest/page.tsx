@@ -25,15 +25,25 @@ const MODEL_OPTIONS = [
   { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
 ] as const;
 
-/** "qwen/qwen3.6-27b" -> "Qwen 3.6 27B". Best-effort prettifier: the dropdown should
- * read like a product name, and hardcoding one would drift from the env var. */
+// The ids this app is realistically pinned to, with the names their makers use. A map
+// rather than a clever transform because "gpt-oss" prettifies to "Gpt Oss" and no
+// amount of casing rules fixes that.
+const FREE_MODEL_LABELS: Record<string, string> = {
+  "qwen/qwen3.6-27b": "Qwen 3.6 27B",
+  "openai/gpt-oss-120b": "GPT-OSS 120B",
+  "openai/gpt-oss-20b": "GPT-OSS 20B",
+};
+
+/** The dropdown's name for the free model. Falls back to a best-effort prettifier so
+ * an unrecognised id still reads as something rather than breaking the label. */
 function freeModelLabel(id: string): string {
+  const known = FREE_MODEL_LABELS[id];
+  if (known) return known;
   const name = id.split("/").pop() ?? id;
   return name
     .split("-")
     .map((part) => (/^\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(" ")
-    .replace(/^Qwen(\d)/i, "Qwen $1");
+    .join(" ");
 }
 
 // Coverage cap. Sequential chunking is safe from rate limits, but 40 requests is

@@ -3,7 +3,7 @@ export const maxDuration = 15;
 import { generateText } from "ai";
 import { z } from "zod";
 import { auth } from "@/auth";
-import { GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson, resolveGradeModel } from "@/lib/ai";
+import { groqProviderOptions, getFriendlyErrorMessage, parseModelJson, resolveGradeModel } from "@/lib/ai";
 import { parseTimezoneOffsetMinutes } from "@/lib/localDay";
 import { isOverDailyCap } from "@/lib/clozeGradeRateLimit";
 
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       model,
       system: SYSTEM_PROMPT,
       prompt: buildPrompt(cloze, correctAnswer, userAnswer),
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     let rawJson: unknown;

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
-import { FREE_MODEL, GROQ_PROVIDER_OPTIONS, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
+import { FREE_MODEL, groqProviderOptions, getFriendlyErrorMessage, parseModelJson } from "@/lib/ai";
 import { ConceptsResponseSchema } from "@/lib/conceptSchema";
 import { applyQualityGate } from "@/lib/conceptQuality";
 import { generationLimitForPlan } from "@/lib/freeQuota";
@@ -185,7 +185,7 @@ export async function POST(
       // full explanation was already the largest response any route asks for, and
       // a truncation here is a dead batch rather than a degraded card.
       maxOutputTokens: 5200,
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     // The most expensive single call in the app - see maxOutputTokens above. Logged

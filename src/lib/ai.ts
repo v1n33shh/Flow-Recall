@@ -11,7 +11,7 @@ import { APICallError, RetryError, type LanguageModel } from "ai";
 // migration targets (openai/gpt-oss-120b, and this one) are "reasoning"
 // models that - confirmed by directly hitting Groq's API - emit a hidden
 // <think>...</think> block by default regardless of what the docs imply
-// about a non-thinking default. See GROQ_PROVIDER_OPTIONS below for how
+// about a non-thinking default. See groqProviderOptions below for how
 // that's suppressed; without it, every route using this model would burn
 // its whole maxOutputTokens budget on reasoning and never reach real output.
 // Read from the environment, with the current id as the default, because Groq lists
@@ -28,14 +28,43 @@ import { APICallError, RetryError, type LanguageModel } from "ai";
 export const FREE_MODEL =
   process.env.GROQ_FREE_MODEL || process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
 
-// Forces Groq's reasoning models (see FREE_MODEL above) to skip their hidden
-// <think> chain-of-thought and go straight to the final answer - required
-// for every plain generateText call this app makes, since none of them parse
-// or budget for reasoning tokens. Safe to pass even when the resolved model
-// turns out to be OpenAI/Anthropic-via-AICredits: the AI SDK only applies a
-// providerOptions entry under the matching provider's own key, so a `groq`
-// entry is silently ignored by any other provider.
-export const GROQ_PROVIDER_OPTIONS = { groq: { reasoningEffort: "none" as const } };
+/** Keeps Groq's reasoning models from spending the whole output budget on a hidden
+ * <think> chain-of-thought before they reach any real answer - required for every
+ * plain generateText call this app makes, since none of them parse or budget for
+ * reasoning tokens.
+ *
+ * A FUNCTION, not the constant it used to be, because the right value is
+ * model-specific and getting it wrong is a hard 400 on every request:
+ *
+ *   - qwen/* accepts "none", and "none" is what keeps reasoning out of the output
+ *     entirely. Do not move it to "low" to unify the two branches - qwen output is
+ *     $3.00/1M and reasoning tokens are billed with the rest.
+ *   - openai/gpt-oss-* REJECTS "none" outright: `reasoning_effort` must be one of
+ *     `low`, `medium`, or `high`. Measured against the live API. "low" is the floor,
+ *     and it still emits ~450 tokens of hidden reasoning, which is priced in.
+ *
+ * This is what makes GROQ_FREE_MODEL a real escape hatch rather than a nominal one.
+ * Before this, swapping the env var to Groq's own suggested migration target would
+ * have 400'd every request in the app - the exact outage the env var exists to avoid.
+ *
+ * Zero-argument on purpose: every Groq call here resolves to FREE_MODEL, whether
+ * through getProviderModel, resolveGradeModel, or shuffle's SHUFFLE_MODEL alias, so
+ * reading that constant covers all seven call sites and follows the env var
+ * automatically. Safe to pass when a PRO request resolves to OpenAI or
+ * Anthropic-via-AICredits instead: the AI SDK only applies a providerOptions entry
+ * under the matching provider's own key, so a `groq` entry is ignored by any other. */
+export function groqProviderOptions(): { groq: { reasoningEffort: GroqReasoningEffort } } {
+  return { groq: { reasoningEffort: reasoningEffortFor(FREE_MODEL) } };
+}
+
+export type GroqReasoningEffort = "none" | "low";
+
+/** The lowest reasoning effort a given Groq model will actually accept. Split out from
+ * groqProviderOptions so the mapping is testable without reaching into the environment
+ * FREE_MODEL is read from - and because the 400 this prevents deserves a test. */
+export function reasoningEffortFor(modelId: string): GroqReasoningEffort {
+  return modelId.startsWith("qwen/") ? "none" : "low";
+}
 
 // The models a Pro plan can request, keyed by the exact id the client sends
 // in the dropdown. Anything not in here is treated as "not a Pro model".

@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import {
   FREE_MODEL,
-  GROQ_PROVIDER_OPTIONS,
+  groqProviderOptions,
   getFriendlyErrorMessage,
   getProviderModel,
   parseModelJson,
@@ -76,10 +76,10 @@ export async function POST(request: Request) {
       model,
       prompt: buildAskPrompt(parsed.data),
       // Room for four real sentences plus the JSON envelope. The pinned model is
-      // a reasoning model, so GROQ_PROVIDER_OPTIONS is not optional - without it
+      // a reasoning model, so groqProviderOptions() is not optional - without it
       // the whole budget goes to a hidden think block and never reaches output.
       maxOutputTokens: 400,
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     let rawJson: unknown;

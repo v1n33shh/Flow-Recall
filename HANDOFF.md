@@ -231,7 +231,43 @@ Migration `20260904150000_add_generation_request_allowance` is **applied to Supa
 
 A fully-utilising free student is ~$0.35/month on Groq paid against ₹299 (~$3.40) PRO revenue. **Prompt caching does not help** and was checked rather than assumed: Haiku 4.5 needs a 4096-token minimum cacheable prefix and the fixed part of `buildConceptsPrompt` is ~730 tokens, so a marker would silently never cache; Groq's cached-input discount only touches input, which is 25% of the bill. The real efficiency lever is output volume — `explanation` is most of the 886 — and that trades card quality, so it is left as its own decision.
 
-## 10. Do this next, in this order
+## 10. The free model is now gpt-oss-120b, 2026-09-04
+
+Asked whether "the GPT free model" would remove the limits. It does not — Groq's own `openai/gpt-oss-*` sit under the **same** org-wide free-tier ceilings as everything else (30 RPM, 1K RPD, 8K TPM, 200K TPD), so the Developer plan is still required. But it is **4.1× cheaper per request than the model we were on**, and it is a **Production** model rather than Preview.
+
+Measured against the real Osho chunk with the real ingest prompt:
+
+| Model | Groq section | in / out per 1M | measured in / out | per request | per deck (20) |
+|---|---|---|---|---|---|
+| `qwen/qwen3.6-27b` (was) | Preview | $0.60 / $3.00 | 1435 / 886 | $0.00352 | $0.070 |
+| **`openai/gpt-oss-120b`** | **Production** | **$0.15 / $0.60** | 1462 / 1079 | **$0.00087** | **$0.017** |
+| `openai/gpt-oss-20b` | Production | $0.075 / $0.30 | 1462 / 1019 | $0.00042 | $0.008 |
+
+The 1079 figure already includes ~450 tokens of hidden reasoning, so the 4.1× is net. At the 100-request FREE cap that is **$0.087/month** per fully-utilising free student — 1,000 of them, all maxed, is **$87/month**. Realistically 15–25% max out.
+
+`gpt-oss-20b` is cheaper again and was rejected on quality, not price: on the same chunk its labels were measurably more generic ("Transformation of Three Poisons" / answer "compassion") than the 120B's. At ₹7.6 a maxed student the extra saving is not worth a visible drop in the thing the product sells.
+
+**The blocker this change exists for.** `gpt-oss` **rejects `reasoning_effort: "none"` with a hard 400** — `must be one of low, medium, or high`. The app sent exactly that on every Groq call from a constant, across seven routes. So the env-var escape hatch added in §9 did **not** work for Groq's own suggested migration target: flipping `GROQ_FREE_MODEL` alone would have 400'd every request in the app, which is precisely the outage the env var was added to prevent.
+
+`GROQ_PROVIDER_OPTIONS` is therefore now `groqProviderOptions()`, with the mapping split into a testable `reasoningEffortFor(modelId)`: `qwen/*` → `"none"` (it accepts it, and it keeps reasoning out of a $3.00/1M output budget), everything else → `"low"` (the floor gpt-oss will take). Do not unify them on `"low"` to simplify the branch — that would bill qwen for reasoning it does not need, and qwen stays the documented fallback.
+
+**All seven routes verified against gpt-oss-120b**, real prompts through their real Zod schemas — this was the risk surface, since six of them were never part of the ingest investigation and a swap that fixes deck generation while quietly breaking word lookup in the reader is the worse outcome:
+
+| route | output tokens | finish | schema |
+|---|---|---|---|
+| ingest | 1079 | stop | OK — 3 cards |
+| shuffle | 980 | stop | OK — 5 cards |
+| concept-map | 209 | stop | OK — 3 edges |
+| ask | 126 | stop | OK |
+| teach-back | 114 | stop | OK |
+| define | 106 | stop | OK |
+| cloze-grade | 46 | stop | OK |
+
+**Tests**: 478 / 478 across 31 files. The four new cases pin the mapping and guard the regression — `reasoningEffortFor` must never return `"none"` for a non-qwen id.
+
+**Set on Vercel before this helps anyone**: `GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL`, both to `openai/gpt-oss-120b`. Local `.env` is already set. They must match — the route's request enum comes from the server one and the dropdown from the public one, and drift is a 400 from the schema instead of from Groq.
+
+## 11. Do this next, in this order
 
 1. **Deploy.** The APK calls the live API (`NEXT_PUBLIC_API_URL`), so every server-side fix above — the 429 pass-through, the `retryable` flags, the friendly message — is inert until `main` is deployed. The device run above exercised the client half against the *old* route. Nothing is committed yet.
 2. **Decide the PRO default.** `DEFAULT_MODEL` in `src/app/ingest/page.tsx` is the free Qwen model for everyone, so this PRO account spent an 11-minute run inside Groq's free-tier OTPM ceiling. Defaulting a PRO plan to `claude-haiku-latest` is a one-line change and probably the single biggest speed win available — but the Pro path goes through the AICredits gateway and **its rate limits were not measured** (it bills real credits; not spent without asking).

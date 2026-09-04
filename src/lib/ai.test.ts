@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { APICallError, RetryError } from "ai";
-import { getFriendlyErrorMessage, readRateLimit } from "./ai";
+import { getFriendlyErrorMessage, groqProviderOptions, readRateLimit, reasoningEffortFor } from "./ai";
 
 function apiError(statusCode: number, headers?: Record<string, string>, message = "Rate limit reached"): APICallError {
   return new APICallError({
@@ -122,5 +122,37 @@ describe("getFriendlyErrorMessage", () => {
     expect(getFriendlyErrorMessage(apiError(401, undefined, "Invalid API key"))).toBe(
       "The Groq service is temporarily unavailable. Please try again later.",
     );
+  });
+});
+
+describe("reasoningEffortFor", () => {
+  it("sends \"none\" only to qwen, which is the only family that accepts it", () => {
+    expect(reasoningEffortFor("qwen/qwen3.6-27b")).toBe("none");
+    expect(reasoningEffortFor("qwen/qwen3.8-27b")).toBe("none");
+  });
+
+  it("sends \"low\" to gpt-oss, which 400s on \"none\"", () => {
+    // Measured against the live API: `reasoning_effort` must be one of `low`,
+    // `medium`, or `high`. This is the whole reason the value stopped being a
+    // constant - swapping GROQ_FREE_MODEL to Groq's own suggested migration target
+    // would otherwise have 400'd every request in the app.
+    expect(reasoningEffortFor("openai/gpt-oss-120b")).toBe("low");
+    expect(reasoningEffortFor("openai/gpt-oss-20b")).toBe("low");
+  });
+
+  it("never sends \"none\" to a model outside the qwen family", () => {
+    // The regression guard. A future model id must default to the value that is
+    // accepted more widely, not to the one that is a hard 400 everywhere but qwen.
+    for (const id of ["openai/gpt-oss-safeguard-20b", "llama-3.3-70b-versatile", "groq/compound", "something-new"]) {
+      expect(reasoningEffortFor(id)).not.toBe("none");
+    }
+  });
+
+  it("wraps the effort under the groq provider key so other providers ignore it", () => {
+    // A PRO request can resolve to OpenAI or Anthropic-via-AICredits while this is
+    // still passed; the SDK only applies an entry under its own provider's key.
+    const options = groqProviderOptions();
+    expect(Object.keys(options)).toEqual(["groq"]);
+    expect(options.groq.reasoningEffort).toMatch(/^(none|low)$/);
   });
 });

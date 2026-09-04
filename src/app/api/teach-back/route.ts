@@ -4,7 +4,7 @@ import { generateText } from "ai";
 import { auth } from "@/auth";
 import {
   FREE_MODEL,
-  GROQ_PROVIDER_OPTIONS,
+  groqProviderOptions,
   getFriendlyErrorMessage,
   getProviderModel,
   parseModelJson,
@@ -74,11 +74,11 @@ export async function POST(request: Request) {
       model,
       prompt: buildTeachBackPrompt(parsed.data),
       // Three lists of up to six short sentences, plus the JSON envelope. The pinned
-      // model is a reasoning model, so GROQ_PROVIDER_OPTIONS is not optional -
+      // model is a reasoning model, so groqProviderOptions() is not optional -
       // without it the whole budget goes to a hidden think block and never reaches
       // output.
       maxOutputTokens: 1200,
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     let rawJson: unknown;

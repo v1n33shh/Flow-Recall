@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { resolveEffectivePlan } from "@/lib/billing";
 import {
   FREE_MODEL,
-  GROQ_PROVIDER_OPTIONS,
+  groqProviderOptions,
   getFriendlyErrorMessage,
   getProviderModel,
   isProModel,
@@ -171,7 +171,7 @@ export async function POST(request: Request) {
       // waiting happens on the client - which is not on a serverless clock and can
       // tell the student what it is waiting for.
       maxRetries: 0,
-      providerOptions: GROQ_PROVIDER_OPTIONS,
+      providerOptions: groqProviderOptions(),
     });
 
     // Nothing else in this app records what a generation cost. Logged rather than

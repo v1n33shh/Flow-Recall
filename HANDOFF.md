@@ -1,257 +1,248 @@
 # FlowRecall — Handoff
 
-**Written 2026-09-03, second session of the day.**
-*Supersedes the version written earlier today, which listed next steps that were already done — see §3. Earlier versions: `git log --follow -- HANDOFF.md`.*
+**Written 2026-09-04, end of day. Supersedes the 2026-09-03 version entirely** — earlier ones are in
+`git log --follow -- HANDOFF.md`. Everything still open from that version is carried forward in §8.
+
+---
 
 ## 1. State right now
 
-- **Tests**: 410 passed / 410 across 28 files, `npm test` exit 0 — verified twice this session, before and after the change in §2. This includes the `claimDeckAllowance` suite the earlier handoff reported as failing.
-- **Build**: `npm run build` succeeds.
-- **Git**: clean tree, `main` == `origin/main`. Nothing to push.
-- **Play Store**: internal testing release "1 (1.0)" is live. `public/.well-known/assetlinks.json` carries both fingerprints — the upload key (`E1:F4:35:2F…BC:09`) and Play App Signing (`26:CD:C4:97…04:35`) — so App Links work for Play installs and sideloads alike.
-- **Dependencies**: `npm audit` reports **5 vulnerabilities (4 high, 1 moderate, no critical)**, down from 12 at the start of this session.
-
-A caveat on "410/410": `src/lib/freeQuotaDb.test.ts` and `src/lib/clozeGradeRateLimit.test.ts` are *deliberate* integration tests against the real Supabase Postgres — the rationale is in the comment at the top of the former, and it is a good one (the guarantee under test lives in Postgres's row locking, not in this repo). Between them they are ~130s of the ~94s parallel run, and they fail whenever the pooler is unreachable. So the green suite means "410/410 with a live database", and a red run should be checked for connectivity before being read as a regression. That is what happened in the earlier handoff.
-
-## 2. What changed this session
-
-**Removed the `@capacitor/assets` devDependency.** It was declared in `package.json` and invoked by nothing — no npm script, no workflow, no code. It bundled its own ancient `@capacitor/cli@5.7.8`, and through that subtree it carried the only **critical** in the tree (`tar@6.2.1` — arbitrary file create/overwrite via hardlink path traversal), plus `sharp@0.32.6`, `@trapezedev/project` → `@xmldom/xmldom`, and `xcode` → `uuid`. Every one of those chains was reachable *only* through it, so removal cleared them all at once: 12 vulnerabilities (1 critical / 7 high / 4 moderate) → 5 (0 critical / 4 high / 1 moderate). Tests and build were re-run green afterwards. The diff is `package.json` plus 1747 deleted lock lines.
-
-There was no upgrade path — `3.0.5` is the latest published `@capacitor/assets`, which is why `npm audit` reported `fixAvailable: false` for the `sharp` node.
-
-Nothing was lost by removing it. Its outputs, the 56 icon and splash PNGs under `android/app/src/main/res/`, are committed, and its input `assets/icon.png` is still in the repo. If the icons ever need regenerating, run it one-off rather than re-adding the dependency:
-
-```bash
-npx @capacitor/assets generate --android
-```
-
-## 3. Corrections to the earlier handoff
-
-Its "Exact Next Steps" had transcribed `npm audit`'s `fixAvailable` field without checking those versions against what was installed. For two packages that field pointed at versions *older* than the installed ones, so following the steps literally would have been a downgrade.
-
-| Earlier claim | Reality |
+| | |
 |---|---|
-| "Upgrade Next.js to `16.3.4`" | Already `16.3.4` — done in `111eaee`, up from `16.2.10`. |
-| "Upgrade Auth.js / `@auth/core` to `5.0.0-beta.25`" | `next-auth` is `^5.0.0-beta.31`, resolving to beta.32; `@auth/core` is 0.41.3. beta.25 is **older**. Nothing to do. |
-| "Upgrade Prisma to `6.12.0` (resolves `deepmerge-ts`)" | Already `6.19.3`, so `6.12.0` is a **downgrade** — and it does not resolve `deepmerge-ts`, which is still present at 6.19.3 (§4b). |
-| "`pdfjs-dist` upgraded to `4.10.38`" | It went `6.1.200` → **`6.3.289`**, also in `111eaee`. |
-| "`git push` requires your local credentials" | Everything was already pushed; tree clean, `main` == `origin/main`. |
-| "14 vulnerabilities (4 moderate, 9 high, 1 critical)" | It was 12 (4 / 7 / 1). Now 5. |
-| "One test failed due to a temporary network timeout … unrelated to the PDF logic" | True as far as it goes, but that test is an intentional live-Postgres integration test, not a flake to wave past. See the caveat in §1. |
+| **Tests** | 478 passed / 478 across 31 files, `npm test` exit 0 |
+| **Typecheck** | `npx tsc --noEmit` clean |
+| **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating today (reader hook deps, unused `createAnthropic`) |
+| **Build** | `npm run build` succeeds |
+| **Git** | 3 commits **ahead** of `origin/main`. Tree clean apart from untracked `test-models.mjs` (scratch, deliberately uncommitted) |
+| **Deployed** | `06c662c` **is live** — pushed and auto-deployed to production at 14:27 IST, three minutes after the 14:24 commit |
+| **Database** | Migration `20260904150000_add_generation_request_allowance` **applied to Supabase**. `prisma migrate status` → up to date |
+| **Device** | Release APK (`DEVTOOLS=1` build) installed on the CPH2001. Library intact — 2 decks, signed in, plan PRO |
+| **Groq** | Developer plan **active** (billing confirmed). But the API key still receives free-tier limits — the one unresolved problem, §5 |
 
-## 4. The 5 remaining vulnerabilities, and why each is still here
+**A correction to what I said repeatedly during the session.** I kept saying "four commits unpushed, none of
+the server-side work is live." That was wrong, and it matters for reading the rest of this file. `06c662c`
+was pushed and has been in production since 14:27, and it is the largest of the four: the worker extraction,
+the sentence-aware chunker, `runChunks`, the 429 pass-through, the `RetryError` unwrap and `maxRetries: 0`.
+**The core fix is already serving students.** Only the three later commits are not.
 
-Neither remaining chain has a clean fix; both are waiting on someone upstream.
+### What is and is not deployed
 
-**a) `epubjs@0.3.93` → `@xmldom/xmldom@0.7.13` — 1 high + 1 moderate. This is the one on the production path.**
+| commit | time | contents | live? |
+|---|---|---|---|
+| `06c662c` | 14:24 | PdfDropzone worker extraction, `chunkText`, `runChunks`, route 429 + `retryable`, `RetryError` unwrap, `maxRetries: 0` | **yes** |
+| `a885db3` | 14:35 | ±25% jitter on the retry wait | no |
+| `1d6cd31` | 15:15 | per-request generation budget, usage logging, `FREE_MODEL` env var | no |
+| `72a69b0` | 16:20 | `gpt-oss-120b` switch, `groqProviderOptions()` / `reasoningEffortFor()` | no |
 
-XML injection via unsafe CDATA serialization, plus uncontrolled recursion in serialization leading to DoS. The advisory range is `<=0.8.14`; the hoisted top-level copy is 0.7.13 and it comes from `epubjs`, the EPUB reader the app ships. (The other copy in the tree, `0.9.12` under `@capacitor/cli` → `plist`, is outside the range and fine.)
+The migration is applied while the code that reads those columns (`1d6cd31`) is **not** deployed. That is
+safe — extra columns with defaults are invisible to the old code — but it does mean the generation budget is
+not yet enforcing anything in production.
 
-npm offers `epubjs@0.4.2`, but this needs a decision rather than a command:
+### The 478 tests include live-database integration tests
 
-- 0.4.2 is a **semver-major**, and epubjs's `latest` dist-tag is still **0.3.93** — the maintainer published 0.4.x and never promoted it. The library is effectively unmaintained.
-- The reader is finished work; the standing rule is to call its extraction library, not edit it. A major bump to its rendering engine is exactly the kind of change that rule exists to prevent.
-- Verifying it would mean the real EPUB in the library (the Carnegie book) on-device, not a synthetic file.
+`src/lib/freeQuotaDb.test.ts` and `src/lib/clozeGradeRateLimit.test.ts` hit the real Supabase Postgres on
+purpose: the guarantee under test is Postgres taking a row lock and re-evaluating an `UPDATE`'s `WHERE`
+against the committed row, which no mock can demonstrate. They are ~180s of the ~195s run and they fail
+whenever the pooler is unreachable. **Check connectivity before reading a red run as a regression.**
 
-**b) `prisma@6.19.3` → `@prisma/config@6.19.3` → `deepmerge-ts@7.1.5` — 3 highs, all one chain.**
+---
 
-Stack exhaustion when merging recursive object graphs; advisory range `<8.0.0`. The only fix npm offers is `prisma@6.12.0`, a downgrade to before `@prisma/config` existed — not a real option. This code path is build- and CLI-time config merging, not the request path. It waits on Prisma bumping `deepmerge-ts` to ≥8.
+## 2. What today changed
 
-## 5. Do this next
+The task was "fix the flashcard issue" — uploading a large PDF froze the phone and then died partway
+through with a 502 or a 429. The 2026-09-03 handoff had diagnosed three causes. There were five, and the
+one that actually killed decks was not on that list.
 
-*Decision Made:* We are **leaving `epubjs` at `0.3.93`** for now. The exposure risk (XML injection inside a student-selected EPUB) is minimal, and a major version bump on a finished, unmaintained reader poses a much larger regression risk. We will revisit if `0.4.x` is ever promoted to latest.
+### a) Extraction ran on the UI thread — `src/components/PdfDropzone.tsx`
 
-**Immediate Task 1: Fix PDF Ingest & Model Crashes — DONE, 2026-09-04. Not committed; the working tree carries it.**
+It had its own inline `extractPdfText`: `getDocument`, then a `for` loop over every page calling
+`getTextContent`, all on the main thread. On a 476-page book that is a minute-plus of frozen WebView, and on
+Android a frozen WebView is indistinguishable from a crashed app.
 
-All three diagnosed causes are fixed, plus two more found on the way: a 429 the client could not recognise, and a second copy of the whole loop in the library. Details in §6.
+It now calls `startPdfExtraction` from `src/lib/pdfExtractClient.ts` — the reader's pipeline, **called rather
+than copied**, per the standing rule that the reader is finished work. Four things came with it:
 
-**Immediate Task 2: Phase 3 — flashcard understanding.** Unchanged from the earlier handoff:
+- Decoding, paragraph grouping and Type3 cipher recovery all run in `src/workers/pdfExtract.worker.ts`.
+- pdf.js gets `cMapUrl` and `standardFontDataUrl`. The inline loop passed neither, so a CID-keyed book
+  extracted as mojibake and every card built from it was nonsense. **This was a silent correctness bug**,
+  not just a speed one.
+- Real progress (`pagesDone` / `totalPages`) instead of an unbounded spinner.
+- `classifyPdfError`, so a password-protected PDF is named as one, and `assessPdfText`, so a page-scan is
+  refused *before* generation rather than spending a FREE account's deck on stray glyphs.
 
-1. **Multiple Choice Questions** — generate distractors from the concept map; build the MCQ UI so recognition can be tested without handing the student a 50/50 guess.
-2. **Starring concepts** — a star button in the review and sheet-browsing UI, driving the FSRS `importance` multiplier off the flat `0.5` and onto the student's own priorities.
-3. **Visual concept graph** — render the existing `concept-map` data, including its edge kinds ("Build on first", "This explains", "Don't confuse").
+### b) Chunk edges landed mid-sentence — `src/lib/chunkText.ts` (new)
 
-## 6. The flashcard fix (Task 1), in detail — 2026-09-04
+`chunkText` lived inside `src/app/ingest/page.tsx` and hard-sliced any paragraph over the budget at fixed
+character offsets — mid-word. A PDF page arrives as one paragraph, so nearly every page got mutilated. That
+is not cosmetic: the prompt demands a verbatim `sourceQuote` and a `cloze` whose blank `answer` fills
+exactly, and neither survives a fragment starting mid-clause, so the model abandons the JSON and the route
+answers 502.
 
-**Tests**: 447 passed / 447 across 31 files, `npm test` exit 0 — 37 new, in the three new test files below. `npm run build` succeeds, `npx tsc --noEmit` clean, `eslint src` 0 errors (12 warnings, all of them older than this work — the reader's hook deps and an unused `createAnthropic` in `src/lib/ai.ts`).
+The new module breaks on paragraphs, then sentences, then whitespace. The sentence splitter answers "not a
+boundary" on every doubt — single capitals (`J. R. R. Tolkien`), a 60-entry abbreviation list, and the rule
+that carries it: any period whose next character is lower-case or a digit.
 
-**a) Extraction moved off the main thread — `src/components/PdfDropzone.tsx`.**
-
-It had its own inline `extractPdfText`: `getDocument`, then a `for` loop over every page calling `getTextContent` and joining `item.str` with spaces, all on the UI thread. On a 476-page book that is a minute-plus of frozen WebView, which on Android is indistinguishable from a crashed app.
-
-It now calls `startPdfExtraction` from `src/lib/pdfExtractClient.ts` — the reader's pipeline, called rather than copied, per the standing rule. Four things come with it that the inline loop could not offer:
-
-- The page decoding, geometric paragraph grouping and Type3 cipher recovery all run in `src/workers/pdfExtract.worker.ts`. The UI thread only ever receives finished strings.
-- pdf.js gets `cMapUrl` and `standardFontDataUrl`. The inline loop passed neither, so a CID-keyed or non-embedded-font PDF extracted as mojibake — and every card built from it was nonsense. This was a silent correctness bug, not just a speed one.
-- Real progress (`pagesDone` / `totalPages`) instead of an unbounded spinner, so a minute of reading does not look like a hang.
-- `classifyPdfError`, so a password-protected PDF is named as one instead of "Failed to read that PDF", and `assessPdfText`, so a page-scan is refused **before** generation rather than spending one of a FREE account's monthly decks on stray glyphs.
-
-**b) Chunk edges now land on sentence boundaries — `src/lib/chunkText.ts` (new), `src/lib/chunkText.test.ts` (new, 16 tests).**
-
-`chunkText` lived inside `src/app/ingest/page.tsx` and hard-sliced any paragraph longer than the budget at fixed character offsets — mid-word, mid-clause. That is not a cosmetic problem: the ingest prompt demands a verbatim `sourceQuote` and a `cloze` whose blank `answer` fills exactly, and neither is satisfiable against a fragment starting mid-clause. The model either invents the missing half or abandons the JSON shape, and the route answers 502. This is the "model failure" in the bug report, and its cause was on the client.
-
-The new module breaks on paragraphs where it can, sentences where it must, and whitespace only when a single sentence exceeds the whole budget. The sentence splitter is the interesting part: only a lone `.` is ever ambiguous, and every test answers "not a boundary" on doubt, because refusing a break only makes one piece longer while taking a false one mutilates a sentence. It rejects single capitals (`J. R. R. Tolkien`), a 60-entry abbreviation list, and — the rule that actually carries it — any period whose next character is lower-case or a digit, which covers the abbreviations no list survives contact with.
-
-**Verified on real content**, not fixtures — the 476-page `The 48 Laws Of Power` PDF in `~/Downloads`, run through the real extraction and then both chunkers, auditing every chunk edge for a break inside a paragraph that is not also a sentence end:
+**Measured on the real 476-page `The 48 Laws Of Power` PDF**, auditing every chunk edge for a break inside a
+paragraph that is not also a sentence end:
 
 | | chunks | mid-sentence breaks |
 |---|---|---|
 | old, 1500 chars | 1326 | **484 of 1325 edges (36.5%)** |
-| new, 4500 chars | 372 | **0 of 371 edges** |
+| new, 4500 chars | 372 | **0 of 371** |
 
-(That book also extracts with scrambled word order in its front matter — a geometric-grouping limitation inside the reader's extraction library, unrelated to chunking and out of scope.)
+### c) A 429 could not be recognised — `src/lib/ai.ts`
 
-**c) Chunk size 4500, and pacing that reacts instead of guessing — `src/lib/ingestChunks.ts` (new), `src/lib/ingestChunks.test.ts` (new, 11 tests).**
+**This is the one the diagnosis missed, and it is why one rate limit cost a whole book.** `generateText`
+spends its own retries and then throws the AI SDK's `RetryError`, and `APICallError.isInstance` on that is
+`false` — so the status code and every rate-limit header sat one level down, unread. The route flattened it
+into an untyped 502, the client could not tell a wait from a broken response, and the run ended at part 16
+of 20.
 
-`DEFAULT_CHUNK_SIZE` is 4500, up from 1500. Free output tokens: the prompt caps the model at 3 cards per chunk regardless of chunk length, so a bigger chunk costs nothing extra to generate — it just gives the model more material to choose its 3 best cards from. `MAX_CHUNKS` on /ingest drops 40 → 20, which is ~90,000 characters of a book in ~20 requests: half the requests the old 40 × 1500 spent, across 1.5× the text.
+`readRateLimit` now unwraps `RetryError.lastError`, and matches **both** of Groq's phrasings for the same
+ceiling: a spent window says "Rate limit reached", a single oversized request says "Request too large", and
+only the first contains the words "rate limit". `getFriendlyErrorMessage` delegates to it, so students stop
+seeing `AI_APICallError … Upgrade to Dev Tier today at console.groq.com/settings/billing`.
 
-The delay was a flat `CHUNK_DELAY_MS = 1000`. Nothing on the client can know whether a given account is closer to Groq's per-minute *request* limit or its per-minute *token* limit, so guessing a single number was always going to be wrong in one direction. It now starts at 1500ms and **doubles on the first 429**, capped at 30s, and keeps the widened gap for the rest of the run — once an account has shown where its limit is there is nothing to gain from rediscovering it on every remaining chunk.
+### d) The waiting happened in the wrong place — `maxRetries: 0`
 
-The loop itself is now `runChunks` in the new module, because **two screens generate cards, not one** — see (e).
+The SDK's default is 2 retries and it **honours** `retry-after: 43`, so a rate-limited chunk sat inside one
+request for 27–58 seconds against the route's own `maxDuration = 60`. The phone measured round trips of
+**58527 ms, 58606 ms and 56102 ms** — within 1.5 s of Vercel killing the function and turning a 43-second
+wait into a 504. It also means most of that run was absorbing OTPM 429s invisibly, which is why 15 chunks
+that each cost ~2.5 s of real model time took 40–58 s apiece.
 
-*One tradeoff to know about:* 3 cards per 4500 characters is a third of the old card density per page of source. In exchange a deck covers 1.5× the text and the truncation banner fires far less often. If decks come back feeling thin, the lever is the "MAXIMUM of 3 flashcards" line in `buildConceptsPrompt` (and then `maxOutputTokens`), not the chunk size.
+At `maxRetries: 0` the 429 returns in ~200 ms with its header intact and the client does the waiting — off
+the serverless clock, and in front of the student.
 
-**d) The fourth cause: a 429 could not be recognised, so it ended the deck — `src/app/api/ingest/route.ts`, `src/lib/ai.ts`, `src/lib/ai.test.ts` (new, 10 tests).**
+### e) The library had a second copy of the whole loop — `src/app/page.tsx`
 
-This is the one the diagnosis missed, and it is why a single rate limit cost a whole book. The route's `catch` flattened *every* provider failure into a 502 with a friendly string. A rate limit is a "wait, then it will work" answer, but the client could not tell it apart from a broken response, so it threw, and the run ended at part 3 of 20.
+`handleGenerateNextSection` was the same `for` loop with its own flat delay, a bare `throw` on any non-2xx,
+and `await res.json()` (which throws its own unhelpful `Unexpected token '<'` on a gateway HTML page). Worse
+than the ingest version: on any failure it discarded every chunk that had already succeeded, so a 429 at
+part 3 of 4 threw away three chunks of paid-for cards and the next tap regenerated them.
 
-- New `readRateLimit(error)` in `src/lib/ai.ts` recognises a rate limit (status **or** message, since the Pro path's AICredits gateway does not always surface a code) and reads the provider's own wait from `retry-after` (seconds or HTTP-date) or `retry-after-ms`, capped at 120s.
-- The route now answers **429** with `code: "RATE_LIMITED"`, `retryAfterSeconds` and a `Retry-After` header. Its parse / schema / quality-gate 502s carry `retryable: true`, and the generic 502 defers to `APICallError.isRetryable` so a rejected key is not retried three times.
-- The client retries a retryable chunk up to 3 attempts, preferring the provider's `Retry-After` over its own backoff, and shows what it is waiting for rather than sitting on the same part in silence for 45 seconds.
+Both screens now share `runChunks` (`src/lib/ingestChunks.ts`), which keeps partial results and requeues
+only from the chunk that actually failed.
 
-**Retrying costs a FREE user nothing**, and that is load-bearing: every one of those failure paths returns *before* `claimDeckAllowance`, so the monthly allowance is only ever claimed by a chunk that actually succeeded.
+### f) Two paths spent money with no ceiling at all — `1d6cd31`
 
-`maxOutputTokens` went 2400 → 3000. A truncated response is a dead batch, not a degraded card, and each chunk now carries three times as much source material for a model to be tempted past its 3-card cap by. A cap is not a target, so a well-behaved response costs nothing for the headroom.
+Found while pricing the paid tier, and invisible until then because on the free tier the only currency was
+time:
 
-**Confirmed unrelated**: `reasoningEffort: "none"` still works on `qwen/qwen3.6-27b` — `test-models.mjs` (untracked scratch, left in place) returns a clean short answer with no `<think>` block. The pinned free model was never part of this.
+- **Continuation chunks were outside the quota.** `/api/ingest` gates and counts `isFirstChunk` only, so
+  "Generate Next Section" was never counted. Finishing the 424-chunk Osho PDF is ~1.5M tokens against **one**
+  of three monthly decks.
+- **`/api/decks/[id]/shuffle` was metered by nothing.** PRO-gated is not bounded, and at
+  `maxOutputTokens: 5200` it is the largest single response the app asks for.
 
-**e) The library's "Generate Next Section" had the same bug, and lost more when it fired — `src/app/page.tsx`.**
+The deck count cannot be made to do this job — it counts decks, the money is spent per request. So there is
+now a second allowance beside it: `FREE_GENERATION_REQUESTS_PER_MONTH = 100` (3 decks × 20 chunks = 60, plus
+40 of continuation headroom) and `PRO_GENERATION_REQUESTS_PER_MONTH = 2000` as a fair-use ceiling an ordinary
+~200-request month never reaches. `claimGenerationRequest` copies `claimLookupAllowance`'s two-statement
+idempotent-reset shape; both spending routes claim through it.
 
-`handleGenerateNextSection` was a second copy of the same loop: its own flat `CHUNK_DELAY_MS`, a bare `throw` on any non-2xx, and `await res.json()` (which throws its own unhelpful `Unexpected token '<'` on a gateway HTML page). This is the path the ingest screen's own error message sends students to — "tap Generate Next Section to finish this deck" — so leaving it unfixed would have meant the reported bug simply moving to a different screen.
+**Two deliberate choices not to undo:**
 
-Worse than /ingest's version: on any failure it discarded `newConcepts` entirely and left `pendingChunks` untouched, so a 429 on part 3 of 4 threw away three chunks of cards that had already cost real tokens, and the next tap re-generated and re-paid for them.
+- The claim runs **before** the model call, the opposite of `claimDeckAllowance`. That one claims afterwards
+  so a model failure cannot cost a student one of their three decks. This one meters money, and the money is
+  gone the moment the request goes out — claiming afterwards would leave the ceiling advisory.
+- The refusal carries `code: "GENERATION_BUDGET_REACHED"` and **no** `retryable`, threaded through
+  `ChunkRunResult`, because both screens must stop saying "tap again to carry on" for it — the next tap is
+  refused for the same reason.
 
-Both screens now call `runChunks`. The continuation keeps whatever succeeded and requeues only from the chunk that actually failed, and its button says which part it is on (and what it is waiting for) instead of "Generating..." for up to a minute.
+### g) The free model is now `openai/gpt-oss-120b` — `72a69b0`
 
-## 7. On the phone, 2026-09-04 — and the root cause the diagnosis missed
+4.1× cheaper per request than `qwen/qwen3.6-27b` (net of the extra reasoning tokens it emits), and a
+**Production** model rather than one Groq labels "evaluation purposes only, may be pulled without warning" —
+which retires a risk that has already broken this app twice.
 
-Built with `DEVTOOLS=1 npm run build:apk`, `./gradlew assembleRelease`, installed over the existing app on the CPH2001 (Android 11, WebView 150). Signature matched (`e1f4352f…bc09`), **library survived** — 2 decks, still signed in, plan PRO. Driven over CDP with the real `/sdcard/Download/The Book of Wisdom (Osho)….pdf` staged into the app's own external dir (`/sdcard/Android/data/app.flowrecall.android/files/`), because the app holds no storage permission and `DOM.setFileInputFiles` is read by the app's own process.
+**The reason this needed code, not just config:** `gpt-oss` **rejects `reasoning_effort: "none"` with a hard
+400** — it must be `low`, `medium` or `high`. The app sent exactly that on every Groq call, from a constant,
+across seven routes. So the `GROQ_FREE_MODEL` escape hatch added in `1d6cd31` did **not** work for Groq's own
+suggested migration target: flipping the env var alone would have 400'd every request in the app.
 
-**What the run proved**
+`GROQ_PROVIDER_OPTIONS` is now `groqProviderOptions()`, with the mapping in a testable
+`reasoningEffortFor(modelId)`: `qwen/*` → `"none"`, everything else → `"low"`. **Do not unify them on
+`"low"`** — that bills qwen for reasoning it does not need at $3.00/1M output, and qwen remains the fallback.
+
+---
+
+## 3. The device run — what it proved
+
+Built with `DEVTOOLS=1 npm run build:apk` then `./gradlew assembleRelease`, installed over the existing app
+on the CPH2001 (Android 11, WebView 150). Signature matched (`e1f4352f…bc09`), **library survived**. Driven
+over CDP with the real `/sdcard/Download/The Book of Wisdom (Osho)….pdf`.
 
 | | before | after |
 |---|---|---|
 | Cards from one run | 22 | **44** |
 | Chunks for the whole book | 1023 + 40 | **404 + 20** |
 | Chunk sizes | 1125, 1500, 1399, 1500, 809, 1500 … | 2126–3045, every edge sentence-bounded |
-| Worst main-thread stall, whole 11-min run | *(never measured; the loop was synchronous)* | **1022 ms**, 1 stall over 1s, 2 over 250ms, 41,289 frames at ~60fps |
+| Worst main-thread stall, 11-minute run | *(never measured; the loop was synchronous)* | **1022 ms** — 1 stall over 1s, 2 over 250ms, 41,289 frames at ~60fps |
 
-The UI freeze is gone and the chunker is doing what §6b claimed. Note the effective chunk size is **~2600, not 4500**: this book's paragraphs run 2000–2600 characters, and the packer refuses to split one unless it must, so one paragraph per chunk is the binding constraint. The 4500 cap is a ceiling this book never reaches.
+Then part 16 of 20 failed with `Request too large … on output tokens per minute (OTPM): Limit 1000,
+Requested 1456`, which is what led to §4.
 
-**Then part 16 of 20 failed, and it named the real cause.**
+**Note the effective chunk size is ~2600, not 4500.** This book's paragraphs run 2000–2600 characters and the
+packer will not split one unless it must, so one paragraph per chunk is the binding constraint. The 4500 cap
+is a ceiling this book never reaches.
 
-```
-Request too large … on output tokens per minute (OTPM): Limit 1000, Requested 1456
-```
+---
 
-Reproduced locally against the pinned model on that same 2706-character chunk off the phone:
+## 4. The measured numbers — keep these, they were expensive to get
 
-- One ingest request costs **868–1000 output tokens** (3 cards, each with a paragraph of explanation). `finishReason` was `stop` at every cap tested.
-- Groq's free tier allows **1000 output tokens per minute**. So the sustainable rate is **about one request per minute**, full stop.
-- Two requests inside one window: the second returns `429`, `Rate limit reached … OTPM: Limit 1000, Used 833, Requested 868. Please try again in 42.05`, with **`retry-after: 43`**.
-- **`max_tokens` is irrelevant to this.** The same chunk succeeded identically at 900, 1200 and 2400. So the §6d note about raising it to 3000 was wrong on its own terms — **reverted to 2400.**
+### Groq free-tier ceilings, per ORGANIZATION not per user
 
-The run had been pacing at 40–58s between chunks, just fast enough to accumulate, and tripped at part 16. This — not chunk mutilation — is the `429` in the original bug report. Mutilation was real (36.5% of edges) and worth fixing, but it was not what killed the deck.
+Every student's request goes out under one server-side `GROQ_API_KEY`, and Groq enforces per organization —
+the 429 says so in as many words: `in organization org_01kwhcy15eez7bnn3ddqhka6kj`.
 
-**Corrections made after the device run**
+| | free tier | Developer plan (org page) |
+|---|---|---|
+| Output tokens/minute (OTPM) | **1000** | not published; lifted |
+| Tokens/minute | 8,000 | **250,000** |
+| Tokens/day | 200,000 (**≈86 requests/day for the whole product**) | **No limit** |
+| Requests/minute | 30 | 1,000 |
+| Requests/day | 1,000 | 500,000 |
 
-- `readRateLimit` now **unwraps the AI SDK's `RetryError`**. This is why the 429 reached the client as an untyped 502 even in principle: `generateText` spends its own three fast retries inside the same one-minute window, then throws a `RetryError`, and `APICallError.isInstance` on that is `false` — so the status code and every rate-limit header sat one level down, unread.
-- It also matches Groq's **two** phrasings for the same ceiling: a spent window says "Rate limit reached", a single oversized request says "Request too large", and only the first contains the words "rate limit".
-- `getFriendlyErrorMessage` delegates to it, so the student stops seeing `AI_APICallError … Upgrade to Dev Tier today at console.groq.com/settings/billing`, and gets the provider's actual wait instead of a hardcoded "exactly 60 seconds".
-- The rate-limit backoff is **62s** (was 6s, 12s) with a 125s ceiling, and the inter-chunk delay now adopts **the longer of the provider's `Retry-After` and a full window** as the run's spacing, instead of doubling 1500 → 3000. Doubling was useless against a per-minute window: it re-tripped the limit and spent both remaining attempts inside it. `Retry-After` alone is not enough either — it says when the *current* window clears, and a rolling per-minute budget needs spacing of at least cost/limit × 60s, so pacing at the 43s Groq asks for trips again on every chunk.
-- **`maxRetries: 0` on the route's `generateText`.** This is the one that removes a 504 waiting to happen. The SDK's default is 2 retries and it *honours* `retry-after: 43`, so a rate-limited chunk sat inside a single request for 27–58 seconds against this route's own `maxDuration = 60`. The phone measured round trips of **58527 ms, 58606 ms and 56102 ms** — within 1.5 s of Vercel killing the function. It also means most of that run was already absorbing OTPM 429s invisibly inside single requests, which is why 15 chunks that each cost ~2.5 s of real model time took 40–58 s apiece. At 0 the 429 returns in ~200 ms with its header intact and the client does the waiting, off the serverless clock and in front of the student.
+One ingest request costs **868–1000 output tokens**, so on the free tier the sustainable rate is **about one
+request per minute for the entire user base**. Two students generating at the same instant both get a 429 —
+measured, into a window that had been clear for 70 seconds, `retry-after: 5` and `retry-after: 22`. Neither
+was served. `max_tokens` is irrelevant to this: the same chunk succeeded identically at 900, 1200 and 2400.
 
-**Tests**: 460 / 460 across 31 files, `npm test` exit 0. `npm run build` succeeds, `tsc --noEmit` clean, `eslint src` 0 errors / 12 pre-existing warnings.
+### Cost per request, measured against the real chunk with the real prompt
 
-## 8. The free tier cannot serve more than one student at a time
-
-Asked directly, and measured, because it is a different question from "does one upload work".
-
-**Every student's request goes out under one server-side `GROQ_API_KEY`** (`src/lib/ai.ts`, three call sites), and Groq enforces OTPM **per organization** — the 429 says so in as many words: `in organization org_01kwhcy15eez7bnn3ddqhka6kj … on output tokens per minute (OTPM)`. So the 1000-token minute is not per user. It is the whole product's budget.
-
-Two requests fired at the same instant, into a window that had been clear for 70 seconds:
-
-| | result |
-|---|---|
-| student-1 | **429**, `retry-after: 5` |
-| student-2 | **429**, `retry-after: 22` |
-
-Neither succeeded. Two requests each reserving ~886 output tokens exceed 1000 together, so both were rejected rather than one being served and one queued.
-
-Headers off a successful call, for the record: `x-ratelimit-limit-requests: 1000` (reset `1m26.4s`, so per minute — irrelevant here) and `x-ratelimit-limit-tokens: 8000` per minute. At ~1435 input + ~886 output = ~2321 tokens a request, **TPM 8000 caps the whole organization at ~3.4 requests a minute even if OTPM were lifted.** Neither number is per-student, and no client-side change can divide them.
-
-What that means in practice, at ~1.1 requests/minute org-wide and 20 parts to a deck:
-
-- **1 student**: ~20 minutes a book. Works.
-- **2 students at once**: measured above — both fail, then retry into each other. ~40+ minutes each.
-- **10 students**: one request per student per ~10 minutes. A book becomes 3+ hours, with a rate-limit notice on screen almost continuously.
-- **A class**: unusable. Not "slow" — the retry logic keeps it from *losing* work, but there is no capacity to hand out.
-
-**Added because of this**: the retry wait is now jittered ±25%. Without it, every client that trips the shared ceiling backs off by the same 62 seconds, wakes in lockstep and collides again — a thundering herd the previous version would have created and then blamed on the provider.
-
-The fix is capacity, and it is a billing decision, not a code one: Groq's paid tier, or routing students to the Pro model. Reducing output per request (fewer cards, shorter `explanation` in `buildConceptsPrompt`) buys a factor of ~1.5, which changes nothing about the shape of the problem.
-
-## 9. The generation budget, 2026-09-04 — two uncapped paths closed
-
-Asked before binding a paid model: what does a free student cost, and can it run away? It could, two ways, and neither was visible on the free tier because there the only currency was time.
-
-- **Continuation chunks were free of the quota.** `/api/ingest` gates and counts `isFirstChunk` only, so "Generate Next Section" was uncounted, forever. Finishing the 424-chunk Osho PDF is ~1.5M tokens against **one** of three monthly decks.
-- **`/api/decks/[id]/shuffle` was metered by nothing at all.** PRO-gated is not bounded, and at `maxOutputTokens: 5200` it is the largest single response the app asks for — so an unlimited tap was the most expensive uncapped path in the product.
-
-**Added: a second allowance that counts requests, not decks.** `FREE_GENERATION_REQUESTS_PER_MONTH = 100` (3 decks × 20 chunks = 60, plus 40 of continuation headroom) and `PRO_GENERATION_REQUESTS_PER_MONTH = 2000` as a fair-use ceiling — an ordinary PRO month is ~200 requests and never sees it. `claimGenerationRequest` in `src/lib/freeQuotaDb.ts` copies `claimLookupAllowance`'s two-statement idempotent-reset shape, and both spending routes claim through it.
-
-Two things about that claim are deliberate and worth not undoing:
-
-- It runs **before** the model call, the opposite of `claimDeckAllowance`. That one claims afterwards so a model failure cannot cost a student one of their three decks. This one meters money, and the money is gone the moment the request goes out — a failed generation still burned the tokens. Claiming afterwards would leave the ceiling advisory.
-- The refusal carries `code: "GENERATION_BUDGET_REACHED"` and **no** `retryable`, so `runChunks` stops instead of spending three refusals on it. The code is threaded through `ChunkRunResult` because both screens need to say something different for it: "tap Generate Next Section to finish" is right for a rate limit and wrong here, where the next tap is refused for the same reason.
-
-Migration `20260904150000_add_generation_request_allowance` is **applied to Supabase**. Additive only (`generationRequestsUsed INTEGER NOT NULL DEFAULT 0`, `generationResetAt TIMESTAMP(3)` nullable), so existing rows read as count 0 with no marker and get their first fresh allowance at the next month boundary.
-
-**Also in:** `console.log` of `usage` in both generating routes — nothing recorded token spend before, and the measured baseline to compare against is **1435 input / 886 output** per ingest request. And `FREE_MODEL` now reads `GROQ_FREE_MODEL` (client: `NEXT_PUBLIC_GROQ_FREE_MODEL`) with the current id as the default, because Groq lists `qwen3.6-27b` under **Preview** — "not for production" — and §6/§7's history is two decommissions that each needed an app release to fix. The next one is a Vercel config change. **Both vars must be set to the same value**; the route's request enum comes from the server one and the dropdown from the public one, and drift means a 400.
-
-**Tests**: 474 / 474 across 31 files. The nine new live-Postgres cases include both money-losing races — two concurrent requests cannot both take the last slot, and four at a month boundary get one shared budget rather than one each.
-
-**The economics, for the record.** Measured per ingest request: 1435 in, 886 out.
-
-| | input $/1M | output $/1M | per request | per deck (20) | 3 decks |
+| Model | section | in/out per 1M | measured in/out | per request | per deck (20) |
 |---|---|---|---|---|---|
-| Groq free | — | — | $0 | $0 | but ~86 requests/**day** org-wide |
-| Groq paid `qwen3.6-27b` | $0.60 | $3.00 | $0.0035 | $0.070 | **$0.21** |
-| Claude Haiku 4.5 | $1.00 | $5.00 | $0.0059 | $0.117 | $0.35 |
-
-A fully-utilising free student is ~$0.35/month on Groq paid against ₹299 (~$3.40) PRO revenue. **Prompt caching does not help** and was checked rather than assumed: Haiku 4.5 needs a 4096-token minimum cacheable prefix and the fixed part of `buildConceptsPrompt` is ~730 tokens, so a marker would silently never cache; Groq's cached-input discount only touches input, which is 25% of the bill. The real efficiency lever is output volume — `explanation` is most of the 886 — and that trades card quality, so it is left as its own decision.
-
-## 10. The free model is now gpt-oss-120b, 2026-09-04
-
-Asked whether "the GPT free model" would remove the limits. It does not — Groq's own `openai/gpt-oss-*` sit under the **same** org-wide free-tier ceilings as everything else (30 RPM, 1K RPD, 8K TPM, 200K TPD), so the Developer plan is still required. But it is **4.1× cheaper per request than the model we were on**, and it is a **Production** model rather than Preview.
-
-Measured against the real Osho chunk with the real ingest prompt:
-
-| Model | Groq section | in / out per 1M | measured in / out | per request | per deck (20) |
-|---|---|---|---|---|---|
-| `qwen/qwen3.6-27b` (was) | Preview | $0.60 / $3.00 | 1435 / 886 | $0.00352 | $0.070 |
-| **`openai/gpt-oss-120b`** | **Production** | **$0.15 / $0.60** | 1462 / 1079 | **$0.00087** | **$0.017** |
+| `openai/gpt-oss-120b` | **Production** | $0.15 / $0.60 | 1462 / 1079 | **$0.00087** | **$0.017** |
 | `openai/gpt-oss-20b` | Production | $0.075 / $0.30 | 1462 / 1019 | $0.00042 | $0.008 |
+| `qwen/qwen3.6-27b` | Preview | $0.60 / $3.00 | 1435 / 886 | $0.00352 | $0.070 |
+| Claude Haiku 4.5 (PRO) | — | $1.00 / $5.00 | 1435 / 886 | $0.00587 | $0.117 |
 
-The 1079 figure already includes ~450 tokens of hidden reasoning, so the 4.1× is net. At the 100-request FREE cap that is **$0.087/month** per fully-utilising free student — 1,000 of them, all maxed, is **$87/month**. Realistically 15–25% max out.
+Pricing confirmed from Groq's own `/v1/models` endpoint, not a docs page. It also reports
+`input_cache_read: $0.075/1M` and `supported_features: [tools, json_mode, structured_outputs, reasoning]`.
 
-`gpt-oss-20b` is cheaper again and was rejected on quality, not price: on the same chunk its labels were measurably more generic ("Transformation of Three Poisons" / answer "compassion") than the 120B's. At ₹7.6 a maxed student the extra saving is not worth a visible drop in the thing the product sells.
+### What free students cost, on gpt-oss-120b
 
-**The blocker this change exists for.** `gpt-oss` **rejects `reasoning_effort: "none"` with a hard 400** — `must be one of low, medium, or high`. The app sent exactly that on every Groq call from a constant, across seven routes. So the env-var escape hatch added in §9 did **not** work for Groq's own suggested migration target: flipping `GROQ_FREE_MODEL` alone would have 400'd every request in the app, which is precisely the outage the env var was added to prevent.
+| | cap | per call | at the cap |
+|---|---|---|---|
+| Card generation | 100/month | $0.000867 *(measured)* | $0.087 |
+| Reader lookups (define/ask/map) | 60/month | ~$0.0002 *(estimated)* | ~$0.011 |
+| **Study grading + teach-back** | **200/DAY** (`DAILY_GRADE_CAP`) | $0.0000546 *(measured)* | **$0.33** |
+| **Everything at its ceiling** | | | **~$0.43** ≈ ₹38 |
 
-`GROQ_PROVIDER_OPTIONS` is therefore now `groqProviderOptions()`, with the mapping split into a testable `reasoningEffortFor(modelId)`: `qwen/*` → `"none"` (it accepts it, and it keeps reasoning out of a $3.00/1M output budget), everything else → `"low"` (the floor gpt-oss will take). Do not unify them on `"low"` to simplify the branch — that would bill qwen for reasoning it does not need, and qwen stays the documented fallback.
+**1000 free students:** realistic (15–25% max out) **$25–45/month**; all maxing generation + lookups **$98**;
+theoretical worst case with every ceiling hit daily **$430**. At ₹299/month, **31 PRO conversions out of 1000
+covers the entire free tier**.
 
-**All seven routes verified against gpt-oss-120b**, real prompts through their real Zod schemas — this was the risk surface, since six of them were never part of the ingest investigation and a swap that fixes deck generation while quietly breaking word lookup in the reader is the worse outcome:
+**`DAILY_GRADE_CAP = 200` is the loosest number in the app** — 6,000/month, which at the ceiling is ~4× the
+whole generation budget. It was set as an abuse ceiling when Groq was free and has never been sized from cost.
+Not changed today; flagged as the next thing worth a decision.
+
+### All seven AI routes verified on gpt-oss-120b
+
+Real prompts through their real Zod schemas, because six of them had nothing to do with the ingest
+investigation and a swap that fixes deck generation while quietly breaking word lookup in the reader is the
+worse outcome.
 
 | route | output tokens | finish | schema |
 |---|---|---|---|
@@ -263,13 +254,182 @@ The 1079 figure already includes ~450 tokens of hidden reasoning, so the 4.1× i
 | define | 106 | stop | OK |
 | cloze-grade | 46 | stop | OK |
 
-**Tests**: 478 / 478 across 31 files. The four new cases pin the mapping and guard the regression — `reasoningEffortFor` must never return `"none"` for a non-qwen id.
+---
 
-**Set on Vercel before this helps anyone**: `GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL`, both to `openai/gpt-oss-120b`. Local `.env` is already set. They must match — the route's request enum comes from the server one and the dropdown from the public one, and drift is a 400 from the schema instead of from Groq.
+## 5. The one unresolved problem: Groq says Developer, the key gets Free
 
-## 11. Do this next, in this order
+The Developer plan **is** active — the Billing page offers **Downgrade** (only possible from a paid plan) and
+there is a live billing period, 04/09/2026 – 01/10/2026, at $0.00. Organization Limits shows
+`openai/gpt-oss-120b` at **250K TPM / 1K RPM / 500K RPD / TPD No limit**.
 
-1. **Deploy.** The APK calls the live API (`NEXT_PUBLIC_API_URL`), so every server-side fix above — the 429 pass-through, the `retryable` flags, the friendly message — is inert until `main` is deployed. The device run above exercised the client half against the *old* route. Nothing is committed yet.
-2. **Decide the PRO default.** `DEFAULT_MODEL` in `src/app/ingest/page.tsx` is the free Qwen model for everyone, so this PRO account spent an 11-minute run inside Groq's free-tier OTPM ceiling. Defaulting a PRO plan to `claude-haiku-latest` is a one-line change and probably the single biggest speed win available — but the Pro path goes through the AICredits gateway and **its rate limits were not measured** (it bills real credits; not spent without asking).
-3. **Accept the free-tier ceiling, or lower the output.** At ~900 output tokens a request and 1000 OTPM, a 20-part deck on the free tier takes ~20 minutes and no retry logic can change that. The only client-side lever is fewer cards per chunk or a shorter `explanation` — both in `buildConceptsPrompt`. Worth a decision rather than a drift.
-4. `scripts/build-capacitor.mjs` clears `out/` but not `.next/`, so a plain `npm run build` followed by `npm run build:apk` fails type-checking on a stale `.next/dev/types/validator.ts` that references the API routes the script has moved aside. One line; not touched.
+But a live request with the app's key returns:
+
+```
+x-ratelimit-limit-tokens:    8000      <- free tier; org page says 250000
+x-ratelimit-limit-requests:  1000      <- free tier RPD; org page says 500000
+x-ratelimit-reset-requests:  1m26.4s
+```
+
+Both pinned to exactly the free-tier values, which **rules out propagation** — a lag would move them
+together, not hold both at the old numbers. And `1m26.4s` is the proof of which bucket is being used:
+86,400 seconds ÷ 1,000 = 86.4, so the key is being metered against a free-tier **daily** bucket, not the
+Developer per-minute one.
+
+**What was checked and ruled out:** payment method (billing fully configured), propagation (no movement over
+~40 minutes of polling), organization limits (correct on the console).
+
+**Leading theory.** The `GROQ_API_KEY` is **63 days old** (confirmed on Vercel: `Production, Preview, 63d
+ago`). It was created while the account was on the free plan. Alongside that, the console's Token Usage
+showed **0 for the last 30 days** despite ~30 live calls made against that key during this session — which
+points at the key belonging to a different project (or organization) than the one that was upgraded. Groq
+scopes API keys to a project, and the console breadcrumb reads `Personal / Default Project`.
+
+**The console would not confirm it.** The "Show Current Project Limits" toggle would not flick, and the
+sidebar `PROJECT → Limits` page was not reached. That toggle may simply be inert because there are no
+project-level overrides to show — in which case project scoping is *not* the cause and this is Groq's side.
+
+**A watcher was left running** at `/tmp/watch-groq-limits.sh` — one 8-token request every 5 minutes, exits
+when TPM changes from 8000, gives up after 4 hours. It saw no change. **It dies with the machine/session, so
+it is gone now; re-run it if useful.**
+
+---
+
+## 6. Exact next steps, in order
+
+### 1. Settle the Groq limits (blocks a Play Store launch, nothing else)
+
+Do these in order and stop at the first that resolves it.
+
+- **Groq console → API Keys.** What is listed, and which project owns each key? **If the page is empty**, the
+  account you upgraded does not own the 63-day-old key and that single fact explains every symptom. Create a
+  key in the upgraded project, put it in `.env` and on Vercel, done.
+- **Sidebar → PROJECT → Limits** (the nav item, not the broken toggle). If `gpt-oss-120b` reads 8,000 TPM
+  there while the org page reads 250,000, the project is overriding and the `Actions` column raises it.
+- **Create a fresh API key** in `Personal / Default Project` and test it. This is the discriminator and it
+  bypasses the console entirely. Put it in `.env` as `GROQ_API_KEY_NEW="gsk_..."` — **not pasted into chat** —
+  and test with the header check in §7.
+- **If a fresh key is also capped at 8000, it is Groq's side.** You now have Chat Support on the Dev plan.
+  Send them this, and include the `1m26.4s` detail, which is what makes the ticket unambiguous:
+
+  > My organization is on the Developer plan. Organization Limits shows `openai/gpt-oss-120b` at 250K TPM /
+  > 1K RPM / 500K RPD. But API requests with my key return `x-ratelimit-limit-tokens: 8000` and
+  > `x-ratelimit-limit-requests: 1000` with `x-ratelimit-reset-requests: 1m26.4s`, which are the free-tier
+  > values. Organization `org_01kwhcy15eez7bnn3ddqhka6kj`. Please apply the Developer limits to my API keys.
+
+### 2. Push the three commits
+
+```bash
+git push origin main
+```
+
+Vercel auto-deploys from `main` (proven today: 14:24 commit → 14:27 production deploy). Nothing else is
+needed to ship §2f and §2g.
+
+### 3. Set the two Vercel env vars — AFTER step 2, not before
+
+```bash
+vercel env add GROQ_FREE_MODEL production              # openai/gpt-oss-120b
+vercel env add NEXT_PUBLIC_GROQ_FREE_MODEL production  # openai/gpt-oss-120b
+```
+
+**Order matters.** The deployed code (`06c662c`) still has `FREE_MODEL` hardcoded to `qwen/qwen3.6-27b` — the
+env-var read arrived in `1d6cd31`. Setting these before pushing does nothing. Setting them after pushing needs
+a redeploy to take effect, since `NEXT_PUBLIC_*` is inlined at build time.
+
+They must be **identical**: the route's request enum is built from the server one and the client dropdown reads
+the public one, and drift means a 400 from the schema rather than from Groq.
+
+Vercel CLI is authenticated as `levinblus-2527`, project `flow-recall` (`prj_QwBfxiWwXox7ikfHp37nWTQKzBuV`),
+already linked via `.vercel/repo.json`.
+
+### 4. Re-run the device test
+
+Rebuild (`DEVTOOLS=1 npm run build:apk` → `./gradlew assembleRelease` → install the **release** APK only,
+never the debug build), re-run the real Osho PDF, and confirm three things:
+
+- all 20 parts complete with no 429
+- per-request round trips drop from 27–58 s to the ~2.5 s the model actually takes
+- `generationRequestsUsed` on the user row lands at exactly 20, and the logged `outputTokens` near 1079
+
+---
+
+## 7. Things that will bite the next session
+
+**`npm run build:apk` fails after a plain `npm run build`.** The script moves `src/app/api` aside for the
+static export, but clears only `out/`, not `.next/` — so a `.next/dev/types/validator.ts` left by an ordinary
+build cannot resolve the routes and type-checking dies with ten `TS2307`s. `rm -rf .next` first. One-line fix
+in `scripts/build-capacitor.mjs`, not taken.
+
+**Driving the app on the device.** The staging trick is not optional: the app requests no storage permission,
+and `DOM.setFileInputFiles` is read by the app's own process, so a path under `/sdcard/Download/` is
+unreadable to it. Copy into the app's own external dir first:
+
+```bash
+adb shell "cp '/sdcard/Download/<book>.pdf' /sdcard/Android/data/app.flowrecall.android/files/wisdom.pdf"
+```
+
+Then: the static export writes `out/ingest.html`, so `https://localhost/ingest/` **404s and silently falls
+back to the home page** — navigate to `/ingest.html`. A release APK only exposes chrome://inspect when built
+with `DEVTOOLS=1`. `adb` lives at `~/Android/Sdk/platform-tools/adb` and is not on `PATH`. And CapacitorHttp
+routes fetch through native OkHttp, so **CDP sees no network events at all** — patch `window.fetch` in-page to
+observe API traffic.
+
+**Checking the rate limits without the console:**
+
+```bash
+export GROQ_KEY=$(grep -m1 '^GROQ_API_KEY=' .env | sed 's/^GROQ_API_KEY=//; s/^"//; s/"$//')
+curl -s -D - -o /dev/null -X POST https://api.groq.com/openai/v1/chat/completions \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $GROQ_KEY" \
+  -d '{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"ok"}],"max_tokens":8,"reasoning_effort":"low"}' \
+  | grep -i ratelimit
+```
+
+**Groq ≠ Grok.** `console.x.ai` is xAI's Grok and has nothing to do with this app; a team called "Flowrecall"
+was created there by mistake today with a $0.00 balance and no key — harmless, can be deleted. Anything
+referencing `GROQ_API_KEY`, `qwen/`, `gpt-oss`, or `api.groq.com` is Groq.
+
+**Do not save a Groq model allowlist with only `gpt-oss-120b` checked.** "Only allow these models" blocks
+everything else org-wide, including the `qwen/qwen3.6-27b` that production still runs on until step 3 above is
+done. An allowlist needs **both** ids, or rollback requires a deploy.
+
+---
+
+## 8. Carried forward, still open
+
+### The 5 remaining npm vulnerabilities — accepted, with reasons
+
+`npm audit` reports **5 (4 high, 1 moderate, no critical)**, down from 12. Neither chain has a clean fix.
+
+**`epubjs@0.3.93` → `@xmldom/xmldom@0.7.13`** — 1 high + 1 moderate, XML injection via unsafe CDATA
+serialization plus uncontrolled recursion. This is the one on the production path. **Decision made and
+standing: stay on 0.3.93.** `0.4.2` exists but is a semver-major that the maintainer never promoted to the
+`latest` dist-tag, the library is effectively unmaintained, and the reader is finished work whose rendering
+engine must not be swapped. Revisit only if `0.4.x` is ever promoted.
+
+**`prisma@6.19.3` → `@prisma/config` → `deepmerge-ts@7.1.5`** — 3 highs, one chain, stack exhaustion on
+recursive merges. Build- and CLI-time config merging, not the request path. The only fix npm offers is
+`prisma@6.12.0`, a downgrade to before `@prisma/config` existed. Waits on Prisma bumping to `deepmerge-ts` ≥8.
+
+**`npm audit fix --force` would roll Prisma back and major the reader. Do not run it.**
+
+### Phase 3 — flashcard understanding (unstarted)
+
+1. **Multiple Choice Questions** — generate distractors from the concept map; build the MCQ UI so recognition
+   can be tested without handing the student a 50/50 guess.
+2. **Starring concepts** — a star button in the review and sheet-browsing UI, driving the FSRS `importance`
+   multiplier off the flat `0.5` and onto the student's own priorities.
+3. **Visual concept graph** — render the existing `concept-map` data, including its edge kinds ("Build on
+   first", "This explains", "Don't confuse").
+
+### Smaller things worth a decision
+
+- **`DAILY_GRADE_CAP = 200`** is the loosest cap in the app and the largest cost exposure per student (§4).
+- **`gpt-oss-120b` supports `structured_outputs` and `json_mode`**, which qwen did not — which is the entire
+  reason seven routes hand-parse JSON and return 502s when it fails. Switching to real structured outputs
+  would delete that failure mode.
+- **Output volume is the real cost lever** — ~75% of the bill. `explanation` (3–4 sentences) is most of the
+  886–1079 output tokens. Trimming it or dropping to 2 cards a chunk trades card quality, so it is a product
+  decision rather than an optimisation.
+- **Play Store**: internal testing release "1 (1.0)" is live. `versionCode` **must** be bumped in
+  `android/app/build.gradle` for every upload. Play App Signing re-signs, so a sideloaded APK cannot upgrade
+  in place — say so wherever the APK is offered.

@@ -20,6 +20,7 @@ import { chunkText, DEFAULT_CHUNK_SIZE } from "@/lib/chunkText";
 import {
   continuationMessage,
   CONTINUE_BATCH_SIZE,
+  ingestFailureView,
   runChunks,
   runChunksContinuous,
   type ContinuousProgress,
@@ -253,7 +254,6 @@ export default function IngestPage() {
       setSavedDeckId(deck.id);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong.";
-      const budgetReached = failureCode === "GENERATION_BUDGET_REACHED";
 
       // Whatever stopped the run, cards that were generated were paid for - save
       // them and queue the rest. Done before the branching below so no path can
@@ -281,32 +281,12 @@ export default function IngestPage() {
         }
       }
 
-      if (message === "FREE_LIMIT_REACHED") {
-        // Swap the generic error banner for the dedicated upsell block.
-        setError(null);
-        setShowPaywall(true);
-      } else if (budgetReached) {
-        // Distinct from the snag copy below on purpose: that one says "tap Generate
-        // Next Section to finish", and the next tap is refused for the same reason
-        // this one was. Telling a student to retry into a wall is worse than saying
-        // there is a wall.
-        setError(
-          accumulated.length > 0
-            ? `${message} We saved the ${accumulated.length} cards that were generated before it ran out.`
-            : message,
-        );
-      } else if (accumulated.length > 0) {
-        // A later chunk failed after at least one earlier chunk already succeeded.
-        // Chunk 0 succeeding is what spends one of a FREE user's monthly decks
-        // server-side (see /api/ingest's isFirstChunk gate), so the save above is what
-        // keeps that allowance from being burned for nothing. "Generate Next Section"
-        // sends isFirstChunk: false, so finishing later costs no extra deck.
-        setError(
-          "Generation hit a snag partway through, but we saved what we got. Go to your library and tap \"Generate Next Section\" to finish this deck - it won't cost you anything extra.",
-        );
-      } else {
-        setError(message);
-      }
+      // Which of the four endings this is, and its copy, live in ingestFailureView -
+      // it was the least-tested decision in the app and two of its branches had never
+      // rendered for anyone.
+      const view = ingestFailureView({ message, code: failureCode, kept: accumulated.length });
+      setError(view.error);
+      if (view.paywall) setShowPaywall(true);
     } finally {
       setLoading(false);
       setCurrentChunk(0);

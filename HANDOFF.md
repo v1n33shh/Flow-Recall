@@ -13,7 +13,7 @@ that version is carried forward in §8.
 
 | | |
 |---|---|
-| **Tests** | 579 passed / 579 across 37 files, `npm test` exit 0 |
+| **Tests** | 588 passed / 588 across 37 files, `npm test` exit 0 |
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
@@ -1263,8 +1263,49 @@ the debugging flag too. It is git-tracked, so it ships with the site.
   Android refuses that; uninstalling wipes the on-device library, and sync only restores it if the student
   signed in first. AGENTS.md says to state this wherever the APK is offered — worth re-checking that the
   download page still does.
-- **The free plan has never run end to end** (§15). Most Play installs will be FREE accounts, and the seam
-  between `/api/ingest` answering `403 FREE_LIMIT_REACHED` and `/ingest` swapping in the upsell block is the
-  one path no test and no device run has covered. This is the last thing worth doing before strangers arrive.
+- **The free plan's client half is now covered** (§19) — the decision that turns a 403 into the upsell block
+  is a tested pure function. What is still unjoined is only the route's own 403 branch, guarded by
+  `claimDeckAllowance`, which is itself heavily tested against real Postgres.
 - Store screenshots may need redoing if the listing shows the library or /ingest — both changed. See the
   standing privacy rules for those (name "Unknown", no email, no status bar or notification shade).
+
+---
+
+## 19. The free tier's least-tested decision — 2026-09-05
+
+§15 closed the free tier's *rendering* with component tests and §18 named the remaining seam as the last thing
+worth doing before strangers arrive. It needed no account after all.
+
+The seam was `handleGenerate`'s catch: four branches deciding between the upsell block and a sentence, and
+**two of them had never rendered for anyone** — the paywall swap and the exhausted-budget copy, both invisible
+on a PRO device. It was a chain of `else if`s inside a 600-line client component, so nothing could reach it.
+
+`ingestFailureView({ message, code, kept })` → `{ paywall, error }` in `ingestChunks.ts`, beside
+`continuationMessage`. `handleGenerate` is now three lines. The branch order is the logic:
+
+1. **A spent FREE month is an offer, not an error** — banner cleared, upsell shown. Returning both would read
+   as a bug on top of a wall. Also correct when cards *did* come through first: the deck allowance is claimed
+   after chunk 0 succeeds, so a student can lose the race for the last free deck with cards already in hand.
+2. **An exhausted generation budget is a wall** and must not carry the retry advice — the next tap is refused
+   for the reason this one was.
+3. **A partial run** points at its deck, since the cards are already saved.
+4. **Nothing survived** — say what happened, no more.
+
+`FREE_LIMIT_MESSAGE` is now named, because the asymmetry behind it is a trap: the route answers
+`403 {error: "FREE_LIMIT_REACHED"}` with **no `code` field**, so this one is matched on the message while
+`BUDGET_REACHED_CODE` is matched on the code. Reading it off the code would silently never match, and a test
+asserts that specific mistake.
+
+### Two defects the extraction found
+
+**The snag copy named a button that no longer exists.** It said `tap "Generate Next Section"` — renamed to
+"Generate all N remaining sections" back in §9. So the app was directing students to a control that was not
+there. The copy now describes the button instead of quoting it, which cannot go stale the same way, and a test
+asserts the old label is absent.
+
+**"We saved the 1 card that were generated."** The count pluralised and the verb did not. Caught by the
+singular test on the first run. A participle agrees with both, which is how `continuationMessage` already
+phrased it.
+
+9 new tests, all four branches plus both defects. 588/588 across 37 files, tsc and eslint clean, clean build,
+and `webContentsDebuggingEnabled` re-checked as `false` after the rebuild (§18).

@@ -385,6 +385,74 @@ export function continuationMessage(run: {
   return `${run.error} We kept the ${cards} that came through - tap again to carry on.`;
 }
 
+/** The sentinel `/api/ingest` sends instead of a sentence when a FREE account has spent
+ * its monthly decks.
+ *
+ * It arrives as the MESSAGE, not as a code - the route answers
+ * `403 {error: "FREE_LIMIT_REACHED"}` with no `code` field at all - which is why
+ * ingestFailureView compares it against the message while BUDGET_REACHED_CODE is
+ * compared against the code. An asymmetry worth a name rather than a rediscovery. */
+export const FREE_LIMIT_MESSAGE = "FREE_LIMIT_REACHED";
+
+/** What /ingest shows when a first generation fails: the upsell block, or a sentence.
+ *
+ * Extracted from `handleGenerate` because this was the app's least-tested decision and
+ * one of its most consequential. **Two of its four branches had never been seen by
+ * anyone**: the device this is developed on holds a PRO account, so the paywall swap and
+ * the exhausted-budget copy existed only on paper, and the seam between the route
+ * answering 403 and this deciding what to render was covered by nothing.
+ *
+ * The order of the branches is the whole logic:
+ *
+ *   1. A spent FREE allowance is not an error, it is an offer - so the banner is
+ *      cleared and the upsell block takes its place. Returning an `error` too would
+ *      show both, which reads as a bug on top of a wall.
+ *   2. An exhausted generation budget is a wall, and must NOT carry the retry advice
+ *      below it: the next tap is refused for the reason this one was.
+ *   3. Otherwise, if anything survived, the cards are already saved and the student
+ *      only needs to be told where to finish. This is the common case.
+ *   4. Nothing survived: say what happened and no more.
+ */
+export function ingestFailureView(failure: {
+  message: string;
+  code: string | null;
+  kept: number;
+}): { paywall: boolean; error: string | null } {
+  if (failure.message === FREE_LIMIT_MESSAGE) return { paywall: true, error: null };
+
+  const cards = `${failure.kept} ${failure.kept === 1 ? "card" : "cards"}`;
+
+  if (failure.code === BUDGET_REACHED_CODE) {
+    return {
+      paywall: false,
+      error:
+        failure.kept > 0
+          ? `${failure.message} We saved the ${cards} generated before it ran out.`
+          : failure.message,
+    };
+  }
+
+  if (failure.kept > 0) {
+    // Chunk 0 succeeding is what spends one of a FREE account's monthly decks
+    // server-side (see /api/ingest's isFirstChunk gate), so the cards being saved is
+    // what keeps that allowance from being burned for nothing. Finishing later sends
+    // isFirstChunk: false and costs no extra deck, which is the promise at the end.
+    //
+    // Deliberately does not quote the button's label. It said 'tap "Generate Next
+    // Section"' until this was extracted, and that button had been renamed to "Generate
+    // all N remaining sections" - so the app was directing students to a control that no
+    // longer existed by that name. A description cannot go stale that way.
+    return {
+      paywall: false,
+      error:
+        "Generation hit a snag partway through, but we saved what we got. Open this deck in " +
+        "your library and tap the button to generate the rest - it won't cost you anything extra.",
+    };
+  }
+
+  return { paywall: false, error: failure.message };
+}
+
 /** Works through `chunks` until they run out, the student stops it, or something
  * stops it for them - the whole book from one tap instead of ~115 of them.
  *

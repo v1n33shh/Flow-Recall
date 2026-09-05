@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BUDGET_REACHED_CODE,
   continuationMessage,
+  FREE_LIMIT_MESSAGE,
+  ingestFailureView,
   PERSIST_FAILED_CODE,
   runChunks,
   runChunksContinuous,
@@ -635,5 +637,76 @@ describe("continuationMessage", () => {
     // A code this build has never seen is far more likely to be a transient provider
     // failure than a permanent refusal, and the cost of being wrong is one tap.
     expect(continuationMessage({ error: RATE, code: "SOMETHING_NEW", kept: 3 })).toContain("tap again");
+  });
+});
+
+describe("ingestFailureView", () => {
+  it("offers the upsell instead of an error when a FREE month is spent", () => {
+    // The branch no PRO device has ever rendered. Both halves matter: the paywall goes
+    // up AND the banner is cleared, because showing a sentence beside the offer reads
+    // as a bug on top of a wall.
+    expect(ingestFailureView({ message: FREE_LIMIT_MESSAGE, code: null, kept: 0 })).toEqual({
+      paywall: true,
+      error: null,
+    });
+  });
+
+  it("offers the upsell even when cards did come through first", () => {
+    // The allowance is claimed after chunk 0 succeeds, so a student CAN lose the race
+    // for the last free deck with cards already in hand.
+    expect(ingestFailureView({ message: FREE_LIMIT_MESSAGE, code: null, kept: 9 })).toEqual({
+      paywall: true,
+      error: null,
+    });
+  });
+
+  it("compares the free sentinel against the message, not the code", () => {
+    // /api/ingest answers 403 {error: "FREE_LIMIT_REACHED"} with no code field at all.
+    // Reading it off the code would silently never match.
+    expect(ingestFailureView({ message: "Something went wrong.", code: FREE_LIMIT_MESSAGE, kept: 0 }).paywall).toBe(false);
+  });
+
+  it("says what was saved when the generation budget runs out, and does not say tap again", () => {
+    const view = ingestFailureView({ message: "Monthly generation budget reached.", code: BUDGET_REACHED_CODE, kept: 6 });
+    expect(view.paywall).toBe(false);
+    expect(view.error).toBe("Monthly generation budget reached. We saved the 6 cards generated before it ran out.");
+    expect(view.error).not.toMatch(/tap the button|generate the rest/);
+  });
+
+  it("stands alone when the budget ran out before anything was generated", () => {
+    const message = "Monthly generation budget reached.";
+    expect(ingestFailureView({ message, code: BUDGET_REACHED_CODE, kept: 0 }).error).toBe(message);
+  });
+
+  it("counts one saved card as a card, and agrees with it", () => {
+    // The first version of this read "the 1 card that were generated". A participle
+    // agrees with both counts, which is how continuationMessage phrases it too.
+    const view = ingestFailureView({ message: "Budget reached.", code: BUDGET_REACHED_CODE, kept: 1 });
+    expect(view.error).toBe("Budget reached. We saved the 1 card generated before it ran out.");
+    expect(view.error).not.toMatch(/1 card that were|1 cards/);
+  });
+
+  it("points a partial run at its deck without quoting a button label", () => {
+    // The old copy said 'tap "Generate Next Section"', and that button had been renamed
+    // to "Generate all N remaining sections" - so the app was directing students to a
+    // control that no longer existed by that name.
+    const view = ingestFailureView({ message: "Part 7 came back garbled.", code: "MODEL_UNPARSEABLE", kept: 18 });
+    expect(view.error).toMatch(/we saved what we got/);
+    expect(view.error).toMatch(/won't cost you anything extra/);
+    expect(view.error).not.toContain("Generate Next Section");
+  });
+
+  it("says only what happened when nothing survived", () => {
+    const message = "The model returned a response we couldn't understand.";
+    expect(ingestFailureView({ message, code: "MODEL_UNPARSEABLE", kept: 0 })).toEqual({
+      paywall: false,
+      error: message,
+    });
+  });
+
+  it("never raises the paywall for any other failure", () => {
+    for (const code of [null, BUDGET_REACHED_CODE, PERSIST_FAILED_CODE, "RATE_LIMITED", "PROVIDER_FAILED"]) {
+      expect(ingestFailureView({ message: "anything", code, kept: 3 }).paywall).toBe(false);
+    }
   });
 });

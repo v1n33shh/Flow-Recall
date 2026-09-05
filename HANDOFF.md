@@ -99,7 +99,10 @@ In the order I would take them. None is a defect; all of it degrades gracefully 
 
 ### What shipped on 2026-09-05
 
-Sixteen commits, all live. In the order they landed:
+2026-09-04's chain — `06c662c`, `a885db3`, `1d6cd31`, `72a69b0`, `829b25e`, `0f60bd0` — is all live and is
+described by topic in §2, with the temporal-dead-zone fix (`829b25e`) explained in §7.
+
+Then sixteen commits on 09-05, all live. In the order they landed:
 
 | commit | what it is | section |
 |---|---|---|
@@ -1392,3 +1395,80 @@ phrased it.
 
 9 new tests, all four branches plus both defects. 588/588 across 37 files, tsc and eslint clean, clean build,
 and `webContentsDebuggingEnabled` re-checked as `false` after the rebuild (§18).
+
+---
+
+## 20. Driving the phone, and probing the model — the two harnesses
+
+Everything on 09-05 that counts as evidence came from one of two throwaway scripts in `/tmp`, which will not
+survive a reboot. The gotchas are in §7; this is what it takes to rebuild them, because every line below cost
+at least one failed attempt.
+
+### Attaching to the device
+
+```bash
+ADB=~/Android/Sdk/platform-tools/adb          # not on PATH
+PID=$($ADB shell pidof app.flowrecall.android | tr -d '\r')
+$ADB forward --remove-all
+$ADB forward tcp:9222 localabstract:webview_devtools_remote_$PID
+curl -s http://localhost:9222/json/list        # confirms the page target
+```
+
+The forward **drops on its own** mid-session; just re-run those four lines. A release APK exposes the target
+only when built with `DEVTOOLS=1` (§0 trap 1 — never ship that build).
+
+Playwright is already a dependency, so the driver is `chromium.connectOverCDP("http://localhost:9222")` then
+`browser.contexts()[0].pages()[0]`. **Two import traps for a script living in `/tmp`:** node cannot resolve the
+project's `node_modules` from there, so import by absolute path; and `playwright` is CommonJS, so it has no
+named exports through ESM — `import pw from "…/node_modules/playwright/index.js"; const { chromium } = pw;`.
+
+### Four things that will waste an hour otherwise
+
+- **Scope every query to the deck you mean.** The library renders newest-first and two decks are both called
+  `wisdom`, so a document-wide `querySelectorAll("button")` hands back another card's controls. This produced
+  three separate wrong measurements on 09-05 — including one that looked like the app had lost 12 sections.
+  Walk up from an element whose `textContent` is the deck title until you find its buttons.
+- **`document.body.innerText` omits anything scrolled out of view.** The revision sheet is ~55,000 characters;
+  a section that renders perfectly reads as absent. Use `querySelectorAll` and `textContent`.
+- **Patch `window.fetch` in-page** — CapacitorHttp routes through native OkHttp so CDP sees no network events
+  at all. Record `res.clone().text()` for non-200s: `/api/ingest` has three different `retryable` 502s and the
+  client shows one message for all of them, so the `code` in the body is the only way to tell them apart.
+- **A request in flight has `status: undefined`**, which a naive `status !== 200` filter counts as a failure.
+  Two 09-05 readings reported phantom errors this way.
+
+### Feeding it a file, and reading its databases
+
+`DOM.setFileInputFiles` over raw CDP (not Playwright's `setInputFiles`) with a **device** path, and the file
+must be inside the app's own external dir — it has no storage permission, so `/sdcard/Download/…` is
+unreadable to it:
+
+```bash
+$ADB shell "cp '/sdcard/Download/<book>.pdf' /sdcard/Android/data/app.flowrecall.android/files/wisdom.pdf"
+```
+
+`localStorage` reads directly in `page.evaluate`. The recall engine is IndexedDB — open `flowrecall-recall`
+and `getAll()` the `units`, `memory` and `reviews` stores; that is how starring was verified down to the
+re-dated rows (§16).
+
+### The model probe
+
+`/tmp/seven-probe.ts` calls every route's **real** prompt builder and **real** schema straight at Groq, so no
+auth, Prisma or quota row is involved. It is the §4 standard for any change to a request's shape, and §13 is
+what it produced.
+
+```bash
+node_modules/.bin/esbuild /tmp/seven-probe.ts --bundle --platform=node --format=cjs \
+  --outfile=/tmp/seven-probe.cjs --alias:@=$PWD/src
+```
+
+**CJS, not ESM** — importing the route modules drags in `next/server` via `@/auth`, which needs `__dirname`.
+That also means top-level `await` has to be wrapped in a `main()`.
+
+Four prompt builders were exported for this and should stay exported: `buildShufflePrompt`,
+`buildDefinePrompt`, cloze-grade's `buildPrompt` and its `GradeSchema`. `conceptSchema.ts` records the reason
+in its own comment — a prompt is exported "so it can be run against the real model".
+
+**Sample sizes that mean something:** ~120 calls to have a 95% chance of catching a 2.5% event, which is what
+"no errors" has to mean here. Ten per route is enough to prove a request shape does not hard-400. And compare
+modes over the *same* chunk sequence — comparing two 30-call runs on different slices is what produced the
+phantom 7.6% token saving §13 had to retract.

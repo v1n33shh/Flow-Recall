@@ -1207,3 +1207,64 @@ concept in deck order first — the stability property, working on live data.
 `querySelectorAll` found it immediately. `innerText` is render-aware and drops content scrolled out of view,
 and the revision sheet is 55,000 characters long. **Search this page with `textContent` or a DOM query, never
 `innerText`** - it reads exactly like a component that failed to render.
+
+---
+
+## 18. Play Store readiness — 2026-09-05
+
+Asked "is it ready to upload". It was not, for two reasons, and **one of them was a security problem this
+session created.**
+
+### The blocker nobody would have caught until it shipped
+
+Every APK built this session used `DEVTOOLS=1`, which is right for driving the app over CDP and wrong for
+anything a student installs: it sets `webContentsDebuggingEnabled: true`, exposing the WebView to
+chrome://inspect on the device. That value is **baked into
+`android/app/src/main/assets/capacitor.config.json` by the build**, so it persists in the tree until the next
+build overwrites it — and `bundleRelease` does not rebuild the web assets. Running `./gradlew bundleRelease`
+on the tree as this session left it would have produced an AAB with debugging **on** for every student.
+
+`capacitor.config.ts` says "Re-run the build without DEVTOOLS before shipping" in as many words. Now checked
+rather than trusted: `npm run build:apk` with no `DEVTOOLS`, then grep the shipped asset config.
+
+```bash
+grep -E "webContentsDebuggingEnabled|loggingBehavior" android/app/src/main/assets/capacitor.config.json
+# must read: false, and "debug"
+```
+
+**Make that grep part of every release.** It is one line and it is the difference between a normal upload and
+a privacy incident.
+
+### The blocker that would have failed loudly
+
+`versionCode` was still 1, and 1 (1.0) is already on the internal testing track. Play rejects a repeat, and
+AGENTS.md notes the rejection arrives *after* the build. Bumped to **versionCode 2 / versionName 1.1** — the
+name because a meaningful amount shipped since 1.0, the code because Play requires it. There is now a comment
+above them saying so, since this is per-upload forever.
+
+### Built and verified
+
+| | |
+|---|---|
+| `app-release.aab` | 6,399,489 bytes, built from a no-DEVTOOLS export |
+| versionCode / versionName | **2 / 1.1**, confirmed by `aapt2 dump badging` on the APK from the same gradle config |
+| Signing | `e1f4352f…bc09` — the upload key. Play App Signing re-signs, so what students get is Google's cert |
+| Web assets | `webContentsDebuggingEnabled: false`, `loggingBehavior: "debug"` |
+| Tests / typecheck / lint | 579/579, clean, 0 errors |
+
+`public/flowrecall-release.apk` — the direct download the site serves — **was also stale**, dated 09-03 at
+versionCode 1, predating every fix from this session. Refreshed from the same no-DEVTOOLS build and checked for
+the debugging flag too. It is git-tracked, so it ships with the site.
+
+### What is still true before uploading
+
+- **Push first.** The AAB is built from local source; the API it talks to is whatever is on `origin/main`.
+- **A sideloaded APK cannot upgrade to the Play build in place.** Play App Signing means the cert changes, and
+  Android refuses that; uninstalling wipes the on-device library, and sync only restores it if the student
+  signed in first. AGENTS.md says to state this wherever the APK is offered — worth re-checking that the
+  download page still does.
+- **The free plan has never run end to end** (§15). Most Play installs will be FREE accounts, and the seam
+  between `/api/ingest` answering `403 FREE_LIMIT_REACHED` and `/ingest` swapping in the upsell block is the
+  one path no test and no device run has covered. This is the last thing worth doing before strangers arrive.
+- Store screenshots may need redoing if the listing shows the library or /ingest — both changed. See the
+  standing privacy rules for those (name "Unknown", no email, no status bar or notification shade).

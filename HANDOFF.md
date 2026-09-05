@@ -1,11 +1,83 @@
 # FlowRecall — Handoff
 
-**Written 2026-09-04, end of day; §1, §6 and §9 rewritten 2026-09-05. Supersedes the 2026-09-03
-version entirely** — earlier ones are in `git log --follow -- HANDOFF.md`. Everything still open from
-that version is carried forward in §8.
+**Written 2026-09-04, end of day. §0, §1 and §6 rewritten 2026-09-05, end of session; §10–§19 appended
+that day.** Earlier versions are in `git log --follow -- HANDOFF.md`.
 
-§2 through §5, §7 and §8 are 09-04's and still stand; they are history and measurements, not status.
-**§1, §6 and §9 are the only sections that describe where things are now.**
+**Which sections are status, and which are history.** §0, §1 and §6 describe where things are *now* — read
+those. §2–§5 and §7–§19 are the record of how it got here: measurements that were expensive to take,
+diagnoses worth not repeating, and decisions with their reasons. Reference, not status. §5, §6 step 1, and
+two bullets in §8 are struck through where this session resolved them.
+
+---
+
+## 0. The only task open: upload to Google Play
+
+Everything else is done, pushed, and verified. If you are here to ship, this section is self-contained.
+
+### It is already built
+
+```
+android/app/build/outputs/bundle/release/app-release.aab
+6,399,706 bytes · versionCode 2 · versionName 1.1
+signed e1f4352fabb58ebab0e4ce39c09a0eb607b307ae9abc26c0f088d2216f44bc09  (the upload key)
+webContentsDebuggingEnabled: false
+```
+
+Built from `2b65dbb`, which is what `origin/main` points at. **If nothing has changed since, upload that
+file and stop reading.**
+
+### If anything HAS changed, rebuild it like this
+
+```bash
+rm -rf .next && npm run build:apk
+grep -E "webContentsDebuggingEnabled|loggingBehavior" android/app/src/main/assets/capacitor.config.json
+#   MUST read  false  and  "debug"  — see the trap below
+(cd android && ./gradlew bundleRelease)
+```
+
+### Two traps, both of which have already bitten
+
+**1. `DEVTOOLS=1` leaks into the shipped bundle.** Driving the app over CDP needs
+`DEVTOOLS=1 npm run build:apk`, which sets `webContentsDebuggingEnabled: true` — chrome://inspect open on
+every student's phone. **That value is baked into `android/app/src/main/assets/capacitor.config.json` by the
+web build and stays there**, and `./gradlew bundleRelease` does not rebuild web assets. So a bundle built
+after any devtools session ships debugging on. Run the grep above every single time. Full account in §18.
+
+**2. `versionCode` must go up on every upload.** Play rejects a code it has seen, and the rejection arrives
+*after* the build. `1 (1.0)` is already on the internal testing track; this AAB is `2 (1.1)`. Bump it in
+`android/app/build.gradle` — there is a comment there saying so.
+
+### Two things a person has to check, not a command
+
+- **The download page must warn that a sideloaded APK cannot upgrade to the Play build in place.** Play App
+  Signing re-signs with Google's certificate, Android refuses a certificate change, and uninstalling wipes
+  the on-device library — sync restores it only if the student signed in first. `AGENTS.md` requires this
+  notice wherever the APK is offered.
+- **Store screenshots may be stale.** The library screen and `/ingest` both changed on 09-05. Standing
+  privacy rules for screenshots: account name "Unknown", no email address visible, no status bar and no
+  notification shade.
+
+### Do not "fix" these on the way past
+
+They are known, documented, and deliberately left: the ~3-unfinished-book localStorage ceiling (§6.5, fails
+cleanly), stars not surviving a reinstall (§16, units do not sync yet), the ~0.45% recoverable model-JSON
+failure (§13 — json_object mode was measured and **rejected**, do not re-add it), and the 5 accepted npm
+vulnerabilities (§8 — `npm audit fix --force` would roll Prisma back and major the reader).
+
+### After the upload, if you want more to do
+
+In the order I would take them. None is a defect; all of it degrades gracefully today.
+
+1. **Unit sync** (§16). Stars live in IndexedDB and never reach Postgres, so they do not survive a reinstall —
+   and the sideload→Play upgrade *requires* an uninstall. Costs nothing today because nobody has starred
+   anything; gets worse the more the feature is used. `recallStorage`'s own header calls this "the next phase"
+   and `recallSync` already reads `importance` per unit, so the shape is half-drawn.
+2. **`pendingChunks` out of localStorage** (§6 step 5). The library caps at ~3 *unfinished* books. Design
+   sketched: keep a count on the `Deck` for the synchronous UI reads, move the text to the IndexedDB store
+   that already exists, and remember `/api/sync` carries it to Postgres too.
+3. **Multiple-choice questions** (§8, Phase 3 item 1). Unstarted; distractor generation wants designing first.
+4. **`explains` at deck level** (§17). The last sliver of the concept-map work — directional, so it wants a
+   different shape from the pair list.
 
 ---
 
@@ -17,38 +89,43 @@ that version is carried forward in §8.
 | **Typecheck** | `npx tsc --noEmit` clean |
 | **Lint** | `npx eslint src` — 0 errors, 12 warnings, all predating 09-04 (reader hook deps, unused `createAnthropic`) |
 | **Build** | `rm -rf .next && npm run build` — exit 0, with `/api/account/usage` in the route manifest |
-| **Git** | **1 commit ahead** of `origin/main`: the deck-deduplication and continuous-generation work, §9. Tree clean. `test-models.mjs` is now gitignored rather than untracked-and-easily-committed |
-| **Deployed** | `0f60bd0` is live. **Everything described in §2 is serving students** — see below |
-| **Database** | All 10 migrations applied to Supabase, `20260904210000_add_deck_source_key` among them (applied 09-05). `prisma migrate status` → up to date |
-| **Device** | Release APK (`DEVTOOLS=1` build) installed on the CPH2001. Library intact — 2 decks, signed in, plan PRO. **Nothing has been re-tested on it since the 09-04 run** — §6 |
-| **Groq** | Developer plan **active** (billing confirmed). But the API key still receives free-tier limits — the one unresolved problem, §5 |
+| **Git** | `2b65dbb`, **nothing unpushed, tree clean.** 16 commits on 09-05 |
+| **Deployed** | `2b65dbb` is live on Vercel. Everything in §2 and §9–§19 is serving students |
+| **Database** | All 10 migrations applied to Supabase. `prisma migrate status` → up to date. Nothing pending |
+| **Play** | **AAB built and ready, not yet uploaded** — §0. Internal testing track still holds `1 (1.0)` |
+| **Device** | CPH2001, signed in, plan PRO, 5 live decks. Currently carries a **`DEVTOOLS=1`** APK — fine for driving, never ship that build (§0) |
+| **Groq** | Developer limits **active and confirmed** on the live key: 250K TPM / 500K RPD. §5 is resolved |
+| **Cost controls** | FREE: 3 decks + 100 generation requests + 60 reader lookups a month. Everyone: 100 grades a day (§14). Generation metered per request, claimed before the model call |
 
-### What is and is not deployed
+### What shipped on 2026-09-05
 
-**All of 2026-09-04 shipped.** `origin/main` is at `0f60bd0`. The 09-04 version of this section listed
-`a885db3`, `1d6cd31` and `72a69b0` as unpushed; they went out, along with two commits made after it was
-written:
+Sixteen commits, all live. In the order they landed:
 
-| commit | contents | live? |
+| commit | what it is | section |
 |---|---|---|
-| `06c662c` | PdfDropzone worker extraction, `chunkText`, `runChunks`, route 429 + `retryable`, `RetryError` unwrap, `maxRetries: 0` | yes |
-| `a885db3` | ±25% jitter on the retry wait | yes |
-| `1d6cd31` | per-request generation budget, usage logging, `FREE_MODEL` env var | yes |
-| `72a69b0` | `gpt-oss-120b` switch, `groqProviderOptions()` / `reasoningEffortFor()` | yes |
-| `829b25e` | the temporal-dead-zone fix that broke the production build — §7 | yes |
-| `0f60bd0` | rebuild so `NEXT_PUBLIC_GROQ_FREE_MODEL` is inlined | yes |
-| `fda0719` | deck deduplication + continuous generation — §9 | **no** |
+| `9a89c3a` | deck deduplication by `sourceKey` + continuous generation + the `DeckStorageFullError` path | §9 |
+| `1988391` | **live regression fix**: the model swap 400'd continuation on every pre-existing deck | §10 |
+| `a7eaaf9` | Stop lands on the next section, not the batch end; the card stops showing stale counts | §11 |
+| `29fd436` | **the 502s were an envelope, not garbled JSON** — `ConceptsResponseSchema` tolerates a bare array | §12 |
+| `5b22c67`, `fa1523d` | post-deploy verification; `DAILY_GRADE_CAP` 200 → 100; json_object measured and rejected | §13, §14 |
+| `c8a6da7` | render tests for the states a PRO device can never show; `continuationMessage` shared | §15 |
+| `51f5c00`, `8aa90b8` | starring concepts — the first thing ever to write `importance` | §16 |
+| `e6e7230`, `9f94e81` | a deck's confusable pairs, where a student can actually find them | §17 |
+| `e121b39` | marked the HANDOFF sections this session resolved | — |
+| `c101ecd` | Play release prep: closed the DEVTOOLS hole, bumped `versionCode` | §18 |
+| `3db05ef` | `ingestFailureView` — the free tier's least-tested decision, plus two defects it hid | §19 |
+| `2b65dbb` | rebuilt the direct-download APK from the pushed HEAD | §18 |
 
-So the per-request generation budget **is** enforcing in production now, which the 09-04 note said it was
-not, and `gpt-oss-120b` is what free requests are billed at.
+**The two that were production bugs, not new features:** `1988391` (every deck made before the
+`gpt-oss-120b` swap got `400 Invalid option` when continued — so "Generate all N remaining sections" was
+dead for every book anyone had started) and `29fd436` (one call in eight returned a bare JSON array instead
+of the documented wrapper, and the app threw away three good cards and charged for them).
 
-**One thing left unverified.** Whether `GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL` are actually
-set on Vercel production. `0f60bd0`'s message strongly implies they are — that rebuild has no other
-purpose — but reading the production environment was not permitted during the 09-05 session, so it is an
-inference, not a check. `vercel env ls production` settles it, and until it does, do not treat "the free
-model in production is `gpt-oss-120b`" as confirmed. Both must be identical; §6 explains why.
+**Both model env vars are confirmed set**, which the 09-04 version of this section could not verify: the
+`/ingest` dropdown offers `openai/gpt-oss-120b` on the device and the route accepts the same id, so
+`GROQ_FREE_MODEL` and `NEXT_PUBLIC_GROQ_FREE_MODEL` agree. They must stay identical — §6 explains why.
 
-### The 509 tests include live-database integration tests
+### The 588 tests include live-database integration tests
 
 `src/lib/freeQuotaDb.test.ts` and `src/lib/clozeGradeRateLimit.test.ts` hit the real Supabase Postgres on
 purpose: the guarantee under test is Postgres taking a row lock and re-evaluating an `UPDATE`'s `WHERE`
@@ -310,7 +387,10 @@ it is gone now; re-run it if useful.**
 
 ---
 
-## 6. Exact next steps, in order
+## 6. The 2026-09-04 plan — all five steps discharged
+
+**Nothing here is outstanding.** Kept because other sections point into it by step number, and because step 5
+holds the localStorage measurement that is still the reference for that ceiling. What to do next is §0.
 
 ### 1. ~~Settle the Groq limits~~ — DONE, see §5. Skip this whole step.
 
@@ -449,7 +529,10 @@ Then: the static export writes `out/ingest.html`, so `https://localhost/ingest/`
 back to the home page** — navigate to `/ingest.html`. A release APK only exposes chrome://inspect when built
 with `DEVTOOLS=1`. `adb` lives at `~/Android/Sdk/platform-tools/adb` and is not on `PATH`. And CapacitorHttp
 routes fetch through native OkHttp, so **CDP sees no network events at all** — patch `window.fetch` in-page to
-observe API traffic.
+observe API traffic. Two corrections from 09-05: clicking works fine by any of three methods (§10's last
+subsection — an earlier note here about Playwright timing out does not apply outside the reader), and
+`document.body.innerText` silently omits anything scrolled out of view, which reads exactly like a component
+that failed to render (§17). Query with `querySelectorAll`/`textContent` on this app's long pages.
 
 **A build can "Compile successfully" and still fail.** `next build` compiles, then type-checks, then
 prerenders static pages — and a prerender failure comes *after* the success line. Grepping the log for
@@ -522,16 +605,16 @@ recursive merges. Build- and CLI-time config merging, not the request path. The 
 - **Output volume is the real cost lever** — ~75% of the bill. `explanation` (3–4 sentences) is most of the
   886–1079 output tokens. Trimming it or dropping to 2 cards a chunk trades card quality, so it is a product
   decision rather than an optimisation.
-- **Play Store**: internal testing release "1 (1.0)" is live. `versionCode` **must** be bumped in
+- ~~**Play Store**~~ — **now §0, which is the live procedure.** Kept for the reasoning: `versionCode` **must** be bumped in
   `android/app/build.gradle` for every upload. Play App Signing re-signs, so a sideloaded APK cannot upgrade
   in place — say so wherever the APK is offered.
 
 ---
 
-## 9. Deck deduplication and continuous generation — `fda0719`, committed, not deployed
+## 9. Deck deduplication and continuous generation — `9a89c3a`, deployed
 
-One commit, ahead of `origin/main`. Started in the session after the 09-04 handoff and wound down
-mid-flight by a gateway error; reviewed, finished and verified on 09-05. The 09-04 version of this section
+**Live.** Started in the session after the 09-04 handoff as the WIP commit `fda0719` and wound down
+mid-flight by a gateway error; reviewed, finished, verified and amended into `9a89c3a` on 09-05. The 09-04 version of this section
 called it "partially built" and listed nine files — it is neither partial nor nine files, and it is larger
 than its stated goal.
 

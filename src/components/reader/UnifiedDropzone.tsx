@@ -42,9 +42,6 @@ export default function UnifiedDropzone({ onImported }: { onImported: (book: Boo
     accept: {
       "application/epub+zip": [".epub"],
       "application/pdf": [".pdf"],
-      "application/octet-stream": [".epub"],
-      "application/x-epub": [".epub"],
-      "application/epub": [".epub"],
     },
     multiple: false,
     disabled: status.state === "importing",

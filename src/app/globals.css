@@ -210,6 +210,8 @@ body {
 
 .native-app .textLayer,
 .native-app .textLayer *,
+.native-app .reader-longpress-text,
+.native-app .reader-longpress-text *,
 .native-app input,
 .native-app textarea,
 .native-app [contenteditable="true"] {
@@ -217,23 +219,10 @@ body {
   user-select: text;
 }
 
+/* Click-to-turn overlays are a desktop affordance. On a touchscreen they sit
+   on the outer fifth of the prose and swallow the drag that forms a native
+   selection; paging on touch uses TextReaderCore's own touchend handler. */
 @media (pointer: coarse) {
-  /* Text selection is explicitly ALLOWED on touch so users can select sentences.
-     This means the Android native "Copy / Share" action bar will appear, but
-     it's required to support multi-word dragging. Desktop drag-to-select is
-     already native. */
-  .native-app .reader-longpress-text,
-  .native-app .reader-longpress-text * {
-    -webkit-user-select: text !important;
-    user-select: text !important;
-  }
-
-  /* TextReaderCore's click-to-turn overlays are a desktop affordance only.
-     Left in the tree on a touch device they sit ON TOP of the outer fifth of
-     the prose, where they swallow the long-press before selection.ts ever sees
-     it and mask the text from elementFromPoint/caretRangeFromPoint. display:
-     none takes them out of hit-testing outright; touch turns pages from the
-     tap zones in TextReaderCore's own touchend handler instead. */
   .reader-page-turn {
     display: none;
   }

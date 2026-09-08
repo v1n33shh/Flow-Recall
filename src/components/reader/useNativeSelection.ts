@@ -7,9 +7,11 @@ import {
 } from "./selection";
 
 // Matches epub.js's own internal selectionchange debounce (see Contents#onSelectionChange
-// in epubjs/src/contents.js) so the desktop interaction feels identical
-// whether the selection came from an EPUB's iframe or a plain DOM view (PDF
-// text layer, raw text). 
+// in epubjs/src/contents.js) so the interaction feels identical whether the
+// selection came from an EPUB's iframe or a plain DOM view (PDF text layer,
+// raw text).
+const SELECTION_DEBOUNCE_MS = 250;
+
 /** Shared selection-to-popover wiring for reader views that render into the
  * main document (PDF text, raw text) rather than epub.js's sandboxed iframes.
  * Takes the reading container as an ELEMENT rather than a ref so the listeners
@@ -20,26 +22,25 @@ import {
  * `derivePosition` computes the opaque, type-dependent position string a
  * selection would be saved under if the user hits "Highlight" - PdfReaderView
  * and TextReaderView each supply their own, so this hook stays agnostic.
- */
+ *
+ * Native drag-to-select is used on both desktop and touch; the popover is
+ * driven from a debounced `selectionchange` listener. */
 export function useNativeSelection(containerEl: HTMLElement | null, derivePosition: DerivePosition) {
   const [selection, setSelection] = useState<PendingSelection | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const clearSelection = useCallback(() => {
     setSelection(null);
-    if (typeof window !== "undefined") {
+    // Only desktop has a real browser selection to drop - on touch there is
+    // never one to begin with, and calling into Selection there would just
+    // churn selectionchange events for nothing.
+    if (!isCoarsePointer() && typeof window !== "undefined") {
       window.getSelection()?.removeAllRanges();
     }
   }, []);
 
-  // Dynamic debounce:
-  // Desktop: 250ms (fast, standard).
-  // Mobile: 800ms (gives the user ample time to drag native handles without the popover popping up mid-drag).
-  const SELECTION_DEBOUNCE_MS = isCoarsePointer() ? 800 : 250;
-
-  // Native text selection (drag-to-select on desktop, long-press handles on mobile).
-  // selectionchange is debounced. On mobile, the native selection handles intercept
-  // touch events, so we cannot rely on touchend. The debounce timer commits the selection.
+  // Drag-to-select, debounced so the popover appears once the drag settles
+  // rather than flickering on every intermediate range.
   useEffect(() => {
     if (!containerEl) return;
 
@@ -47,29 +48,13 @@ export function useNativeSelection(containerEl: HTMLElement | null, derivePositi
       clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
         const domSelection = window.getSelection();
-        if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) {
-          setSelection(null);
-          return;
-        }
+        if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) return;
 
         const range = domSelection.getRangeAt(0);
-        if (!containerEl?.contains(range.commonAncestorContainer)) {
-          setSelection(null);
-          return;
-        }
+        if (!containerEl?.contains(range.commonAncestorContainer)) return;
 
         const captured = captureSelectionFromRange(range, false, derivePosition);
-        if (captured) {
-          // Provide haptic feedback on touch devices when a selection is finalized
-          if (isCoarsePointer()) {
-            import("@capacitor/haptics")
-              .then(({ Haptics, ImpactStyle }) => {
-                Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
-              })
-              .catch(() => {});
-          }
-          setSelection(captured);
-        }
+        if (captured) setSelection(captured);
       }, SELECTION_DEBOUNCE_MS);
     }
 
@@ -94,4 +79,3 @@ export function useNativeSelection(containerEl: HTMLElement | null, derivePositi
 
   return { selection, clearSelection };
 }
-

@@ -286,6 +286,7 @@ function DefinitionContent({
   canSaveNote,
   isHighlighted,
   maxBodyHeight,
+  asPill,
 }: {
   phrase: string;
   stage: Stage;
@@ -312,6 +313,7 @@ function DefinitionContent({
   canSaveNote: boolean;
   isHighlighted: boolean;
   maxBodyHeight: string;
+  asPill?: boolean;
 }) {
   const [highlighting, setHighlighting] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -443,6 +445,35 @@ function DefinitionContent({
             )}
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (asPill && stage.kind === "actions" && !isHighlighted) {
+    return (
+      <div className="flex items-center gap-2 p-2">
+        <button
+          type="button"
+          onClick={onDefine}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97]"
+        >
+          <span aria-hidden="true">✦</span> Define
+        </button>
+        <button
+          type="button"
+          onClick={handleHighlightClick}
+          disabled={highlighting}
+          className="flex items-center justify-center gap-1 rounded-xl border border-reader-highlight/40 bg-reader-highlight/10 px-2.5 py-2 text-[13px] font-medium text-reader-highlight transition-colors hover:bg-reader-highlight/20 active:scale-[0.97] disabled:opacity-70"
+        >
+          <span aria-hidden="true">▍</span> {highlighting ? "Highlighted ✓" : "Highlight"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopy(phrase)}
+          className="flex items-center justify-center rounded-xl border border-border bg-foreground/5 px-2.5 py-2 text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/10 active:scale-[0.97]"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
       </div>
     );
   }
@@ -796,39 +827,47 @@ function BottomSheet({
     return () => clearTimeout(timer);
   }, []);
 
+  const isPill = stageProps.stage.kind === "actions" && !isHighlighted;
+
   return (
     <AnimatePresence>
       <motion.div
-        className="fixed inset-0 z-40 flex items-end justify-center"
+        className={`fixed inset-0 z-40 flex items-end justify-center ${isPill ? "pointer-events-none" : ""}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
       >
-        <button
-          type="button"
-          aria-label="Dismiss"
-          onClick={() => {
-            if (readyRef.current) onClose();
-          }}
-          className="absolute inset-0 bg-black/40"
-        />
+        {!isPill && (
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => {
+              if (readyRef.current) onClose();
+            }}
+            className="absolute inset-0 bg-black/40 pointer-events-auto"
+          />
+        )}
 
         <motion.div
           role="dialog"
           aria-label={`Definition of ${phrase}`}
-          className={`relative w-full max-w-lg overflow-hidden rounded-t-3xl bg-surface/95 text-left backdrop-blur-xl ${
-            stageProps.stage.kind === "limit-reached"
-              ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_hsl(var(--accent)/0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
-              : "border-t border-border shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
-          }`}
-          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          className={
+            isPill
+              ? "relative pointer-events-auto mx-4 w-full max-w-sm rounded-2xl bg-surface/95 backdrop-blur-xl border border-border shadow-[0_8px_30px_-6px_rgba(0,0,0,0.6)]"
+              : `relative pointer-events-auto w-full max-w-lg overflow-hidden rounded-t-3xl bg-surface/95 text-left backdrop-blur-xl ${
+                  stageProps.stage.kind === "limit-reached"
+                    ? "border-t border-accent/30 shadow-[0_-4px_40px_-6px_hsl(var(--accent)/0.35),0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+                    : "border-t border-border shadow-[0_-20px_60px_-12px_rgba(0,0,0,0.85)]"
+                }`
+          }
+          style={isPill ? { marginBottom: "calc(env(safe-area-inset-bottom) + 12px)" } : { paddingBottom: "env(safe-area-inset-bottom)" }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
           transition={{ type: "spring", stiffness: 380, damping: 34 }}
         >
-          <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-foreground/15" aria-hidden="true" />
+          {!isPill && <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-foreground/15" aria-hidden="true" />}
           <DefinitionContent
             phrase={phrase}
             onDefine={stageProps.handleDefine}
@@ -846,7 +885,8 @@ function BottomSheet({
             stage={stageProps.stage}
             setStage={stageProps.setStage}
             copied={stageProps.copied}
-            maxBodyHeight="60vh"
+            maxBodyHeight={isPill ? "auto" : "60vh"}
+            asPill={isPill}
           />
         </motion.div>
       </motion.div>

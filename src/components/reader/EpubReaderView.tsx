@@ -17,7 +17,6 @@ import {
 import type { HighlightRecord } from "@/lib/types";
 import {
   anchorFromRect,
-  attachLongPressToDefine,
   getBlockContext,
   isCoarsePointer,
   LONG_PRESS_COMMIT_MS,
@@ -58,28 +57,7 @@ function ensureReaderFontsLoaded(doc: Document) {
   doc.head.appendChild(link);
 }
 
-/** Disables native text selection and its callout menu inside the chapter
- * iframe on touch devices - each chapter renders into its own sandboxed
- * document that doesn't inherit globals.css's .native-app rules, so this has
- * to be injected directly. Without it, Android's "Copy | Look Up | Share"
- * action bar would still be free to form the instant a real Selection does -
- * long-press-to-define resolves the word straight from the pointer's
- * coordinates instead (see attachLongPressToDefine), so no Selection ever
- * needs to exist on touch. Guarded by id since "rendered" refires per
- * chapter/page against what may be the same document (e.g. a font-size change). */
-function ensureNoNativeSelection(doc: Document) {
-  if (doc.getElementById(READER_SELECT_GUARD_STYLE_ID)) return;
-  const style = doc.createElement("style");
-  style.id = READER_SELECT_GUARD_STYLE_ID;
-  style.textContent = `
-    * {
-      -webkit-user-select: none;
-      user-select: none;
-      -webkit-touch-callout: none;
-    }
-  `;
-  doc.head.appendChild(style);
-}
+
 
 /** Tap-to-turn zones, attached INSIDE a chapter's iframe document.
  *
@@ -271,19 +249,27 @@ function registerObsidianTheme(rendition: Rendition) {
   // face - established typography practice for long-form body text, and
   // distinct enough from the UI chrome's Geist Sans that "reading mode"
   // reads as its own deliberate surface, not a bug. Always forced dark
-  // (unconditional, doesn't follow the light/dark toggle) - epub.js renders
-  // into its own sandboxed iframe document, which can't see our :root
-  // custom properties, so the accent here is the literal dark-mode value
-  // (brilliant white) rather than hsl(var(--accent)).
+  // the hardware-accelerated GPU layer using a CSS filter on the container.
+  // This physically inverts all rendered pixels, bypassing ANY publisher CSS.
+  // We force the EPUB to render in its default Light Mode, and double-invert images so they don't look like negatives.
   rendition.themes.register("obsidian", {
+    "*:not(#_):not(#__)": {
+      background: "transparent !important",
+      color: "#000000 !important",
+    },
     body: {
-      background: "#050505 !important",
-      color: "#e4e4e7 !important",
+      background: "#ffffff !important",
+      color: "#000000 !important",
       "font-family": "Georgia, Cambria, 'Times New Roman', serif !important",
       "line-height": "1.75 !important",
+      "-webkit-user-select": "text !important",
+      "user-select": "text !important",
     },
     p: { "margin-bottom": "1.1em !important" },
-    a: { color: "#FFFFFF !important" },
+    "a:not(#_):not(#__)": { color: "#0000FF !important" },
+    "img, svg, video": {
+      filter: "invert(1) hue-rotate(180deg) !important",
+    },
     // epub.js's iframe can't see our :root custom properties, so this reads
     // --reader-highlight's raw "H S% L%" components at call time and rebuilds
     // them as a CSS Color 4 hsl() string - no second hardcoded literal to
@@ -336,8 +322,13 @@ export default function EpubReaderView({
   // this guard the long-press handler stacks up, and one press then fires N
   // haptic buzzes and N setPopover calls.
   const wiredDocuments = useRef(new WeakSet<Document>());
+  // Stashed by the "selected" handler; committed to setPopover only on
+  // mouseup/touchend so the popover never appears mid-drag.
+  const pendingEpubSelection = useRef<PopoverState | null>(null);
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
+  // Diagnostic logging removed to prevent re-renders
+  const setDebugStage = (msg: string) => {};
   const [errorMessage, setErrorMessage] = useState("");
   const [progress, setProgress] = useState(0);
   const [chapterTitle, setChapterTitle] = useState("");
@@ -403,8 +394,10 @@ export default function EpubReaderView({
 
   useEffect(() => {
     let cancelled = false;
+    let selectionTimer: ReturnType<typeof setTimeout>;
 
     async function setup() {
+      setDebugStage("fetching file+meta");
       const [file, meta] = await Promise.all([getBookFile(bookId), getBookMeta(bookId)]);
       if (cancelled) return;
       if (!file || !containerRef.current) {
@@ -414,12 +407,16 @@ export default function EpubReaderView({
       }
 
       try {
+        setDebugStage("importing epubjs");
         const ePub = (await import("epubjs")).default;
+        setDebugStage("reading arrayBuffer");
         const buffer = await file.arrayBuffer();
         if (cancelled) return;
+        setDebugStage(`buffer ready (${buffer.byteLength}B)`);
 
         const book = ePub(buffer);
         bookRef.current = book;
+        setDebugStage("book created");
 
         const rendition = book.renderTo(containerRef.current, {
           width: "100%",
@@ -427,8 +424,11 @@ export default function EpubReaderView({
           flow: scrollMode === "scrolling" ? "scrolled-doc" : "paginated",
           spread: "none",
           allowScriptedContent: false,
-        });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          method: "blobUrl",
+        } as any);
         renditionRef.current = rendition;
+        setDebugStage("rendition created");
 
         registerObsidianTheme(rendition);
         rendition.themes.fontSize(`${fontPercent}%`);
@@ -443,9 +443,7 @@ export default function EpubReaderView({
         });
 
         rendition.on("selected", async (cfiRange: string, contents: Contents) => {
-          // Trigger the definition popup instantly upon text selection,
-          // rather than waiting for touchend.
-          
+          clearTimeout(selectionTimer);
           const domSelection = contents.window.getSelection();
           if (!domSelection || domSelection.rangeCount === 0 || domSelection.isCollapsed) return;
 
@@ -457,8 +455,8 @@ export default function EpubReaderView({
           const phrase = (await book.getRange(cfiRange)).toString().trim();
           if (!phrase) return;
 
-          setPopover({
-            kind: "selection",
+          const popoverState = {
+            kind: "selection" as const,
             data: {
               phrase,
               context: getBlockContext(range),
@@ -467,7 +465,18 @@ export default function EpubReaderView({
               // handler at all - no need to re-derive it from the Range.
               rawPosition: cfiRange,
             },
-          });
+          };
+
+          selectionTimer = setTimeout(() => {
+            if (isCoarsePointer()) {
+              import("@capacitor/haptics")
+                .then(({ Haptics, ImpactStyle }) => {
+                  Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
+                })
+                .catch(() => {});
+            }
+            setPopover(popoverState);
+          }, isCoarsePointer() ? 550 : 0);
         });
 
         // A tap/click starting fresh anywhere in the chapter (that isn't
@@ -491,47 +500,109 @@ export default function EpubReaderView({
           }
 
           if (isCoarsePointer()) {
-            ensureNoNativeSelection(contents.document);
-
             const frameEl = contents.window.frameElement as HTMLElement | null;
-            const frameRect = frameEl?.getBoundingClientRect();
 
             // Paginated flow only - scrolled-doc has no page to turn, and
             // native scrolling owns the gesture there.
             if (scrollMode === "paginated") {
               attachTapToTurn(contents.document, frameEl, goToPrevPage, goToNextPage);
             }
-
-            attachLongPressToDefine({
-              target: contents.document,
-              doc: contents.document,
-              derivePosition: (range) => (contents as unknown as { contents: Contents }).contents.cfiFromRange(range),
-              onLongPress: (data) => {
-                import("@capacitor/haptics").then(({ Haptics, ImpactStyle }) => {
-                  Haptics.impact({ style: ImpactStyle.Medium }).catch(() => {});
-                });
-                setPopover({ kind: "selection", data });
-              },
-              offsetLeft: frameRect?.left ?? 0,
-              offsetTop: frameRect?.top ?? 0,
-            });
           }
         });
 
+        // A saved CFI position can become unresolvable if the EPUB was
+        // re-uploaded (different internal structure), or the position was
+        // corrupted. epub.js does NOT throw in this case - it prints a console
+        // warning and silently renders nothing, leaving the reader blank.
+        //
+        // Defence: race `display()` against a 3-second timer. If the timer
+        // wins it means the "rendered" event never fired, so we fall back to
+        // `display()` with no argument (= beginning of book), which always
+        // works.
+        let firstRenderReceived = false;
+        let firstRenderResolve: (() => void) | null = null;
+        const firstRenderPromise = new Promise<void>((res) => {
+          firstRenderResolve = res;
+        });
+        const onFirstRender = () => {
+          firstRenderReceived = true;
+          firstRenderResolve?.();
+        };
+        rendition.once("rendered", onFirstRender);
+
+        setDebugStage(`calling display(${meta?.lastPosition ? "savedPos" : "none"})`);
         await rendition.display(meta?.lastPosition ?? undefined);
+        setDebugStage("display() awaited/resolved");
+
+        // Wait for the first render, or timeout after 3 s.
+        await Promise.race([
+          firstRenderPromise,
+          new Promise<void>((res) => setTimeout(res, 3000)),
+        ]);
+        setDebugStage(`race done, firstRenderReceived=${firstRenderReceived}`);
+
+        if (!firstRenderReceived && !cancelled) {
+          console.warn("epub.js did not render with saved position - falling back to beginning.");
+          rendition.off("rendered", onFirstRender);
+          setDebugStage("falling back to display()");
+          await rendition.display();
+          setDebugStage("fallback display() resolved");
+        }
+
+        setDebugStage("awaiting book.ready");
         await book.ready;
         if (cancelled) return;
+        setDebugStage("book ready, loading navigation");
 
         const navigation = await book.loaded.navigation;
+        setDebugStage("navigation loaded");
         tocRef.current = flattenToc(navigation.toc);
         setToc(tocRef.current);
-        const current = rendition.currentLocation() as unknown as { start: { href: string } } | undefined;
+        const current = rendition.currentLocation() as unknown as { start: { href: string; cfi: string } } | undefined;
         if (current?.start?.href) {
           const match = tocRef.current.find((item) => item.href.split("#")[0] === current.start.href.split("#")[0]);
           if (match) setChapterTitle(match.label.trim());
         }
+        setDebugStage(`currentLocation href=${current?.start?.href} cfi=${current?.start?.cfi}`);
 
+        try {
+          const sec = book.spine.get(current?.start?.href ?? "");
+          setDebugStage(`spine.get(href) found=${!!sec} idx=${sec?.index}`);
+          if (sec) {
+            const raw: string = await sec.render((book as unknown as { request: Function }).request);
+            setDebugStage(`raw render len=${raw.length} sample="${raw.slice(0, 150).replace(/\s+/g, " ")}"`);
+          }
+        } catch (diagErr) {
+          setDebugStage(`raw render THREW: ${String(diagErr)}`);
+        }
+
+        setDebugStage("setLoadState ready");
         setLoadState("ready");
+
+        const sampleIframe = (label: string) => {
+          const el = containerRef.current;
+          const iframes = el?.querySelectorAll("iframe");
+          const iframe = iframes?.[0] as HTMLIFrameElement | undefined;
+          let bodyLen: number | string = "n/a";
+          let bodyText = "n/a";
+          let accessErr = "";
+          try {
+            const innerDoc = iframe?.contentDocument;
+            bodyLen = innerDoc?.body?.innerHTML?.length ?? "n/a";
+            bodyText = innerDoc?.body?.textContent?.slice(0, 30) ?? "n/a";
+          } catch (e) {
+            accessErr = String(e);
+          }
+          setDebugStage(
+            `[${label}] count=${iframes?.length ?? 0} src=${(iframe?.src ?? "").slice(0, 40)} ` +
+              `readyState=${iframe?.contentDocument?.readyState ?? "n/a"} bodyLen=${bodyLen} ` +
+              `text="${bodyText}" err=${accessErr}`,
+          );
+        };
+
+        sampleIframe("t+0");
+        setTimeout(() => sampleIframe("t+300"), 300);
+        setTimeout(() => sampleIframe("t+1500"), 1500);
 
         // rendition.annotations.underline() only paints for the CURRENT
         // rendition instance - it doesn't persist anything on its own, and
@@ -555,6 +626,7 @@ export default function EpubReaderView({
         });
       } catch (err) {
         console.error("Failed to open EPUB", err);
+        setDebugStage(`ERROR: ${String(err)}`);
         if (!cancelled) {
           setErrorMessage("Couldn't open that book - the file may be corrupted.");
           setLoadState("error");
@@ -755,7 +827,11 @@ export default function EpubReaderView({
         </>
       )}
 
-      <div ref={containerRef} className="h-full w-full px-2" />
+      <div
+        ref={containerRef}
+        className="h-full w-full px-2"
+        style={{ filter: "invert(1) hue-rotate(180deg)" }}
+      />
 
       {popover?.kind === "selection" && popover.data.rects && <SelectionHighlight rects={popover.data.rects} />}
       {popoverProps && (

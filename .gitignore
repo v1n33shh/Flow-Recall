@@ -47,3 +47,4 @@ next-env.d.ts
 # exact request that reproduces a provider limit is the expensive part, but they
 # hardcode whichever model was under investigation and go stale within days.
 /test-models.mjs
+.aider*

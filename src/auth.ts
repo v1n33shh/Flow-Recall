@@ -21,6 +21,9 @@ const credentialsSchema = z.object({
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+  // Vercel sets the Host from the request; without this, Auth.js throws
+  // UntrustedHost ("server configuration") on some preview/custom-domain hits.
+  trustHost: true,
   // Credentials sign-in only works with JWT sessions - it never touches the
   // adapter (no OAuth account to link), so there's nothing for a database
   // session to persist. See node_modules/@auth/core/lib/utils/assert.js.

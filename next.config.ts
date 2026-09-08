@@ -24,6 +24,19 @@ const nextConfig: NextConfig = isCapacitorBuild
     }
   : {
       env,
+      // Google OAuth PKCE cookies are host-only. Starting sign-in on the apex
+      // and returning to www (or the reverse) yields Auth.js
+      // "Invalid code verifier" / the generic configuration error page.
+      async redirects() {
+        return [
+          {
+            source: "/:path*",
+            has: [{ type: "host", value: "flowrecall.app" }],
+            destination: "https://www.flowrecall.app/:path*",
+            permanent: true,
+          },
+        ];
+      },
       async headers() {
         return [
           {

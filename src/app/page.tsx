@@ -5,9 +5,11 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { useSavedDecks } from "@/lib/storage";
 import { useIsNative } from "@/lib/useIsNative";
+import { asPercent, CURVE } from "@/lib/forgettingCurve";
 import LogoMark from "@/components/LogoMark";
 import FilmGrain from "@/components/FilmGrain";
 import MemoryOverview from "@/components/MemoryOverview";
+import RetentionCurve from "@/components/RetentionCurve";
 import TodaySession from "@/components/TodaySession";
 
 // A harsh, high-stiffness/low-damping spring so elements snap aggressively
@@ -30,17 +32,27 @@ const SOFTWARE_APP_JSONLD = {
   operatingSystem: "Web, iOS, Android",
   url: SITE_URL,
   description:
-    "FlowRecall turns any PDF into hundreds of AI-generated flashcards and serves them as a gamified active-recall feed. Built for college and medical students.",
+    "FlowRecall turns any PDF into AI-generated active-recall cards and schedules them with FSRS-6. It also reads your EPUBs and PDFs with any word defined in place, and maps how a deck's concepts depend on each other. Built for college and medical students.",
   offers: {
     "@type": "Offer",
     price: "0",
     priceCurrency: "USD",
   },
+  // Kept in step with the feature grid below. Every line here is a surface that
+  // actually exists - the list was three releases out of date, which is how the
+  // reader, the library and the mindmap ended up invisible to both crawlers and
+  // students.
   featureList: [
-    "PDF to flashcards",
-    "AI active-recall question generation",
-    "Gamified streaks and progress tracking",
-    "Active-recall study feed",
+    "PDF and pasted notes to AI-generated flashcards",
+    "Active-recall study feed with swipe and type-from-memory formats",
+    "FSRS-6 spaced repetition scheduling, on-device and offline",
+    "Retention projection - what you will still recall on exam day",
+    "EPUB, PDF and plain-text reader with in-place word definitions",
+    "Highlights that carry notes, and a warm eye filter for night reading",
+    "Concept mindmap of prerequisites, explanations and easily-confused pairs",
+    "Deck library with search across titles and concept labels",
+    "Explain-it-back grading in your own words",
+    "Gamified streaks and daily study sessions",
   ],
   screenshot: `${SITE_URL}/og.png`,
   publisher: {
@@ -54,6 +66,10 @@ const SOFTWARE_APP_JSONLD = {
 // Landing-page marketing sections (SEO + conversion). Kept as module-level
 // components with no client state, so they server-render into the initial HTML
 // where crawlers and rich-result parsers can read them on first fetch.
+//
+// Module-level is also a lint requirement, not only a preference:
+// react-hooks/static-components is an ERROR in this repo, so none of these may
+// be defined inside another component's render body.
 // ---------------------------------------------------------------------------
 
 // Single source of truth for the FAQ: drives BOTH the visible accordion and the
@@ -67,6 +83,18 @@ const FAQ_ITEMS = [
   {
     q: "Can I generate flashcards from a PDF?",
     a: "Yes. Upload any PDF — lecture slides, a textbook chapter, or research papers — and FlowRecall's AI automatically generates hundreds of flashcards in seconds. No manual typing or formatting required.",
+  },
+  {
+    q: "What spaced repetition algorithm does FlowRecall use?",
+    a: "FSRS-6 — the Free Spaced Repetition Scheduler — ported from its published specification rather than approximated. It keeps two numbers for every concept, stability and difficulty, and schedules the next review for the day your recall is predicted to fall to 90%. The whole scheduler is arithmetic that runs on your device, so the feed keeps working with no connection.",
+  },
+  {
+    q: "Can I read books and PDFs inside FlowRecall?",
+    a: "Yes. The Reader opens EPUBs, PDFs and pasted text, remembers your place in each book, and lets you long-press any word for a definition without leaving the page. Highlights can carry notes, you can pick serif, sans or a hyperlegible typeface, read paginated or scrolling, and a warm eye filter takes the glare off late-night reading.",
+  },
+  {
+    q: "What is the concept mindmap for?",
+    a: "Isolated facts are harder to retrieve than connected ones. The mindmap draws a deck as a graph — which concept you need to understand first, which one explains another, and which pairs are easy to confuse — and then points at the keystone: the weak concept that the most other concepts are built on, which is the one worth fixing tonight.",
   },
   {
     q: "Is FlowRecall better than Anki for med school?",
@@ -113,14 +141,145 @@ function FeatureIcon({ children }: { children: ReactNode }) {
   );
 }
 
+/** The mechanism a card implements, named above its own headline.
+ *
+ * This is the whole editorial move of the feature grid: every surface in this app exists
+ * because of a specific, checkable finding about memory, and saying which one converts a
+ * feature list into an argument. Mono and tiny on purpose - it should read as a citation,
+ * not as a second headline competing with the real one. */
+function Effect({ children }: { children: ReactNode }) {
+  return (
+    <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+      {children}
+    </p>
+  );
+}
+
 // Shared card chrome: theme-adaptive glass, hairline ring, inset highlight.
 const CARD =
-  "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
+  "group relative flex flex-col overflow-hidden rounded-3xl bg-surface/60 p-8 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:backdrop-blur-xl transition-colors duration-300 hover:ring-foreground/20";
+
+// ---------------------------------------------------------------------------
+// THE CURVE
+// ---------------------------------------------------------------------------
+
+/** The gaps the scheduler chose between reviews, in whole days: 2 -> 12 -> 50.
+ *
+ * Derived from CURVE rather than typed out, so the prose beside the chart can never end up
+ * quoting numbers the chart is no longer drawing. */
+const REVIEW_GAPS = CURVE.reviews.map((review, i) =>
+  Math.round(review.day - (i === 0 ? 0 : CURVE.reviews[i - 1].day)),
+);
+
+/** The page's evidence, computed instead of claimed.
+ *
+ * The closing CTA has named the forgetting curve for months with nothing behind it, while
+ * src/lib/fsrs.ts sat in the repo able to draw the real one. Both lines here come out of
+ * that file at build time - see src/lib/forgettingCurve.ts.
+ *
+ * Its own section rather than part of the hero: the native hero is a compact action centre
+ * (TodaySession/MemoryOverview) and a chart wedged into it would push the one thing a
+ * returning student opens the app for below the fold. */
+function CurveSection() {
+  const isNative = useIsNative();
+  return (
+    <section
+      aria-labelledby="curve-heading"
+      className={`relative z-10 mx-auto w-full max-w-5xl px-6 ${
+        isNative ? "pt-4 pb-14" : "py-20 sm:py-28"
+      }`}
+    >
+      <motion.div {...reveal()} className="mx-auto max-w-2xl text-center">
+        <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-foreground/5 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-foreground md:backdrop-blur-md">
+          <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
+          The forgetting curve
+        </p>
+        <h2
+          id="curve-heading"
+          className="font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
+        >
+          Three reviews in six months.{" "}
+          <span className="whitespace-nowrap">
+            {asPercent(CURVE.endRecall.reviewed)}% instead of{" "}
+            {asPercent(CURVE.endRecall.studiedOnce)}%.
+          </span>
+        </h2>
+        <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg">
+          This is not an illustration. Both lines are plotted by the same scheduler that
+          decides what FlowRecall asks you tonight — one concept studied once and left
+          alone, against the same concept answered again on the three days it picked.
+        </p>
+      </motion.div>
+
+      <motion.figure
+        {...reveal(0.08)}
+        className="mt-12 overflow-hidden rounded-3xl bg-surface/60 p-5 ring-1 ring-inset ring-border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:backdrop-blur-xl sm:mt-14 sm:p-9"
+      >
+        <figcaption className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-muted-foreground sm:text-sm">
+          <span className="flex items-center gap-2">
+            <span className="h-[3px] w-6 rounded-full bg-foreground" />
+            Reviewed when FlowRecall asks
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-[3px] w-6 rounded-full bg-foreground/25" />
+            Studied once, never opened again
+          </span>
+        </figcaption>
+
+        <RetentionCurve />
+
+        <p className="mt-7 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground sm:text-sm">
+          The dashed line is 90% recall — where the next review gets scheduled, and the
+          definition of a memory&apos;s <em className="not-italic text-foreground">stability</em>.
+          The horizontal axis is compressed so the early reviews stay legible; the day under
+          each gridline is the real one.
+        </p>
+      </motion.figure>
+
+      {/* The spacing effect, as three numbers. Each gap is roughly four times the last,
+          and that is not a drawing decision - it falls out of the scheduler's own
+          stability term (see src/lib/fsrs.ts's stabilityAfterRecall). */}
+      <motion.div {...reveal(0.16)} className="mt-10 sm:mt-12">
+        <p className="text-center text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          The gap it chose between reviews
+        </p>
+        <div className="mt-5 flex items-center justify-center gap-2 sm:gap-4">
+          {REVIEW_GAPS.map((gap, i) => (
+            <div key={`gap-${i}`} className="flex items-center gap-2 sm:gap-4">
+              {i > 0 && (
+                <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0 text-muted-foreground/50" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+              <div className="rounded-2xl border border-border bg-foreground/[0.03] px-4 py-3 text-center sm:px-6">
+                <div className="font-sans text-2xl font-bold tabular-nums leading-none text-foreground sm:text-3xl">
+                  {gap}
+                </div>
+                <div className="mt-1.5 text-[10px] uppercase tracking-widest text-muted-foreground sm:text-xs">
+                  {gap === 1 ? "day" : "days"}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="mx-auto mt-6 max-w-xl text-center text-sm leading-relaxed text-muted-foreground">
+          Every retrieval you nearly failed is worth more than one you breezed through, so
+          the interval keeps widening on its own. That is the spacing effect, and in
+          FlowRecall it is a term in the equation rather than a setting.
+        </p>
+      </motion.div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FEATURES
+// ---------------------------------------------------------------------------
 
 function FeaturesSection() {
-  // Only the top gap (which abuts the hero's own bottom padding) needs
-  // shrinking on native - the two combined otherwise leave up to ~160px of
-  // dead space before "Why FlowRecall" even starts. Bottom/desktop spacing
+  // Only the top gap (which abuts the previous section's own bottom padding)
+  // needs shrinking on native - the two combined otherwise leave up to ~160px
+  // of dead space before "Why FlowRecall" even starts. Bottom/desktop spacing
   // is untouched.
   const isNative = useIsNative();
   return (
@@ -139,26 +298,26 @@ function FeaturesSection() {
           id="features-heading"
           className="font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
         >
-          The ultimate active recall study tool for medical students and polymaths.
+          Every screen is one finding about memory, built.
         </h2>
         <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg">
-          Turn any PDF into an AI-generated active-recall study feed. No manual
-          flashcards, no deck-building - just upload and start retrieving.
+          Not a flashcard app with the science in the marketing copy. The mechanism each
+          surface is built on is named on the card.
         </p>
       </motion.div>
 
-      <div className="mt-14 grid grid-cols-1 gap-4 sm:mt-16 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-2">
-        {/* Primary card — PDF → flashcards — spans the tall left block. */}
+      <div className="mt-14 grid grid-cols-1 gap-4 sm:mt-16 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Flagship — ingest into the recall feed — spans the tall left block. */}
         <motion.article
           {...reveal(0)}
           className={`${CARD} justify-between sm:col-span-2 lg:row-span-2`}
         >
-          {/* The single splash of electric blue — a soft ambient accent glow. */}
-          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-accent/10 blur-3xl" />
+          {/* The one soft ambient wash on the page. Achromatic: --accent has been pure
+              white/black since the monochrome migration, not the blue an older comment
+              here used to claim. */}
+          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-accent/[0.07] blur-3xl" />
           <div className="relative">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-              Flagship
-            </p>
+            <Effect>The testing effect</Effect>
             <FeatureIcon>
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
                 <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9l-6-6Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
@@ -166,103 +325,283 @@ function FeaturesSection() {
               </svg>
             </FeatureIcon>
             <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
-              PDF to Flashcards in Seconds
+              Answer it before you&apos;re told
             </h3>
             <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Drop in a lecture slide deck, a textbook chapter, or a research PDF.
-              FlowRecall&apos;s AI reads it and spins up hundreds of active-recall
-              flashcards in seconds — no manual card-making, no formatting, no busywork.
+              Drop in a lecture deck or a textbook chapter, or paste raw notes. FlowRecall
+              writes hundreds of cards in seconds — then makes you commit to an answer:
+              swipe a claim true or false, and later type the missing phrase from memory,
+              with nothing on screen to recognise. Retrieving an answer changes the memory.
+              Re-reading one mostly changes how familiar it feels.
             </p>
           </div>
-          {/* CSS-only monochrome mock: a PDF page transforming into a study card. */}
-          <div className="relative mt-10 flex items-center gap-3" aria-hidden="true">
-            <div className="h-28 w-20 shrink-0 rounded-lg border border-border bg-foreground/[0.03] p-2">
+          {/* CSS-only monochrome mock: one page of source becoming the two things the
+              copy above promises - a claim to judge, then a blank to fill from memory.
+              Sized to fill this card's tall block rather than leaving the 2x2 flagship
+              with a bottom-anchored strip and 250px of dead middle. */}
+          <div className="relative mt-10 flex min-h-[13rem] flex-1 items-stretch gap-4" aria-hidden="true">
+            <div className="flex w-16 shrink-0 flex-col rounded-lg border border-border bg-foreground/[0.03] p-2.5 sm:w-24">
               <div className="h-1.5 w-3/4 rounded bg-foreground/15" />
-              <div className="mt-1.5 h-1.5 w-full rounded bg-foreground/10" />
+              <div className="mt-2 h-1.5 w-full rounded bg-foreground/10" />
               <div className="mt-1.5 h-1.5 w-5/6 rounded bg-foreground/10" />
               <div className="mt-1.5 h-1.5 w-full rounded bg-foreground/10" />
-              <div className="mt-3 h-1.5 w-1/2 rounded bg-foreground/10" />
+              <div className="mt-1.5 h-1.5 w-2/3 rounded bg-foreground/10" />
+              <div className="mt-4 h-1.5 w-full rounded bg-foreground/10" />
+              <div className="mt-1.5 h-1.5 w-4/5 rounded bg-foreground/10" />
+              <div className="mt-auto pt-4 text-center text-[9px] uppercase tracking-widest text-muted-foreground/70">
+                source
+              </div>
             </div>
-            <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" className="my-auto h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <div className="relative flex-1">
-              <div className="absolute -top-2 left-2 h-24 w-full rotate-[-6deg] rounded-xl border border-border bg-foreground/[0.02]" />
-              <div className="relative h-24 w-full rounded-xl border border-border bg-surface/80 p-3">
+            {/* min-w-0 throughout: a flex item defaults to min-width:auto, so without it
+                this column refuses to shrink below its own min-content and pushes 38px
+                past the card at 360dp - clipped rather than scrolling, which is the worst
+                kind of bug because the page still looks fine in a width test. */}
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-3">
+              {/* Level 1 - recognise: a claim, and two ways to answer it. */}
+              <div className="min-w-0 rounded-xl border border-border bg-surface/80 p-3 sm:p-3.5">
                 <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Recall
+                  True or false
                 </div>
-                <div className="mt-2 h-1.5 w-4/5 rounded bg-foreground/15" />
+                <div className="mt-2.5 h-1.5 w-4/5 rounded bg-foreground/15" />
                 <div className="mt-1.5 h-1.5 w-3/5 rounded bg-foreground/10" />
-                <div className="mt-3 text-[10px] font-medium text-accent">Tap to reveal</div>
+                <div className="mt-3 flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-border">
+                    <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-muted-foreground">
+                      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+                    </svg>
+                  </span>
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full border border-foreground/60">
+                    <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-foreground">
+                      <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                </div>
+              </div>
+              {/* The two formats are not the same night. The harder one is scheduled for
+                  when the memory has had time to decay, which is the point of the whole
+                  chart above - so the mock says so rather than stacking them as a menu. */}
+              <div className="flex items-center gap-3 py-1 pl-3">
+                <span className="h-8 w-px bg-gradient-to-b from-border via-foreground/30 to-border" />
+                <span className="text-[10px] uppercase tracking-widest text-muted-foreground/70">
+                  days later
+                </span>
+              </div>
+              {/* Level 2 - produce: nothing on screen to recognise. */}
+              <div className="min-w-0 rounded-xl border border-border bg-surface/80 p-3 sm:p-3.5">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Type it from memory
+                </div>
+                {/* The blank is flex-1 rather than a fixed w-20 so it gives way first
+                    when the card narrows, instead of forcing the row past the card edge. */}
+                <div className="mt-2.5 flex items-center gap-1.5">
+                  <span className="h-1.5 w-6 shrink-0 rounded bg-foreground/15" />
+                  <span className="h-5 min-w-0 flex-1 rounded border border-dashed border-foreground/30 sm:max-w-[5rem]" />
+                  <span className="h-1.5 w-4 shrink-0 rounded bg-foreground/15 sm:w-8" />
+                </div>
+                <div className="mt-2.5 h-1.5 w-1/2 rounded bg-foreground/10" />
               </div>
             </div>
           </div>
         </motion.article>
 
-        {/* Active recall & gamification */}
-        <motion.article {...reveal(0.08)} className={`${CARD} justify-between`}>
+        {/* The scheduler. */}
+        <motion.article {...reveal(0.06)} className={`${CARD} justify-between`}>
           <div>
+            <Effect>Spaced retrieval</Effect>
             <FeatureIcon>
-              <svg viewBox="0 0 24 24" className="h-5 w-5 text-accent" aria-hidden="true">
-                <path d="M12 2c1.8 3.2 5 5.4 5 9.2a5 5 0 0 1-10 0c0-1.7.7-3.1 1.9-4.2-.1 1.4.7 2.4 1.9 2.4-1.3-2.9-.1-5.7 1.2-7.4z" fill="currentColor" />
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <circle cx="12" cy="13" r="8" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M12 9.5V13l2.5 1.5M9 2.5h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
             </FeatureIcon>
             <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
-              Active Recall &amp; Gamification
+              A date per memory, not a daily pile
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Every card demands a real answer before it reveals the truth,
-              forcing your brain to retrieve instead of recognize. Streaks,
-              tiers, and a swipe-to-answer feed turn daily review into a habit
-              you actually keep.
+              FlowRecall runs FSRS-6 — the scheduler serious Anki users go out of their way
+              to switch on — tracking how stable each concept is and how hard you personally
+              find it, then asking for it again on the day your recall is predicted to reach
+              90%. Plain arithmetic on your device, so it works offline.
             </p>
           </div>
-          {/* Mini streak-calendar mock - echoes StreakModal.tsx's DayCell
-              visual language and previews the real streak feature this same
-              home page now surfaces (mobile hero carousel, card 3). */}
-          <div className="mt-6 flex items-center gap-1.5" aria-hidden="true">
-            {[true, true, true, true, true, false, false].map((filled, i) => (
+          {/* Widening intervals, to scale with the real gaps above. */}
+          <div className="mt-6 flex items-end gap-1.5" aria-hidden="true">
+            {[8, 20, 46, 100].map((width, i) => (
               <span
                 key={i}
-                className={`h-5 w-5 rounded ${filled ? "bg-accent" : "border border-border"}`}
+                className="h-5 rounded bg-foreground/15"
+                style={{ flexGrow: width }}
               />
             ))}
           </div>
         </motion.article>
 
-        {/* Better than Anki */}
-        <motion.article {...reveal(0.16)} className={`${CARD} justify-between`}>
+        {/* The mindmap. */}
+        <motion.article {...reveal(0.12)} className={`${CARD} justify-between`}>
           <div>
+            <Effect>Relational encoding</Effect>
             <FeatureIcon>
               <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
-                <path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" stroke="currentColor" strokeWidth="1.8" />
-                <path d="m8.5 12 2.4 2.4 4.6-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="12" cy="4.5" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="5.5" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <circle cx="18.5" cy="18" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M10.3 6.6 7.2 15.6M13.7 6.6l3.1 9M8 18h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
             </FeatureIcon>
-            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">Better than Anki</h3>
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
+              See what holds the deck up
+            </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              All of Anki&apos;s retention power, none of the friction. No add-ons, no
-              template-wrangling, no hours spent building decks — just upload and
-              study. The modern Anki alternative, built for how students really work.
+              The Mindmap draws a deck as a graph: which concept you need first, which one
+              explains another, and which pair you keep confusing. Then it names the
+              keystone — the weak idea the most others are built on.
             </p>
           </div>
-          {/* Compact before/after mock, reinforcing the card's own claim
-              instead of repeating another bare text pill. */}
+          <div className="mt-6 flex flex-wrap gap-1.5 text-[10px] font-medium" aria-hidden="true">
+            <span className="rounded-full border border-border px-2.5 py-1 text-muted-foreground">needs</span>
+            <span className="rounded-full border border-border px-2.5 py-1 text-muted-foreground">explains</span>
+            <span className="rounded-full border border-dashed border-border px-2.5 py-1 text-muted-foreground">vs</span>
+          </div>
+        </motion.article>
+
+        {/* The reader. */}
+        <motion.article {...reveal(0.18)} className={`${CARD} justify-between`}>
+          <div>
+            <Effect>Encoding in context</Effect>
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <path d="M12 6.5S10 4.5 4.5 4.5V18c5.5 0 7.5 2 7.5 2s2-2 7.5-2V4.5C14 4.5 12 6.5 12 6.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                <path d="M12 6.5v14" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </FeatureIcon>
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
+              Read the source without leaving it
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              The Reader opens EPUBs, PDFs and pasted text and keeps your place in each.
+              Long-press any word for a definition in place, keep the highlight, hang a note
+              on it. Serif, sans or hyperlegible type, and a warm eye filter for 1am.
+            </p>
+          </div>
+          {/* A line of prose with one word looked up in place. */}
+          <div className="mt-6 rounded-xl border border-border bg-foreground/[0.03] p-3" aria-hidden="true">
+            <div className="h-1.5 w-full rounded bg-foreground/10" />
+            <div className="mt-2 flex items-center gap-1.5">
+              <span className="h-1.5 w-10 rounded bg-foreground/10" />
+              <span className="rounded bg-reader-highlight/25 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                afferent
+              </span>
+              <span className="h-1.5 flex-1 rounded bg-foreground/10" />
+            </div>
+            <div className="mt-2 h-1.5 w-2/3 rounded bg-foreground/10" />
+          </div>
+        </motion.article>
+
+        {/* Teach it back. */}
+        <motion.article {...reveal(0.24)} className={`${CARD} justify-between`}>
+          <div>
+            <Effect>Production, not recognition</Effect>
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H9l-5 4V5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v9Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              </svg>
+            </FeatureIcon>
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
+              Explain it back in your own words
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Recognising someone else&apos;s right answer is not the same as knowing a
+              subject. Teach a concept back in a sentence and FlowRecall returns three
+              lists: what you got right, what you left out, what you had wrong. No score —
+              the useful part is which piece of your own explanation broke.
+            </p>
+          </div>
           <div className="mt-6 flex flex-col gap-1.5 text-xs text-muted-foreground" aria-hidden="true">
-            <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
-                <path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            {[
+              { mark: "M5 12.5l4 4 10-10", label: "Got right" },
+              { mark: "M5 12h14", label: "Left out" },
+              { mark: "M6 6l12 12M18 6 6 18", label: "Had wrong" },
+            ].map(({ mark, label }) => (
+              <div key={label} className="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
+                  <path d={mark} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+        </motion.article>
+
+        {/* The library. Deliberately the one card with a plain eyebrow rather than a
+            borrowed effect name: it is a shelf, not a finding, and dressing it as one
+            would be exactly the overclaim the rest of this section exists to avoid. */}
+        <motion.article
+          {...reveal(0.3)}
+          className={`${CARD} justify-between sm:col-span-2 lg:col-span-1`}
+        >
+          <div>
+            <Effect>Your shelf</Effect>
+            <FeatureIcon>
+              <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5" aria-hidden="true">
+                <path d="M4 5.5h16M4 12h16M4 18.5h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
-              <span className="line-through decoration-muted-foreground/50">Hours building decks</span>
-            </div>
-            <div className="flex items-center gap-2 text-foreground">
-              <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true">
-                <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span>Seconds, just upload</span>
-            </div>
+            </FeatureIcon>
+            <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
+              Every deck, still findable in March
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              The Library holds everything you have made. Rename a deck in place, search
+              across titles and the concepts inside them, and delete with no confirm dialog
+              — there is a six-second undo instead. It lives on your device first and syncs
+              when you sign in.
+            </p>
+          </div>
+          <div className="mt-6 flex items-center gap-2 rounded-xl border border-border bg-foreground/[0.03] px-3 py-2.5" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
+              <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span className="h-1.5 w-24 rounded bg-foreground/15" />
+            <span className="h-3.5 w-px animate-pulse bg-foreground/40" />
+          </div>
+        </motion.article>
+
+        {/* Closing band. Full-width on purpose: spacing is the only finding on this page
+            that the app cannot deliver on its own - it needs the student to come back -
+            so the card that admits that gets the last word and its own row. */}
+        <motion.article
+          {...reveal(0.36)}
+          className={`${CARD} sm:col-span-2 lg:col-span-3 lg:flex-row lg:items-center lg:justify-between lg:gap-12`}
+        >
+          <div className="lg:max-w-2xl">
+            <Effect>Showing up</Effect>
+            <h3 className="mt-1 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
+              The one part no scheduler can do for you
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
+              A perfect interval you sleep through is worth nothing. So FlowRecall asks for
+              ten, twenty or forty minutes — never a pile of everything — builds that
+              session out of the concepts closest to slipping, and keeps a streak and a
+              nightly reminder pointed at the one thing that makes the rest of this work.
+            </p>
+          </div>
+          {/* Mini streak calendar - echoes StreakModal.tsx's DayCell visual language and
+              previews the real counter sitting in the navbar above. */}
+          <div
+            className="mt-6 flex shrink-0 items-center gap-1.5 lg:mt-0"
+            aria-hidden="true"
+          >
+            {[true, true, true, true, true, false, false].map((filled, i) => (
+              <span
+                key={i}
+                className={`h-6 w-6 rounded sm:h-7 sm:w-7 ${
+                  filled ? "bg-accent" : "border border-border"
+                }`}
+              />
+            ))}
           </div>
         </motion.article>
       </div>
@@ -274,17 +613,22 @@ const HOW_IT_WORKS_STEPS = [
   {
     n: "01",
     title: "Upload anything",
-    body: "Drop in a PDF, paste raw notes, or import an EPUB - lecture slides, textbook chapters, and research papers all work.",
+    body: "Drop in a PDF or paste raw notes - lecture slides, textbook chapters and research papers all work. FlowRecall reads it and writes hundreds of active-recall questions in seconds.",
   },
   {
     n: "02",
-    title: "AI generates the feed",
-    body: "FlowRecall reads your material and writes hundreds of active-recall questions in seconds, ready to swipe through the moment they're generated.",
+    title: "Map the structure",
+    body: "Run the concept map once and the deck stops being a list: you get the order to learn it in, the pairs that are easy to confuse, and the keystone holding the rest up.",
   },
   {
     n: "03",
-    title: "Swipe through recall",
-    body: "Review in a fast, gamified swipe feed - right before you'd forget, not on some arbitrary daily quota.",
+    title: "Recall, don't review",
+    body: "Swipe claims true or false, then type the answer from memory. Every attempt updates that one concept's own decay curve - not a shared daily quota.",
+  },
+  {
+    n: "04",
+    title: "Watch the projection move",
+    body: "Your home screen stops asking how many cards are due and starts answering the real question: how much of this will I still know on the day of the paper.",
   },
 ];
 
@@ -309,7 +653,7 @@ function HowItWorksSection() {
             id="how-it-works-heading"
             className="mt-3 font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
           >
-            From PDF to memorized in three steps.
+            From a PDF to still knowing it, in four steps.
           </h2>
         </motion.div>
 
@@ -365,7 +709,7 @@ function FaqSection() {
       </motion.h2>
       <motion.div
         {...reveal(0.05)}
-        className="mt-10 divide-y divide-border rounded-3xl bg-surface/60 px-6 ring-1 ring-inset ring-border backdrop-blur-xl sm:mt-12 sm:px-8"
+        className="mt-10 divide-y divide-border rounded-3xl bg-surface/60 px-6 ring-1 ring-inset ring-border md:backdrop-blur-xl sm:mt-12 sm:px-8"
       >
         {FAQ_ITEMS.map(({ q, a }) => (
           <details key={q} className="group py-5">
@@ -399,9 +743,9 @@ function FaqSection() {
 // not just different words for the same one - the hero states the solution
 // as a punchy imperative ("Stop re-reading. Start recalling."), so a second
 // imperative down here read as pure repetition. This one leads with the
-// uncomfortable, research-backed problem (the Ebbinghaus forgetting curve -
-// see the FAQ's own "research-backed" claim) before naming the fix, which is
-// a distinct AIDA-style close instead of an echo.
+// uncomfortable, research-backed problem before naming the fix, which is a
+// distinct AIDA-style close instead of an echo. It is no longer an assertion
+// either: CurveSection above now draws the curve this paragraph names.
 function FinalCtaSection() {
   return (
     <section
@@ -422,8 +766,8 @@ function FinalCtaSection() {
         {...reveal(0.05)}
         className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg"
       >
-        That&apos;s the forgetting curve talking, not a guess. FlowRecall&apos;s
-        active-recall feed is built to beat it.
+        That&apos;s the curve above talking, not a guess. FlowRecall is built to put three
+        reviews in the right places instead.
       </motion.p>
       <motion.div
         {...reveal(0.1)}
@@ -465,8 +809,14 @@ function SiteFooter() {
           <Link href="/ingest" className="transition-colors hover:text-foreground">
             Ingest
           </Link>
+          <Link href="/library" className="transition-colors hover:text-foreground">
+            Library
+          </Link>
           <Link href="/reader" className="transition-colors hover:text-foreground">
             Reader
+          </Link>
+          <Link href="/map" className="transition-colors hover:text-foreground">
+            Mindmap
           </Link>
           <Link href="/pricing" className="transition-colors hover:text-foreground">
             Pricing
@@ -525,10 +875,10 @@ export default function Home() {
             subtle lit "stage" behind the hero copy. */}
           <div className="pointer-events-none absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--foreground)/0.03)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--foreground)/0.03)_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]" />
 
-          {/* Ambient glow orbs - purely decorative, blurred color washes that
-            sit behind the hero to give the page depth. pointer-events-none
-            and -z-10 keep them clear of the marquee, cards, and interactive
-            content. */}
+          {/* Ambient glow orbs - purely decorative, blurred achromatic washes
+            that sit behind the hero to give the page depth.
+            pointer-events-none and -z-10 keep them clear of the cards and
+            interactive content. */}
           <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
             <div className="absolute -top-40 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-foreground/5 blur-3xl md:h-[38rem] md:w-[38rem]" />
             <div className="absolute top-1/3 -left-32 hidden h-[30rem] w-[30rem] rounded-full bg-foreground/[0.03] blur-3xl md:block" />
@@ -566,8 +916,9 @@ export default function Home() {
           transition={{ ...SNAP, delay: 0.1 }}
           className="mt-5 w-full max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
         >
-          Upload your first PDF and see your first flashcard feed in under a
-          minute. No credit card required.
+          Upload a PDF and meet your first recall feed in under a minute. Then read the
+          source, map how its ideas connect, and review on a schedule built from your own
+          forgetting curve. No credit card required.
         </motion.p>
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -582,9 +933,11 @@ export default function Home() {
           >
             View Pro Plans
           </Link>
-          {/* Primary CTA - Electric Azure: the single accent, a vertical blue
-              gradient with an inset top highlight and an ambient glow that
-              intensifies on hover so it reads as raised and unmistakably clickable. */}
+          {/* Primary CTA - the achromatic accent token (brilliant white in dark
+              mode, pitch black in light), which under "Pure Monochrome" is the
+              only thing on the page allowed to pop. An inset top highlight and
+              an ambient shadow that deepens on hover make it read as raised
+              and unmistakably clickable without introducing a hue. */}
           <Link
             href="/ingest"
             className="w-full rounded-full bg-accent px-6 py-3.5 text-center text-base font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] hover:scale-[1.03] active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
@@ -606,6 +959,9 @@ export default function Home() {
 
         </div>
       </section>
+
+      {/* =========================== THE CURVE ========================= */}
+      <CurveSection />
 
       {/* ========================== FEATURES ========================== */}
       <FeaturesSection />

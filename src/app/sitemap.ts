@@ -30,6 +30,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.9, // The core tool — highest-intent for "PDF to flashcards"
     },
     {
+      // The reader is a public surface robots.ts has always allowed, and it was
+      // missing here - so the one part of the app that is neither a deck nor an
+      // account had no way of being found. /library and /map stay out: both render
+      // an empty shelf for anyone but their owner, which is why robots.ts
+      // disallows them.
+      url: `${siteUrl}/reader`,
+      lastModified,
+      changeFrequency: "monthly",
+      priority: 0.8,
+    },
+    {
       url: `${siteUrl}/pricing`,
       lastModified,
       changeFrequency: "monthly",

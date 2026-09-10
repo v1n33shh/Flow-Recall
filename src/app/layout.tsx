@@ -51,7 +51,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.flowrecall.app"
 // an objection-killer, and one on-brand flame. Distinct from the SEO <title>.
 const title = "FlowRecall — AI Flashcards, Disguised as Doomscrolling";
 const description =
-  "Drop in a lecture PDF and FlowRecall spins up hundreds of AI flashcards in seconds — then serves them as an addictive active-recall feed you actually want to open. Free, no credit card. 🔥";
+  "Drop in a lecture PDF and FlowRecall spins up hundreds of AI flashcards in seconds — then serves them as an addictive active-recall feed, schedules them with FSRS-6, reads your EPUBs, and maps how the concepts connect. Free, no credit card. 🔥";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -64,7 +64,7 @@ export const metadata: Metadata = {
   verification: {
     google: "qYRwT2xoSO4AaBh5jekf8FycAYkbDaFisupynEu7t0Y",
   },
-  description: "Upload any PDF and instantly convert it into a gamified active recall study feed. The ultimate AI study app for college and medical students.",
+  description: "Upload any PDF and instantly convert it into a gamified active recall study feed, scheduled by FSRS-6. Read EPUBs and PDFs with any word defined in place, and map how a deck's concepts depend on each other. The ultimate AI study app for college and medical students.",
   applicationName: "FlowRecall",
   keywords: [
     "active recall app",
@@ -72,6 +72,10 @@ export const metadata: Metadata = {
     "study faster",
     "PDF to flashcards",
     "retrieval practice",
+    "spaced repetition app",
+    "FSRS scheduler",
+    "EPUB reader for students",
+    "concept map study tool",
     "Anki alternative",
     "exam prep",
   ],

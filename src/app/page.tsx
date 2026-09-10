@@ -1,9 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
-import { motion } from "motion/react";
-import { useSavedDecks } from "@/lib/storage";
+import { motion, useReducedMotion } from "motion/react";
+import { getFactCursor, setFactCursor, useSavedDecks } from "@/lib/storage";
+import { factAt, nextCursor } from "@/lib/brainFacts";
 import { useIsNative } from "@/lib/useIsNative";
 import { asPercent, CURVE } from "@/lib/forgettingCurve";
 import LogoMark from "@/components/LogoMark";
@@ -86,23 +87,19 @@ const FAQ_ITEMS = [
   },
   {
     q: "What spaced repetition algorithm does FlowRecall use?",
-    a: "FSRS-6 — the Free Spaced Repetition Scheduler — ported from its published specification rather than approximated. It keeps two numbers for every concept, stability and difficulty, and schedules the next review for the day your recall is predicted to fall to 90%. The whole scheduler is arithmetic that runs on your device, so the feed keeps working with no connection.",
+    a: "FSRS-6 — the Free Spaced Repetition Scheduler — ported from its published specification rather than approximated. It keeps a stability and a difficulty for every concept, and schedules the next review for the day your recall is predicted to fall to 90%. It runs on your device, so the feed works offline.",
   },
   {
     q: "Can I read books and PDFs inside FlowRecall?",
-    a: "Yes. The Reader opens EPUBs, PDFs and pasted text, remembers your place in each book, and lets you long-press any word for a definition without leaving the page. Highlights can carry notes, you can pick serif, sans or a hyperlegible typeface, read paginated or scrolling, and a warm eye filter takes the glare off late-night reading.",
+    a: "Yes. The Reader opens EPUBs, PDFs and pasted text, remembers your place in each, and lets you long-press any word for a definition without leaving the page. Highlights carry notes, type is serif, sans or hyperlegible, and a warm eye filter takes the glare off late-night reading.",
   },
   {
     q: "What is the concept mindmap for?",
-    a: "Isolated facts are harder to retrieve than connected ones. The mindmap draws a deck as a graph — which concept you need to understand first, which one explains another, and which pairs are easy to confuse — and then points at the keystone: the weak concept that the most other concepts are built on, which is the one worth fixing tonight.",
+    a: "Isolated facts are harder to retrieve than connected ones. The mindmap draws a deck as a graph — what you need first, what explains what, which pairs get confused — and names the keystone: the weak concept the most others are built on.",
   },
   {
     q: "Is FlowRecall better than Anki for med school?",
     a: "FlowRecall skips Anki's biggest cost: building the deck by hand. Upload your material and FlowRecall's AI writes the flashcards for you in seconds, then serves them as a gamified active-recall feed instead of a static list. For medical students juggling huge volumes of content, that means hours saved on deck-building and more time spent actually reviewing.",
-  },
-  {
-    q: "What learning science does FlowRecall use?",
-    a: "Active recall - deliberately retrieving an answer from memory instead of passively re-reading it, one of the most well-supported study techniques in cognitive science. Every card in FlowRecall's feed makes you attempt a real answer before it reveals the truth, instead of letting you passively scan a static list.",
   },
   {
     q: "Is FlowRecall free?",
@@ -152,6 +149,77 @@ function Effect({ children }: { children: ReactNode }) {
     <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
       {children}
     </p>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// THE FACT
+// ---------------------------------------------------------------------------
+
+const subscribeNever = () => () => {};
+
+/** True only after hydration. useSyncExternalStore rather than useState+useEffect
+ * because `react-hooks/set-state-in-effect` is an error in this repo - same shape as
+ * src/app/library/page.tsx, which the same rule pushed here first. */
+function useHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeNever,
+    () => true,
+    () => false,
+  );
+}
+
+/** One true thing about the brain, different every visit.
+ *
+ * These are the fourteen unattributed, source-checked lines in src/lib/brainFacts.ts,
+ * and they share ONE cursor with the library header - so a student who opens both
+ * screens meets two different facts, and meets all fourteen before meeting any twice.
+ *
+ * This is the page's neuroscience, and it is deliberately the shortest section on it:
+ * a single sentence with air around it, no eyebrow, no attribution, no explanation
+ * underneath. A paragraph here would defeat the point of the whole rewrite.
+ *
+ * Renders on native too - it is the one piece of the marketing page worth keeping on
+ * a screen a student opens every day, because it changes. */
+function BrainFactSection() {
+  const hydrated = useHydrated();
+  const reduceMotion = useReducedMotion();
+  // No tab-bar padding here, deliberately, and it was wrong when I first added it:
+  // PageTransition's native scroll container is already sized to EXCLUDE the tab-bar
+  // zone (MobileTabBar's in-flow spacer carves --tabbar-h out of the flex-1 slot), so
+  // a second --tabbar-h of padding on the last section double-counts it and pushes the
+  // final line of a three-line fact underneath the bar.
+  // Read once, advance for next time. Not held in state: nothing re-renders because
+  // of it, and writing state from an effect is a lint error here.
+  const factCursor = useMemo(() => getFactCursor(), []);
+  useEffect(() => {
+    setFactCursor(nextCursor(factCursor));
+  }, [factCursor]);
+
+  // min-h reserves the line's space before hydration fills it, so the swap-in costs no
+  // layout shift - the "Zero Layout Shift" rule this page is held to. 11rem is not a
+  // round number: the longest fact in the set wraps to three lines at 360dp (84px) and
+  // py-10 adds 80, so 176px holds every fact at every length and the box never changes
+  // size. The mobile padding is half the desktop figure because this is the LAST section
+  // on native - at py-16 a three-line fact pushed 7px past the scroll container and had
+  // to be scrolled to reach.
+  return (
+    <section
+      aria-label="About memory"
+      className="relative z-10 mx-auto flex min-h-[11rem] w-full max-w-3xl items-center justify-center px-6 py-10 sm:min-h-[15rem] sm:py-24"
+    >
+      {hydrated && (
+        <motion.p
+          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-80px" }}
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+          className="text-center font-sans text-xl font-medium leading-snug tracking-tight text-foreground/90 [text-wrap:balance] sm:text-2xl md:text-3xl"
+        >
+          {factAt(factCursor)}
+        </motion.p>
+      )}
+    </section>
   );
 }
 
@@ -205,9 +273,7 @@ function CurveSection() {
           </span>
         </h2>
         <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg">
-          This is not an illustration. Both lines are plotted by the same scheduler that
-          decides what FlowRecall asks you tonight — one concept studied once and left
-          alone, against the same concept answered again on the three days it picked.
+          Plotted by the scheduler itself, not drawn.
         </p>
       </motion.div>
 
@@ -228,11 +294,8 @@ function CurveSection() {
 
         <RetentionCurve />
 
-        <p className="mt-7 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground sm:text-sm">
-          The dashed line is 90% recall — where the next review gets scheduled, and the
-          definition of a memory&apos;s <em className="not-italic text-foreground">stability</em>.
-          The horizontal axis is compressed so the early reviews stay legible; the day under
-          each gridline is the real one.
+        <p className="mt-7 border-t border-border pt-5 text-xs text-muted-foreground sm:text-sm">
+          Dashed line: 90% recall — where the next review lands.
         </p>
       </motion.figure>
 
@@ -262,11 +325,6 @@ function CurveSection() {
             </div>
           ))}
         </div>
-        <p className="mx-auto mt-6 max-w-xl text-center text-sm leading-relaxed text-muted-foreground">
-          Every retrieval you nearly failed is worth more than one you breezed through, so
-          the interval keeps widening on its own. That is the spacing effect, and in
-          FlowRecall it is a term in the equation rather than a setting.
-        </p>
       </motion.div>
     </section>
   );
@@ -310,7 +368,7 @@ function FeaturesSection() {
         {/* Flagship — ingest into the recall feed — spans the tall left block. */}
         <motion.article
           {...reveal(0)}
-          className={`${CARD} justify-between sm:col-span-2 lg:row-span-2`}
+          className={`${CARD} justify-between sm:col-span-2 lg:flex-row lg:items-start lg:gap-8`}
         >
           {/* The one soft ambient wash on the page. Achromatic: --accent has been pure
               white/black since the monochrome migration, not the blue an older comment
@@ -327,19 +385,15 @@ function FeaturesSection() {
             <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
               Answer it before you&apos;re told
             </h3>
-            <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Drop in a lecture deck or a textbook chapter, or paste raw notes. FlowRecall
-              writes hundreds of cards in seconds — then makes you commit to an answer:
-              swipe a claim true or false, and later type the missing phrase from memory,
-              with nothing on screen to recognise. Retrieving an answer changes the memory.
-              Re-reading one mostly changes how familiar it feels.
+            <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground sm:text-base">
+              Drop a PDF in. Swipe a claim true or false — then type it back from memory.
             </p>
           </div>
           {/* CSS-only monochrome mock: one page of source becoming the two things the
               copy above promises - a claim to judge, then a blank to fill from memory.
               Sized to fill this card's tall block rather than leaving the 2x2 flagship
               with a bottom-anchored strip and 250px of dead middle. */}
-          <div className="relative mt-10 flex min-h-[13rem] flex-1 items-stretch gap-4" aria-hidden="true">
+          <div className="relative mt-10 flex min-h-[13rem] flex-1 items-stretch gap-4 lg:mt-0" aria-hidden="true">
             <div className="flex w-16 shrink-0 flex-col rounded-lg border border-border bg-foreground/[0.03] p-2.5 sm:w-24">
               <div className="h-1.5 w-3/4 rounded bg-foreground/15" />
               <div className="mt-2 h-1.5 w-full rounded bg-foreground/10" />
@@ -421,10 +475,7 @@ function FeaturesSection() {
               A date per memory, not a daily pile
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              FlowRecall runs FSRS-6 — the scheduler serious Anki users go out of their way
-              to switch on — tracking how stable each concept is and how hard you personally
-              find it, then asking for it again on the day your recall is predicted to reach
-              90%. Plain arithmetic on your device, so it works offline.
+              FSRS-6 asks again on the day your recall is predicted to hit 90%.
             </p>
           </div>
           {/* Widening intervals, to scale with the real gaps above. */}
@@ -455,9 +506,7 @@ function FeaturesSection() {
               See what holds the deck up
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              The Mindmap draws a deck as a graph: which concept you need first, which one
-              explains another, and which pair you keep confusing. Then it names the
-              keystone — the weak idea the most others are built on.
+              Needs, explains, easily confused — and the weak idea the others are built on.
             </p>
           </div>
           <div className="mt-6 flex flex-wrap gap-1.5 text-[10px] font-medium" aria-hidden="true">
@@ -478,12 +527,10 @@ function FeaturesSection() {
               </svg>
             </FeatureIcon>
             <h3 className="mt-6 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground">
-              Read the source without leaving it
+              Read it where it came from
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              The Reader opens EPUBs, PDFs and pasted text and keeps your place in each.
-              Long-press any word for a definition in place, keep the highlight, hang a note
-              on it. Serif, sans or hyperlegible type, and a warm eye filter for 1am.
+              EPUB, PDF, pasted text. Any word defined in place, without leaving the page.
             </p>
           </div>
           {/* A line of prose with one word looked up in place. */}
@@ -513,10 +560,7 @@ function FeaturesSection() {
               Explain it back in your own words
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Recognising someone else&apos;s right answer is not the same as knowing a
-              subject. Teach a concept back in a sentence and FlowRecall returns three
-              lists: what you got right, what you left out, what you had wrong. No score —
-              the useful part is which piece of your own explanation broke.
+              Get back what you left out and what you had wrong. Never a score.
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-1.5 text-xs text-muted-foreground" aria-hidden="true">
@@ -540,7 +584,7 @@ function FeaturesSection() {
             would be exactly the overclaim the rest of this section exists to avoid. */}
         <motion.article
           {...reveal(0.3)}
-          className={`${CARD} justify-between sm:col-span-2 lg:col-span-1`}
+          className={`${CARD} justify-between`}
         >
           <div>
             <Effect>Your shelf</Effect>
@@ -553,10 +597,7 @@ function FeaturesSection() {
               Every deck, still findable in March
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              The Library holds everything you have made. Rename a deck in place, search
-              across titles and the concepts inside them, and delete with no confirm dialog
-              — there is a six-second undo instead. It lives on your device first and syncs
-              when you sign in.
+              Search titles and concepts, rename in place, undo a delete for six seconds.
             </p>
           </div>
           <div className="mt-6 flex items-center gap-2 rounded-xl border border-border bg-foreground/[0.03] px-3 py-2.5" aria-hidden="true">
@@ -574,18 +615,15 @@ function FeaturesSection() {
             so the card that admits that gets the last word and its own row. */}
         <motion.article
           {...reveal(0.36)}
-          className={`${CARD} sm:col-span-2 lg:col-span-3 lg:flex-row lg:items-center lg:justify-between lg:gap-12`}
+          className={`${CARD} lg:col-span-2 lg:flex-row lg:items-center lg:justify-between lg:gap-10`}
         >
           <div className="lg:max-w-2xl">
             <Effect>Showing up</Effect>
             <h3 className="mt-1 font-sans text-xl font-semibold leading-snug tracking-tight text-foreground sm:text-2xl">
-              The one part no scheduler can do for you
+              The part no scheduler can do
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-              A perfect interval you sleep through is worth nothing. So FlowRecall asks for
-              ten, twenty or forty minutes — never a pile of everything — builds that
-              session out of the concepts closest to slipping, and keeps a streak and a
-              nightly reminder pointed at the one thing that makes the rest of this work.
+              Ten, twenty or forty minutes, built from whatever is closest to slipping.
             </p>
           </div>
           {/* Mini streak calendar - echoes StreakModal.tsx's DayCell visual language and
@@ -610,26 +648,10 @@ function FeaturesSection() {
 }
 
 const HOW_IT_WORKS_STEPS = [
-  {
-    n: "01",
-    title: "Upload anything",
-    body: "Drop in a PDF or paste raw notes - lecture slides, textbook chapters and research papers all work. FlowRecall reads it and writes hundreds of active-recall questions in seconds.",
-  },
-  {
-    n: "02",
-    title: "Map the structure",
-    body: "Run the concept map once and the deck stops being a list: you get the order to learn it in, the pairs that are easy to confuse, and the keystone holding the rest up.",
-  },
-  {
-    n: "03",
-    title: "Recall, don't review",
-    body: "Swipe claims true or false, then type the answer from memory. Every attempt updates that one concept's own decay curve - not a shared daily quota.",
-  },
-  {
-    n: "04",
-    title: "Watch the projection move",
-    body: "Your home screen stops asking how many cards are due and starts answering the real question: how much of this will I still know on the day of the paper.",
-  },
+  { n: "01", title: "Upload", body: "A PDF, or notes you paste in." },
+  { n: "02", title: "Map", body: "See what depends on what." },
+  { n: "03", title: "Recall", body: "Swipe, then type it from memory." },
+  { n: "04", title: "Hold", body: "Watch the projection move." },
 ];
 
 // The one deliberately asymmetric, non-centered section on the page - no
@@ -644,37 +666,37 @@ function HowItWorksSection() {
       aria-labelledby="how-it-works-heading"
       className="relative z-10 mx-auto w-full max-w-6xl px-6 py-16 sm:py-24"
     >
-      <div className="lg:grid lg:grid-cols-[minmax(0,320px)_1fr] lg:gap-16">
-        <motion.div {...reveal()} className="lg:sticky lg:top-24 lg:self-start">
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            How it works
-          </p>
-          <h2
-            id="how-it-works-heading"
-            className="mt-3 font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
-          >
-            From a PDF to still knowing it, in four steps.
-          </h2>
-        </motion.div>
+      <motion.div {...reveal()}>
+        <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          How it works
+        </p>
+        <h2
+          id="how-it-works-heading"
+          className="mt-3 max-w-xl font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
+        >
+          From a PDF to still knowing it, in four steps.
+        </h2>
+      </motion.div>
 
-        <div className="mt-10 flex flex-col gap-10 lg:mt-0">
-          {HOW_IT_WORKS_STEPS.map((step, i) => (
-            <motion.div key={step.n} {...reveal(0.08 * i)} className="relative">
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute -left-2 -top-8 select-none font-sans text-7xl font-black leading-none text-foreground/[0.06] sm:text-8xl"
-              >
-                {step.n}
-              </span>
-              <div className="relative border-l border-border pl-6">
-                <h3 className="text-lg font-semibold text-foreground sm:text-xl">{step.title}</h3>
-                <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground sm:text-base">
-                  {step.body}
-                </p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+      {/* Four across rather than the old sticky two-column stack: at six words a
+          step, that layout was a 320px sidebar beside four short lines with 40px
+          of air between them, which is how a section with 24 words of copy ended
+          up as tall as the feature grid. */}
+      <div className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 sm:mt-14 lg:grid-cols-4 lg:gap-x-8">
+        {HOW_IT_WORKS_STEPS.map((step, i) => (
+          <motion.div key={step.n} {...reveal(0.06 * i)} className="relative">
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -left-1 -top-7 select-none font-sans text-6xl font-black leading-none text-foreground/[0.06] sm:text-7xl"
+            >
+              {step.n}
+            </span>
+            <div className="relative border-l border-border pl-4 sm:pl-5">
+              <h3 className="text-base font-semibold text-foreground sm:text-lg">{step.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+            </div>
+          </motion.div>
+        ))}
       </div>
     </section>
   );
@@ -766,8 +788,7 @@ function FinalCtaSection() {
         {...reveal(0.05)}
         className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-lg"
       >
-        That&apos;s the curve above talking, not a guess. FlowRecall is built to put three
-        reviews in the right places instead.
+        That&apos;s the curve above, not a guess.
       </motion.p>
       <motion.div
         {...reveal(0.1)}
@@ -916,9 +937,7 @@ export default function Home() {
           transition={{ ...SNAP, delay: 0.1 }}
           className="mt-5 w-full max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
         >
-          Upload a PDF and meet your first recall feed in under a minute. Then read the
-          source, map how its ideas connect, and review on a schedule built from your own
-          forgetting curve. No credit card required.
+          Upload a PDF. Read it, map it, and review it right before you&apos;d forget.
         </motion.p>
         <motion.div
           initial={{ opacity: 0, y: 24 }}
@@ -960,23 +979,33 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================== THE CURVE ========================= */}
-      <CurveSection />
+      {/* ============================ THE FACT ========================= */}
+      {/* The one piece of the page below the hero that native keeps: it is a
+          single sentence, and it is different every time the app is opened. */}
+      <BrainFactSection />
 
-      {/* ========================== FEATURES ========================== */}
-      <FeaturesSection />
+      {/* ======================= WEB-ONLY MARKETING ===================== */}
+      {/* Everything below is the pitch, and an installed app is past being
+          pitched to - a student who opens FlowRecall to study should not scroll
+          a landing page to reach the end of their own home screen. Native stops
+          at the fact above; MobileTabBar is the chrome from there, and Privacy
+          stays reachable from the Account tab.
 
-      {/* ======================= HOW IT WORKS ========================== */}
-      <HowItWorksSection />
-
-      {/* ============================= FAQ ============================ */}
-      <FaqSection />
-
-      {/* ========================== FINAL CTA ========================== */}
-      <FinalCtaSection />
-
-      {/* ============================ FOOTER ============================ */}
-      <SiteFooter />
+          Gated on the DEFAULT-FALSE useIsNative() on purpose, the same way the
+          hero's grid and glow orbs already are. useIsNative<boolean|null>(null)
+          would render none of this during the server/export pass, which would
+          hide the entire marketing page - headings, FAQ, JSON-LD - from every
+          crawler. Web renders it; native drops it a microtask after mount. */}
+      {!isNative && (
+        <>
+          <CurveSection />
+          <FeaturesSection />
+          <HowItWorksSection />
+          <FaqSection />
+          <FinalCtaSection />
+          <SiteFooter />
+        </>
+      )}
     </main>
   );
 }

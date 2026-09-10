@@ -87,7 +87,7 @@ export default function UnifiedDropzone({ onImported }: { onImported: (book: Boo
                 exit={{ opacity: 0 }}
                 className="flex flex-col items-center gap-2"
               >
-                <span className="text-3xl">📚</span>
+                <BookMark className="h-8 w-8 text-muted-foreground" />
                 <p className="text-base font-medium text-foreground">
                   {isDragActive ? "Drop it here" : "Tap to upload an EPUB or PDF"}
                 </p>
@@ -110,5 +110,36 @@ export default function UnifiedDropzone({ onImported }: { onImported: (book: Boo
         </motion.p>
       )}
     </div>
+  );
+}
+
+/** The open book, at the size a dropzone wants it.
+ *
+ * Replaces a 📚 colour emoji. globals.css opens with "NO color anywhere" - contrast
+ * is the only signal this design system uses - and an emoji is rendered by the
+ * platform's own colour font, so it was the one mark on the screen that neither
+ * obeyed that rule nor changed with the theme. It also rendered differently on every
+ * Android version the app supports.
+ *
+ * Geometry copied from ReaderIcon in src/components/MobileTabBar.tsx, so the tab a
+ * student taps and the screen it opens carry the same shape at two sizes. */
+function BookMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M12 6.5c-1.6-1.2-3.7-1.8-5.8-1.8-.7 0-1.2.5-1.2 1.2v11.6c0 .7.5 1.2 1.2 1.2 2.1 0 4.2.6 5.8 1.8"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 6.5c1.6-1.2 3.7-1.8 5.8-1.8.7 0 1.2.5 1.2 1.2v11.6c0 .7-.5 1.2-1.2 1.2-2.1 0-4.2.6-5.8 1.8V6.5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

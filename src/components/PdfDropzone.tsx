@@ -190,7 +190,7 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
                 exit={{ opacity: 0 }}
                 className="flex flex-col items-center gap-2"
               >
-                <span className="text-3xl">📄</span>
+                <DocumentMark className="h-8 w-8 text-muted-foreground" />
                 <p className="text-base font-medium text-foreground">
                   {isDragActive ? "Drop your PDF here" : "Tap to upload a PDF"}
                 </p>
@@ -213,5 +213,26 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
         </motion.p>
       )}
     </div>
+  );
+}
+
+/** A page with its corner turned, at the size a dropzone wants it.
+ *
+ * Replaces a 📄 colour emoji, for the reason its twin in
+ * src/components/reader/UnifiedDropzone.tsx does: this design system has no colour
+ * in it, and an emoji is drawn by the platform's colour font rather than by the
+ * stylesheet - so it ignored the theme and looked different on every Android version
+ * the app runs on. Same 1.8 stroke as every other glyph in the app. */
+function DocumentMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path
+        d="M13.5 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5l-5-5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M13.5 3.5v5h5" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+    </svg>
   );
 }

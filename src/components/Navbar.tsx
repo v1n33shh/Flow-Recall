@@ -13,8 +13,13 @@ import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
 
 const LINKS = [
+  { href: "/library", label: "Library" },
   { href: "/ingest", label: "Ingest" },
   { href: "/reader", label: "Reader" },
+  { href: "/map", label: "Mindmap" },
+  // Kept here and dropped from MobileTabBar, deliberately: this bar is web-only
+  // (Navbar returns null on native), and the web is the only place a purchase can
+  // actually happen.
   { href: "/pricing", label: "Pricing" },
 ];
 
@@ -70,7 +75,8 @@ export default function Navbar() {
               inline links only appear from sm: upward. */}
           <div className="hidden items-center gap-0.5 sm:flex sm:gap-1">
           {LINKS.map((link) => {
-            const active = pathname === link.href;
+            const active =
+              pathname === link.href || (pathname?.startsWith(link.href + "/") ?? false);
             return (
               <Link
                 key={link.href}

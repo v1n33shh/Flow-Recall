@@ -31,6 +31,22 @@ function HomeIcon({ className }: { className?: string }) {
   );
 }
 
+// Stacked spines, seen end-on: one card face with two shorter edges above it.
+// Deliberately NOT a book - ReaderIcon two tabs along is already an open book,
+// and at 21px two book glyphs side by side are one glyph as far as a thumb is
+// concerned. This also happens to be the more honest shape: what is on the
+// shelf is decks, not volumes. Same geometry as LibraryGlyph in
+// src/app/library/page.tsx, so the tab and the screen it opens agree.
+function LibraryIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <rect x="3.75" y="9.75" width="16.5" height="10.5" rx="2.25" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M6.25 6.75h11.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M8.25 3.75h7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function IngestIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
@@ -50,11 +66,16 @@ function ReaderIcon({ className }: { className?: string }) {
   );
 }
 
-function PricingIcon({ className }: { className?: string }) {
+// Three ideas and the two links between them - a graph, at the smallest size a graph
+// can still read as one. Distinct from the Library's stacked spines and the Reader's
+// open book, which is the whole job of a tab glyph.
+function MapIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path d="M12 3.5c.4 2.9 1.9 4.4 4.8 4.8-2.9.4-4.4 1.9-4.8 4.8-.4-2.9-1.9-4.4-4.8-4.8 2.9-.4 4.4-1.9 4.8-4.8Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-      <path d="M18.5 14.5c.2 1.5 1 2.3 2.5 2.5-1.5.2-2.3 1-2.5 2.5-.2-1.5-1-2.3-2.5-2.5 1.5-.2 2.3-1 2.5-2.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M12 6.75v3.5M9 15.5l1.6-2.2M15 15.5l-1.6-2.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="12" cy="4.75" r="2.25" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="6.75" cy="17.5" r="2.25" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="17.25" cy="17.5" r="2.25" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
 }
@@ -70,9 +91,17 @@ function AccountIcon({ className }: { className?: string }) {
 
 const TABS: Tab[] = [
   { href: "/", label: "Home", Icon: HomeIcon },
+  { href: "/library", label: "Library", Icon: LibraryIcon },
   { href: "/ingest", label: "Ingest", Icon: IngestIcon },
   { href: "/reader", label: "Reader", Icon: ReaderIcon },
-  { href: "/pricing", label: "Pricing", Icon: PricingIcon },
+  // Pricing used to sit here, and on this platform it could only ever be a dead end:
+  // src/app/pricing/page.tsx branches on isNative and renders a flat "Free plan" line
+  // instead of a purchase control, because the native build has no payment path at
+  // all. A sixth of the thumb zone pointing at a page that can only say "you cannot
+  // buy anything here" is worse than not offering it - the route is still one tap from
+  // the home hero's "View Pro Plans", and the desktop navbar still carries it, which
+  // is where a student can actually pay.
+  { href: "/map", label: "Mindmap", Icon: MapIcon },
 ];
 
 const ACCOUNT_TAB: Tab = { href: "/account", label: "Account", Icon: AccountIcon };

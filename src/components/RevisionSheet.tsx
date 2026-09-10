@@ -8,7 +8,7 @@ import type { Concept } from "@/lib/types";
 import { factSentence, readableBody } from "@/lib/conceptProse";
 import { deckMastery, type DeckMastery } from "@/lib/recallStorage";
 import { unitIdFor, type MasteryLevel } from "@/lib/recallModel";
-import { setStudyDeck, useSavedDecks } from "@/lib/storage";
+import { setStudyDeck, takeReviseFocus, useSavedDecks } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
 import ConceptEditor from "./ConceptEditor";
@@ -154,6 +154,19 @@ export default function RevisionSheet({
     scroll();
   }
 
+  /** The map's landing. `takeReviseFocus` clears the id as it reads it, so this fires
+   * once per handoff and never yanks a later visit somewhere the student did not ask
+   * for. Two frames of delay for the same reason jumpTo itself waits: the row has to
+   * exist before anything can scroll to it, and the filter may have to drop first. */
+  useEffect(() => {
+    const focus = takeReviseFocus();
+    if (focus === null) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => jumpTo(focus)));
+    // Once, on arrival. jumpTo closes over the deck it was rendered with, which is
+    // the deck the handoff named.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function handleStudy() {
     vibrateTap();
     setStudyDeck(deckId, concepts);
@@ -228,6 +241,7 @@ export default function RevisionSheet({
       </div>
 
       <DeckLearningPath
+        showMapLink
         concepts={concepts}
         map={map}
         labelOf={labelOf}

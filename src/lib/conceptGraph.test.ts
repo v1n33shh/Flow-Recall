@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Concept, ConceptEdge } from "@/lib/types";
-import { MAX_PER_ROW, contrastPairs, groupForConcept, learningPath, validateEdges } from "./conceptGraph";
+import {
+  MAX_PER_ROW,
+  contrastPairs,
+  groupForConcept,
+  MAX_CHAIN,
+  keystone,
+  prerequisiteChain,
+  learningPath,
+  validateEdges,
+} from "./conceptGraph";
 
 function makeConcept(id: string, label: string): Concept {
   return {
@@ -260,5 +269,120 @@ describe("contrastPairs", () => {
 
   it("answers with nothing for a deck that was never mapped", () => {
     expect(contrastPairs(ids, [])).toEqual([]);
+  });
+});
+
+// The one line that turns the map from a diagram into advice. Everything about it is
+// a judgement about what a student should do next, so every judgement gets a test.
+describe("keystone", () => {
+  const prereq = (from: string, to: string): ConceptEdge => ({ from, to, relation: "prerequisite" });
+  const weakEverywhere = () => true;
+
+  it("names the weak concept the most other concepts lean on", () => {
+    // a holds up b and c; d holds up nothing.
+    const found = keystone(["a", "b", "c", "d"], [prereq("a", "b"), prereq("a", "c")], weakEverywhere);
+    expect(found).toEqual({ id: "a", dependents: 2 });
+  });
+
+  // Out-degree would rank a fan-out of two above a chain of nine, which is exactly
+  // backwards: everything downstream falls over, not just the next thing along.
+  it("counts dependents transitively, not as a fan-out", () => {
+    const chain = [prereq("a", "b"), prereq("b", "c"), prereq("c", "d")];
+    const fan = [prereq("x", "y"), prereq("x", "z")];
+    const found = keystone(["a", "b", "c", "d", "x", "y", "z"], [...chain, ...fan], weakEverywhere);
+    expect(found).toEqual({ id: "a", dependents: 3 });
+  });
+
+  it("ignores concepts the student already has solid", () => {
+    const isWeak = (id: string) => id !== "a";
+    const found = keystone(["a", "b", "c"], [prereq("a", "b"), prereq("b", "c")], isWeak);
+    expect(found).toEqual({ id: "b", dependents: 1 });
+  });
+
+  // A weak concept holding nothing up is the scheduler's business, not the map's.
+  it("says nothing when the only weak concepts are leaves", () => {
+    expect(keystone(["a", "b"], [prereq("a", "b")], (id) => id === "b")).toBeNull();
+  });
+
+  it("says nothing when every load-bearing concept is solid", () => {
+    expect(keystone(["a", "b"], [prereq("a", "b")], () => false)).toBeNull();
+  });
+
+  it("says nothing about a deck with no prerequisites at all", () => {
+    expect(keystone(["a", "b"], [{ from: "a", to: "b", relation: "contrast" }], weakEverywhere)).toBeNull();
+  });
+
+  it("breaks a tie by deck order, so the same deck always names the same concept", () => {
+    const edges = [prereq("a", "x"), prereq("b", "y")];
+    expect(keystone(["a", "b", "x", "y"], edges, weakEverywhere)?.id).toBe("a");
+    expect(keystone(["b", "a", "x", "y"], edges, weakEverywhere)?.id).toBe("b");
+  });
+
+  it("survives a cycle", () => {
+    const found = keystone(["a", "b", "c"], [prereq("a", "b"), prereq("b", "a"), prereq("b", "c")], weakEverywhere);
+    expect(found?.dependents).toBe(2);
+  });
+
+  it("ignores edges naming a concept the deck no longer holds", () => {
+    const found = keystone(["a", "b"], [prereq("a", "b"), prereq("a", "ghost")], weakEverywhere);
+    expect(found).toEqual({ id: "a", dependents: 1 });
+  });
+});
+
+// The route into a concept a student did not follow. Everything about the order and
+// the cap is a judgement about what actually helps, so each one gets a test.
+describe("prerequisiteChain", () => {
+  const P = (from: string, to: string): ConceptEdge => ({ from, to, relation: "prerequisite" });
+
+  it("walks back to the root, in the order to learn them", () => {
+    const ids = ["a", "b", "c"];
+    expect(prerequisiteChain("c", ids, [P("a", "b"), P("b", "c")])).toEqual(["a", "b"]);
+  });
+
+  it("says nothing about a concept that rests on nothing", () => {
+    expect(prerequisiteChain("a", ["a", "b"], [P("a", "b")])).toEqual([]);
+  });
+
+  it("collects every branch a concept stands on", () => {
+    const ids = ["x", "y", "z"];
+    expect(prerequisiteChain("z", ids, [P("x", "z"), P("y", "z")]).sort()).toEqual(["x", "y"]);
+  });
+
+  // Depth-first would spend the whole cap on one long branch and never mention the
+  // thing sitting directly underneath.
+  it("keeps the NEAREST prerequisites when a chain is deeper than the cap", () => {
+    const ids = ["r", "a", "b", "c", "d", "target"];
+    const edges = [P("r", "a"), P("a", "b"), P("b", "c"), P("c", "d"), P("d", "target")];
+    const chain = prerequisiteChain("target", ids, edges);
+    expect(chain).toHaveLength(MAX_CHAIN);
+    expect(chain).toContain("d");
+    expect(chain).not.toContain("r");
+  });
+
+  it("never returns more than the cap", () => {
+    const ids = ["t", ...Array.from({ length: 12 }, (_, i) => `p${i}`)];
+    const edges = ids.slice(1).map((id) => P(id, "t"));
+    expect(prerequisiteChain("t", ids, edges).length).toBeLessThanOrEqual(MAX_CHAIN);
+  });
+
+  it("survives a cycle", () => {
+    const chain = prerequisiteChain("b", ["a", "b"], [P("a", "b"), P("b", "a")]);
+    expect(chain).toEqual(["a"]);
+  });
+
+  it("ignores an edge naming a concept the deck no longer holds", () => {
+    expect(prerequisiteChain("b", ["a", "b"], [P("a", "b"), P("ghost", "b")])).toEqual(["a"]);
+  });
+
+  it("says nothing about a concept that is not in the deck", () => {
+    expect(prerequisiteChain("missing", ["a", "b"], [P("a", "b")])).toEqual([]);
+  });
+
+  it("ignores relations that say nothing about order", () => {
+    const edges: ConceptEdge[] = [
+      { from: "a", to: "b", relation: "explains" },
+      { from: "c", to: "b", relation: "contrast" },
+    ];
+    expect(prerequisiteChain("b", ["a", "b", "c"], edges)).toEqual([]);
   });
 });

@@ -183,6 +183,134 @@ export function contrastPairs(
   );
 }
 
+/** How many steps back a chain is worth walking.
+ *
+ * Four. Past that it stops being "here is what you are missing" and becomes a
+ * syllabus - and a student who did not follow one concept is not helped by being
+ * handed nine more. The nearest ancestors are the ones kept, because they are the
+ * ones the concept actually rests on. */
+export const MAX_CHAIN = 4;
+
+/** What has to be understood before this, in the order to understand it.
+ *
+ * The one thing a map can do that a list of cards cannot. A student who does not
+ * follow a concept has, until now, had exactly two moves: read the same explanation
+ * again, or answer the same card wrong again. This gives them the third one - the
+ * route in - out of edges the deck already carries.
+ *
+ * Breadth-first upward, so the NEAREST prerequisites are the ones that survive the
+ * cap: when a chain is deeper than MAX_CHAIN, "the thing directly under this" is
+ * more use than a root five steps away that the student may already know.
+ *
+ * Returned in `learningPath` order, roots first, which is what makes it read as a
+ * route rather than as a set - and keeps it consistent with the numbered path on the
+ * revision sheet and with the rows of the map itself, all three of which order by the
+ * same function.
+ *
+ * Empty for a concept that rests on nothing. That is a real answer, not a failure:
+ * it means "start here", and the caller renders nothing rather than an empty heading.
+ *
+ * Cycle-safe by the visited set, for the reason every traversal in this file is: a
+ * model can asserts cycles, and a student must not meet a hang because of one. */
+export function prerequisiteChain(
+  conceptId: string,
+  conceptIds: readonly string[],
+  edges: readonly ConceptEdge[],
+): string[] {
+  const present = new Set(conceptIds);
+  if (!present.has(conceptId)) return [];
+
+  const upstream = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.relation !== "prerequisite") continue;
+    if (!present.has(edge.from) || !present.has(edge.to)) continue;
+    upstream.set(edge.to, [...(upstream.get(edge.to) ?? []), edge.from]);
+  }
+
+  const seen = new Set([conceptId]);
+  const found: string[] = [];
+  let frontier = [conceptId];
+  while (frontier.length > 0 && found.length < MAX_CHAIN) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const from of upstream.get(id) ?? []) {
+        if (seen.has(from)) continue;
+        seen.add(from);
+        found.push(from);
+        next.push(from);
+        if (found.length >= MAX_CHAIN) break;
+      }
+      if (found.length >= MAX_CHAIN) break;
+    }
+    frontier = next;
+  }
+
+  const order = learningPath(conceptIds, edges);
+  return found.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+}
+
+/** The one concept worth fixing first: weak, and holding up the most.
+ *
+ * This is the difference between a diagram and a diagnosis. A map that only draws the
+ * deck says "here is your subject"; this says "start here, because four other things
+ * lean on it and you are losing it". Nothing else in this app - and nothing in any
+ * flashcard app that does not hold BOTH a dependency graph and per-concept memory
+ * state - can answer that question.
+ *
+ * `dependents` is counted TRANSITIVELY, not as an out-degree: a concept two hops
+ * downstream is still a concept that falls over when this one does, and the out-degree
+ * would rank a shallow fan-out of two above a chain of nine. Cycle-safe by the visited
+ * set, which it needs to be for the same reason `learningPath` is total - a model can
+ * and does assert cycles.
+ *
+ * `isWeak` is a predicate rather than a MasteryLevel so this file stays free of the
+ * recall engine's types, exactly as `ConceptRelations` takes a `levelOf` function. The
+ * caller decides what weak means and reads the level again for its own wording.
+ *
+ * Returns `null` when nothing qualifies, which is a real answer: a deck where every
+ * load-bearing concept is solid has no advice worth printing, and inventing some would
+ * make the line noise the moment a student learns to ignore it. A concept with no
+ * dependents at all never wins - it may be weak, but it is holding nothing up, and the
+ * scheduler is already handling it.
+ *
+ * Ties break by deck order, so the same deck and edges always name the same concept. */
+export function keystone(
+  conceptIds: readonly string[],
+  edges: readonly ConceptEdge[],
+  isWeak: (id: string) => boolean,
+): { id: string; dependents: number } | null {
+  const present = new Set(conceptIds);
+  const downstream = new Map<string, string[]>();
+  for (const edge of edges) {
+    if (edge.relation !== "prerequisite") continue;
+    if (!present.has(edge.from) || !present.has(edge.to)) continue;
+    downstream.set(edge.from, [...(downstream.get(edge.from) ?? []), edge.to]);
+  }
+
+  let best: { id: string; dependents: number } | null = null;
+  for (const id of conceptIds) {
+    if (!isWeak(id)) continue;
+
+    const seen = new Set([id]);
+    const stack = [id];
+    let dependents = 0;
+    while (stack.length > 0) {
+      for (const next of downstream.get(stack.pop()!) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        dependents += 1;
+        stack.push(next);
+      }
+    }
+
+    // Strictly greater, so the FIRST concept in deck order wins a tie.
+    if (dependents > 0 && (best === null || dependents > best.dependents)) {
+      best = { id, dependents };
+    }
+  }
+  return best;
+}
+
 /** The order to learn a deck in: every concept, with prerequisites before the
  * things that need them.
  *

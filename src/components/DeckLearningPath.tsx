@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { MasteryLevel } from "@/lib/recallModel";
 import type { Concept, ConceptEdge } from "@/lib/types";
 import { contrastPairs, learningPath, validateEdges } from "@/lib/conceptGraph";
@@ -87,12 +88,17 @@ export default function DeckLearningPath({
   labelOf,
   levelOf,
   onJump,
+  showMapLink = false,
 }: {
   concepts: readonly Concept[];
   map: ConceptMap;
   labelOf: (id: string) => string | null;
   levelOf: (id: string) => MasteryLevel | null;
   onJump: (id: string) => void;
+  /** Offers the same deck as a drawing. Off by default because /map renders this
+   * component itself for a deck it cannot draw yet, and a link from a screen to
+   * itself is the sort of thing nobody notices until a student taps it. */
+  showMapLink?: boolean;
 }) {
   const { edges, busy, error, limitReached, run } = map;
 
@@ -120,9 +126,23 @@ export default function DeckLearningPath({
 
   return (
     <section className="mt-6 rounded-2xl border border-border bg-surface/60 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:backdrop-blur-xl">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {path.length > 0 ? "Learning path" : "How this deck fits together"}
-      </p>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+          {path.length > 0 ? "Learning path" : "How this deck fits together"}
+        </p>
+        {/* The list and the map are two views of one set of edges - a sequence to
+            read down, and a shape to look at. The deck is already in the handoff
+            /revise arrived on, so /map picks it up with nothing passed. */}
+        {showMapLink && edges && edges.length > 0 && (
+          <Link
+            href="/map"
+            onClick={vibrateTap}
+            className="shrink-0 text-[11px] font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          >
+            Open the map
+          </Link>
+        )}
+      </div>
 
       {path.length > 0 ? (
         <>

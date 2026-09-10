@@ -3,6 +3,7 @@ import type { Concept, ConceptEdge, Deck, QueueItem, StudyProgress } from "./typ
 
 const STUDY_DECK_STORAGE_KEY = "flowrecall:studyDeck";
 const STUDY_SESSION_STORAGE_KEY = "flowrecall:studySession";
+const REVISE_FOCUS_STORAGE_KEY = "flowrecall:reviseFocus";
 const SAVED_DECKS_STORAGE_KEY = "flowrecall:savedDecks";
 
 function progressStorageKey(deckId: string): string {
@@ -42,6 +43,28 @@ export function setStudyDeck(deckId: string, concepts: Concept[]) {
   // a leftover session would silently hijack every later "Study this deck" tap.
   window.sessionStorage.removeItem(STUDY_SESSION_STORAGE_KEY);
   notifyLocalStorageUpdate();
+}
+
+/** Which concept the revision sheet should scroll to when it opens.
+ *
+ * The map's other half. A student taps a node, reads its card and wants the full
+ * text - and landing them at the top of a 400-concept sheet to find it themselves
+ * would make the map a dead end dressed as navigation. RevisionSheet already gives
+ * every concept a DOM id (`concept-${id}`) for its own relation chips to jump
+ * between, so this only has to name one.
+ *
+ * READ ONCE, then gone: `takeReviseFocus` clears the key as it reads it. Without
+ * that, a student who opened the sheet again from the library a week later would be
+ * yanked to whatever they last tapped on the map. */
+export function setReviseFocus(conceptId: string) {
+  window.sessionStorage.setItem(REVISE_FOCUS_STORAGE_KEY, conceptId);
+}
+
+export function takeReviseFocus(): string | null {
+  if (typeof window === "undefined") return null;
+  const id = window.sessionStorage.getItem(REVISE_FOCUS_STORAGE_KEY);
+  if (id !== null) window.sessionStorage.removeItem(REVISE_FOCUS_STORAGE_KEY);
+  return id;
 }
 
 /** Hands a session built by the engine off to the feed. Separate from the deck
@@ -422,6 +445,62 @@ export function setDeckExamDate(deckId: string, examDate: number | null): void {
   );
 }
 
+/** Renames a deck, and nothing else.
+ *
+ * Stamps `updatedAt` so sync carries the new name to the account's other devices,
+ * exactly as saveConceptMap and setDeckExamDate do. A no-op if the deck has since
+ * been deleted - a tombstone has no title worth arguing about, and reviving one by
+ * writing to it would undo a deletion the student meant.
+ *
+ * Nothing downstream needs reconciling, unlike updateConcept and setDeckExamDate:
+ * `deck.title` is read by the library, the recognition card and /api/sync, and by
+ * nothing in the engine. A KnowledgeUnit carries the CONCEPT's label, never the
+ * deck's, so no unit, memory row or review is keyed on this string.
+ *
+ * The caller normalises (see normaliseDeckTitle in deckTitle.ts) and decides whether
+ * an edit counts; this trusts what it is handed. */
+export function renameDeck(deckId: string, title: string): void {
+  persistDecks(
+    getAllDeckRows().map((deck) =>
+      deck.id === deckId && deck.deletedAt === undefined
+        ? { ...deck, title, updatedAt: Date.now() }
+        : deck,
+    ),
+  );
+}
+
+/** Puts back a deck that was just deleted, along with the session it had going.
+ *
+ * Takes the whole `Deck` rather than an id because the row on disk cannot restore
+ * itself: `deleteDeck` below strips concepts, leftover source text and the concept
+ * map deliberately, so what a tombstone holds is a few bytes and a date. The caller
+ * hands back the object it was already holding in memory, and the progress snapshot
+ * it took before deleting - `deleteDeck` removes that key too.
+ *
+ * Safe against a sync landing inside the undo window: the tombstone may already have
+ * reached the server and other devices, and this write carries a NEWER `updatedAt`,
+ * so last-write-wins re-lands the deck everywhere on the next reconcile rather than
+ * fighting with it.
+ *
+ * Progress is written directly rather than through saveProgress so the whole restore
+ * is one storage notification, not two - a listener woken between them would see the
+ * deck back with its progress bar still missing. */
+export function restoreDeck(deck: Deck, progress: StudyProgress | null): void {
+  const now = Date.now();
+  const rows = getAllDeckRows();
+  const restored: Deck = { ...deck, deletedAt: undefined, updatedAt: now };
+  const next = rows.some((row) => row.id === deck.id)
+    ? rows.map((row) => (row.id === deck.id ? restored : row))
+    : // The row is gone entirely rather than tombstoned - a sweep, a second device,
+      // or a cleared store. Put it back where saveDeck would have: newest first.
+      [restored, ...rows].sort((a, b) => b.createdAt - a.createdAt);
+
+  if (progress) {
+    window.localStorage.setItem(progressStorageKey(deck.id), JSON.stringify(progress));
+  }
+  persistDecks(next);
+}
+
 /** Deletes a deck by TOMBSTONING it, not by dropping the row.
  *
  * A row that simply vanishes cannot propagate: the next pull from another device
@@ -497,6 +576,31 @@ export function getSyncCursor(userId: string): number | null {
 
 export function setSyncCursor(userId: string, cursor: number): void {
   window.localStorage.setItem(syncCursorKey(userId), String(cursor));
+}
+
+// ── The brain-fact cursor ────────────────────────────────────────────────────
+//
+// Which fact the library header showed last (see src/lib/brainFacts.ts). Per DEVICE
+// rather than per user, deliberately, and it is the one thing on this page that is
+// better for it: on a shared phone the point is that the line differs from the last
+// time somebody looked, not that it is anybody's in particular.
+//
+// Swept by clearAllLocalUserData's prefix walk with everything else - the `flowrecall:`
+// prefix is all that takes.
+
+const FACT_CURSOR_KEY = "flowrecall:factCursor";
+
+/** Zero for a device that has never shown one, and for anything unparseable that has
+ * found its way into the key - `factAt` is total, but a NaN cursor would still store
+ * the string "NaN" and read back the same way forever. */
+export function getFactCursor(): number {
+  if (typeof window === "undefined") return 0;
+  const parsed = Number(window.localStorage.getItem(FACT_CURSOR_KEY));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function setFactCursor(cursor: number): void {
+  window.localStorage.setItem(FACT_CURSOR_KEY, String(cursor));
 }
 
 /** Clears a session's saved progress - used when starting a fully-mastered

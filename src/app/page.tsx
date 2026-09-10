@@ -1,29 +1,12 @@
 "use client";
 
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
-import { startTransition, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import type { Deck } from "@/lib/types";
-import {
-  appendConceptsToDeck,
-  clearProgress,
-  deleteDeck,
-  getProgress,
-  setStudyDeck,
-  useSavedDecks,
-} from "@/lib/storage";
-import {
-  continuationMessage,
-  CONTINUE_BATCH_SIZE,
-  runChunksContinuous,
-  type ContinuousProgress,
-} from "@/lib/ingestChunks";
+import { useSavedDecks } from "@/lib/storage";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
-import ContinuationProgress from "@/components/ContinuationProgress";
-import DeckExamDate from "@/components/DeckExamDate";
+import FilmGrain from "@/components/FilmGrain";
 import MemoryOverview from "@/components/MemoryOverview";
 import TodaySession from "@/components/TodaySession";
 
@@ -66,16 +49,6 @@ const SOFTWARE_APP_JSONLD = {
     url: SITE_URL,
   },
 };
-
-// Inline fractal-noise SVG for the cinematic film-grain overlay. Kept as a
-// data URI applied via inline style rather than a Tailwind arbitrary class so
-// the SVG's quotes/percent-signs don't have to survive class-name parsing.
-const NOISE_BACKGROUND =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
-
-function formatDate(timestamp: number): string {
-  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 // ---------------------------------------------------------------------------
 // Landing-page marketing sections (SEO + conversion). Kept as module-level
@@ -511,7 +484,6 @@ function SiteFooter() {
 }
 
 export default function Home() {
-  const router = useRouter();
   const decks = useSavedDecks();
   // Navbar.tsx hides itself entirely on native (MobileTabBar is its only
   // chrome) - the hero's min-h-[88vh]/justify-center centering was tuned for
@@ -519,132 +491,6 @@ export default function Home() {
   // space. With nothing above it on native, the same centering leaves a
   // large dead zone under the status bar instead of anchoring near the top.
   const isNative = useIsNative();
-
-  const [generatingDeckIds, setGeneratingDeckIds] = useState<Set<string>>(new Set());
-  const [jitErrors, setJitErrors] = useState<Record<string, string>>({});
-  // What each in-flight continuation is doing, keyed by deck id. "Generating..."
-  // for four chunks with a rate-limit wait inside it is up to a minute of a button
-  // that looks stuck; this says which part, and what it is waiting for.
-  const [jitProgress, setJitProgress] = useState<Record<string, ContinuousProgress>>({});
-  // Deck ids the student has asked to stop. A ref, not state: runChunksContinuous
-  // polls this from inside a loop that closed over the render that started it, so a
-  // state value read there would stay false forever.
-  const stopRequests = useRef<Set<string>>(new Set());
-
-  function handleStudyNow(deck: Deck, isFullyMastered: boolean) {
-    // A 100%-mastered session resuming normally would hydrate a queue with
-    // nothing left to answer and dump the user straight at the completion
-    // slide - clear it so "Review Again" actually starts a fresh pass.
-    if (isFullyMastered) {
-      clearProgress(deck.id);
-    }
-    setStudyDeck(deck.id, deck.concepts);
-    // Marks the route change (and /study's heavier initial render) as a low
-    // priority transition, so the button's own tap feedback isn't blocked
-    // waiting for that render to commit - see PageTransition.tsx.
-    startTransition(() => {
-      router.push("/study");
-    });
-  }
-
-  /** Same sessionStorage handoff `/study` uses, so the revision sheet needs no
-   * dynamic route - which `output: "export"` could not build for localStorage
-   * deck ids anyway. */
-  function handleRead(deck: Deck) {
-    setStudyDeck(deck.id, deck.concepts);
-    startTransition(() => {
-      router.push("/revise");
-    });
-  }
-
-  function handleDelete(id: string, event: ReactMouseEvent) {
-    event.stopPropagation();
-    if (window.confirm("Delete this deck? This can't be undone.")) {
-      deleteDeck(id);
-    }
-  }
-
-  /** Keeps generating this deck's leftovers until they run out, the student taps
-   * Stop, or something stops it for them - one tap instead of the ~115 that
-   * finishing a book used to take at four sections a time.
-   *
-   * Every batch is persisted as it completes (see onBatch), so an interrupted run -
-   * Stop, a failure, a killed app - leaves the deck holding exactly the sections it
-   * has not generated. Tapping again resumes; nothing is repeated and nothing is
-   * paid for twice. */
-  async function handleGenerateNextSection(deck: Deck) {
-    const pending = deck.pendingChunks;
-    if (!pending || pending.length === 0) return;
-
-    stopRequests.current.delete(deck.id);
-    setGeneratingDeckIds((prev) => new Set(prev).add(deck.id));
-    setJitErrors((prev) => {
-      const next = { ...prev };
-      delete next[deck.id];
-      return next;
-    });
-
-    try {
-      const run = await runChunksContinuous(pending, {
-        // model: deck.model - without this an unset model falls back to the free
-        // model server-side regardless of plan, silently downgrading a Pro user's
-        // continuation sections to the cheap model they didn't pick.
-        model: deck.model,
-        // countsFirstChunk: false - this continues a deck the student already spent
-        // one of their monthly generations on, not a new one. Without it the
-        // server's allowance gate (which only checks on a first chunk) treats an
-        // unmarked request as a first chunk and wrongly re-blocks a free user
-        // part-way through their own already-started deck.
-        countsFirstChunk: false,
-        batchSize: CONTINUE_BATCH_SIZE,
-        shouldStop: () => stopRequests.current.has(deck.id),
-        // Keep what succeeded, batch by batch. Those cards cost real tokens and are
-        // already paid for; discarding them and leaving their text in pendingChunks
-        // means the next tap regenerates - and re-pays for - finished work.
-        onBatch: (concepts, remaining) => appendConceptsToDeck(deck.id, concepts, remaining),
-        onProgress: (progress) => setJitProgress((prev) => ({ ...prev, [deck.id]: progress })),
-      });
-
-      // Shared with /ingest's recognition card, which ends a run the same way - see
-      // continuationMessage for which failures must not say "tap again".
-      if (run.error) {
-        const message = continuationMessage({
-          error: run.error,
-          code: run.code,
-          kept: run.concepts.length,
-        });
-        setJitErrors((prev) => ({ ...prev, [deck.id]: message }));
-      }
-    } catch (err) {
-      setJitErrors((prev) => ({
-        ...prev,
-        [deck.id]: err instanceof Error ? err.message : "Something went wrong.",
-      }));
-    } finally {
-      stopRequests.current.delete(deck.id);
-      setJitProgress((prev) => {
-        const next = { ...prev };
-        delete next[deck.id];
-        return next;
-      });
-      setGeneratingDeckIds((prev) => {
-        const next = new Set(prev);
-        next.delete(deck.id);
-        return next;
-      });
-    }
-  }
-
-  /** Asks a running continuation to stop. Honoured at the next section boundary,
-   * never mid-section: the requests already in flight are paid for either way, so
-   * abandoning them would spend a student's allowance for nothing. */
-  function handleStopGenerating(deck: Deck) {
-    stopRequests.current.add(deck.id);
-    setJitProgress((prev) => {
-      const current = prev[deck.id];
-      return current ? { ...prev, [deck.id]: { ...current, stopping: true } } : prev;
-    });
-  }
 
   return (
     <main className="relative flex flex-1 flex-col">
@@ -691,15 +537,7 @@ export default function Home() {
         </>
       )}
 
-      {/* Cinematic film grain - a fixed, whisper-faint noise texture over the
-          whole viewport for a physical, filmic surface. A static background-
-          image at 3% opacity, no filter/blur animation - negligible cost on
-          any device, so it's no longer gated to desktop only. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.03]"
-        style={{ backgroundImage: NOISE_BACKGROUND }}
-      />
+      <FilmGrain />
 
         <div className="relative z-10 flex w-full flex-col items-center">
         <motion.p
@@ -755,9 +593,10 @@ export default function Home() {
           </Link>
         </motion.div>
 
-        {/* The engine's answer to "what should I study?", above the grid that asks
-            the student to decide. Renders nothing when signed out or when there is
-            no memory to schedule against yet. */}
+        {/* The engine's answer to "what should I study?" - and, since the deck grid
+            moved to /library, the only thing on this screen that asks for a decision.
+            Renders nothing when signed out or when there is no memory to schedule
+            against yet. */}
         <TodaySession decks={decks} />
 
         {/* What they will still know later, under what to do tonight. Deliberately
@@ -765,115 +604,6 @@ export default function Home() {
             worth taking - a number that only moves because they took it. */}
         <MemoryOverview decks={decks} />
 
-        {decks.length > 0 && (
-          <section aria-labelledby="library-heading" className="mt-16 w-full max-w-4xl">
-            <h2
-              id="library-heading"
-              className="text-left text-lg font-semibold tracking-tight text-foreground sm:text-xl"
-            >
-              Your Library
-            </h2>
-            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-              {decks.map((deck) => {
-                const progress = getProgress(deck.id);
-                const masteredCount = progress?.masteredIds.length ?? 0;
-                const pct =
-                  deck.concepts.length > 0 ? Math.min(masteredCount / deck.concepts.length, 1) : 0;
-                const isFullyMastered = Boolean(progress) && pct >= 1;
-                const buttonLabel = !progress ? "Study Now" : isFullyMastered ? "Review Again" : "Resume";
-
-                return (
-                  <div
-                    key={deck.id}
-                    className="group relative flex flex-col rounded-2xl border border-border bg-surface/60 p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] md:backdrop-blur-xl transition-transform hover:-translate-y-0.5"
-                  >
-                    <button
-                      type="button"
-                      onClick={(event) => handleDelete(deck.id, event)}
-                      aria-label="Delete deck"
-                      className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-                    >
-                      &times;
-                    </button>
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      {formatDate(deck.createdAt)}
-                    </p>
-                    <h3 className="mt-1 truncate pr-6 text-lg font-semibold text-foreground">
-                      {deck.title}
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {deck.concepts.length} concept{deck.concepts.length === 1 ? "" : "s"}
-                    </p>
-
-                    {progress && (
-                      <div className="mt-3">
-                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-                          <div
-                            className="h-full bg-accent transition-all"
-                            style={{ width: `${pct * 100}%` }}
-                          />
-                        </div>
-                        <p className="mt-1.5 text-xs text-muted-foreground">
-                          {masteredCount}/{deck.concepts.length} mastered
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleStudyNow(deck, isFullyMastered)}
-                        className="flex-1 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-4 py-2.5 text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_10px_32px_-6px_rgba(0,0,0,0.5)] active:scale-[0.98]"
-                      >
-                        {buttonLabel}
-                      </button>
-                      {/* The deck as material rather than as a test. Every concept
-                          already carries a full explanation paragraph that was only
-                          ever reachable one card at a time, after answering it. */}
-                      <button
-                        type="button"
-                        onClick={() => handleRead(deck)}
-                        className="rounded-full border border-border bg-foreground/5 px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.98]"
-                      >
-                        Read
-                      </button>
-                    </div>
-
-                    {/* When the paper is. Not a label - inside three weeks it lifts this
-                        deck's retention floor to 0.95, so every interval in it shortens
-                        and the home projection anchors to a real date. */}
-                    <DeckExamDate deck={deck} />
-
-                    {deck.pendingChunks && deck.pendingChunks.length > 0 && (
-                      <>
-                        {generatingDeckIds.has(deck.id) ? (
-                          <ContinuationProgress
-                            progress={jitProgress[deck.id]}
-                            onStop={() => handleStopGenerating(deck)}
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleGenerateNextSection(deck)}
-                            className="mt-2 rounded-full border border-border bg-transparent px-4 py-2.5 text-sm font-medium text-foreground transition-all duration-200 hover:bg-foreground/10 active:scale-[0.97]"
-                          >
-                            {/* "all" rather than "next": one tap now works through
-                                every remaining section instead of four. */}
-                            Generate all {deck.pendingChunks.length} remaining{" "}
-                            {deck.pendingChunks.length === 1 ? "section" : "sections"}
-                          </button>
-                        )}
-                        {jitErrors[deck.id] && (
-                          <p className="mt-2 text-xs text-muted-foreground">{jitErrors[deck.id]}</p>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
         </div>
       </section>
 

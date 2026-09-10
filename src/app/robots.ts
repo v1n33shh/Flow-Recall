@@ -14,9 +14,10 @@ export default function robots(): MetadataRoute.Robots {
       allow: "/",
       // App/authenticated surfaces carry no SEO value and waste crawl budget:
       // the API layer, the full-bleed study feed, the revision sheet (which
-      // renders nothing without a deck handoff in sessionStorage), and the
-      // account area.
-      disallow: ["/api/", "/study", "/revise", "/account"],
+      // renders nothing without a deck handoff in sessionStorage), the deck
+      // library (which renders an empty shelf for anyone but its owner, since
+      // decks live in that student's own localStorage), and the account area.
+      disallow: ["/api/", "/study", "/revise", "/library", "/map", "/account"],
     },
     sitemap: `${siteUrl}/sitemap.xml`,
     host: siteUrl,

@@ -285,7 +285,7 @@ export default function CompletionSlide({
           className="flex w-full gap-3"
         >
           <Link
-            href="/"
+            href="/library"
             className="flex-1 rounded-full border border-border bg-foreground/5 px-4 py-2.5 text-center text-sm font-medium text-foreground transition-all hover:bg-foreground/10 active:scale-[0.98]"
           >
             Library

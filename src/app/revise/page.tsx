@@ -22,7 +22,7 @@ export default function RevisePage() {
           Open a deck from your library and we&apos;ll lay its concepts out as a revision sheet.
         </p>
         <Link
-          href="/"
+          href="/library"
           className="mt-6 rounded-full bg-accent px-6 py-2.5 text-sm font-medium text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] transition-all duration-200 hover:bg-accent/90 active:scale-[0.98]"
         >
           Back to library

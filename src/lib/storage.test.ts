@@ -4,9 +4,16 @@ import {
   clearAllLocalUserData,
   DeckStorageFullError,
   deleteConcept,
+  deleteDeck,
   findDeckBySourceKey,
   getAllDeckRows,
+  getFactCursor,
+  getProgress,
+  getSavedDecks,
+  renameDeck,
+  restoreDeck,
   saveDeck,
+  setFactCursor,
   setStudyDeck,
   setStudySession,
   updateConcept,
@@ -341,5 +348,145 @@ describe("a device with no room left", () => {
     // bug behind advice that cannot help.
     expect(() => saveDeck("Osho", [])).toThrow(TypeError);
     expect(() => saveDeck("Osho", [])).not.toThrow(DeckStorageFullError);
+  });
+});
+
+// Renaming and undoing a deletion are the two writes the library screen makes that
+// can lose a student's work if they are wrong in the wrong direction: one can blank
+// a title, and the other is the only thing standing between a mis-tap and a deck.
+describe("renameDeck", () => {
+  beforeEach(() => {
+    installFakeStorage({ "flowrecall:savedDecks": JSON.stringify([deck()]) });
+  });
+
+  it("renames the deck and stamps updatedAt, so sync carries it", () => {
+    const before = getAllDeckRows()[0].updatedAt!;
+    renameDeck("deck-a", "Krebs Cycle — Lecture 4");
+
+    const row = getAllDeckRows()[0];
+    expect(row.title).toBe("Krebs Cycle — Lecture 4");
+    expect(row.updatedAt!).toBeGreaterThan(before);
+  });
+
+  it("changes nothing else about the deck", () => {
+    renameDeck("deck-a", "New name");
+
+    const row = getAllDeckRows()[0];
+    expect(row.concepts).toHaveLength(3);
+    expect(row.conceptMap).toHaveLength(3);
+    expect(row.id).toBe("deck-a");
+    expect(row.createdAt).toBe(1_000);
+  });
+
+  it("is a no-op for a deck that does not exist", () => {
+    const before = JSON.stringify(getAllDeckRows());
+    renameDeck("deck-missing", "New name");
+    expect(JSON.stringify(getAllDeckRows())).toBe(before);
+  });
+
+  // Writing to a tombstone would revive a row the student deleted on purpose, and
+  // last-write-wins would then push that revival to every other device.
+  it("refuses to touch a tombstone", () => {
+    deleteDeck("deck-a");
+    renameDeck("deck-a", "Back from the dead");
+
+    expect(getAllDeckRows()[0].title).toBe("Cardiac cycle");
+    expect(getAllDeckRows()[0].deletedAt).toBeDefined();
+  });
+});
+
+describe("restoreDeck", () => {
+  const progress = { deckId: "deck-a", masteredIds: ["c1", "c2"], queue: [] };
+
+  beforeEach(() => {
+    installFakeStorage({
+      "flowrecall:savedDecks": JSON.stringify([deck()]),
+      "flowrecall:progress:deck-a": JSON.stringify(progress),
+    });
+  });
+
+  it("brings back a deck the student just deleted, contents and all", () => {
+    const original = getSavedDecks()[0];
+    const savedProgress = getProgress("deck-a");
+    deleteDeck("deck-a");
+    expect(getSavedDecks()).toHaveLength(0);
+
+    restoreDeck(original, savedProgress);
+
+    const back = getSavedDecks();
+    expect(back).toHaveLength(1);
+    expect(back[0].title).toBe("Cardiac cycle");
+    // deleteDeck strips these, which is exactly why restore takes the whole deck.
+    expect(back[0].concepts).toHaveLength(3);
+    expect(back[0].conceptMap).toHaveLength(3);
+    expect(back[0].deletedAt).toBeUndefined();
+  });
+
+  it("brings the session back with it", () => {
+    const original = getSavedDecks()[0];
+    const savedProgress = getProgress("deck-a");
+    deleteDeck("deck-a");
+    expect(getProgress("deck-a")).toBeNull();
+
+    restoreDeck(original, savedProgress);
+
+    expect(getProgress("deck-a")?.masteredIds).toEqual(["c1", "c2"]);
+  });
+
+  // The tombstone may already have synced. A restore that did not out-stamp it
+  // would be undone by the next pull.
+  it("stamps a newer updatedAt than the tombstone it replaces", () => {
+    const original = getSavedDecks()[0];
+    deleteDeck("deck-a");
+    const tombstonedAt = getAllDeckRows()[0].updatedAt!;
+
+    restoreDeck(original, null);
+
+    expect(getAllDeckRows()[0].updatedAt!).toBeGreaterThanOrEqual(tombstonedAt);
+  });
+
+  it("restores a deck whose row has gone entirely, not just been tombstoned", () => {
+    const original = getSavedDecks()[0];
+    installFakeStorage({ "flowrecall:savedDecks": "[]" });
+
+    restoreDeck(original, null);
+
+    expect(getSavedDecks().map((d) => d.id)).toEqual(["deck-a"]);
+  });
+
+  it("does not write a progress key when there was no session to restore", () => {
+    const original = getSavedDecks()[0];
+    deleteDeck("deck-a");
+
+    restoreDeck(original, null);
+
+    expect(getProgress("deck-a")).toBeNull();
+  });
+});
+
+// The line under "Your Library" advances one step per visit, and this is the whole of
+// its state. Worth pinning because the failure is silent: a cursor that reads back as
+// NaN would freeze the header on one fact forever without anything appearing broken.
+describe("the brain-fact cursor", () => {
+  it("starts at zero on a device that has never shown one", () => {
+    installFakeStorage({});
+    expect(getFactCursor()).toBe(0);
+  });
+
+  it("round-trips", () => {
+    installFakeStorage({});
+    setFactCursor(7);
+    expect(getFactCursor()).toBe(7);
+  });
+
+  it("reads garbage as zero rather than as NaN", () => {
+    installFakeStorage({ "flowrecall:factCursor": "not a number" });
+    expect(getFactCursor()).toBe(0);
+  });
+
+  it("is swept with the rest of the account's local data", () => {
+    const store = installFakeStorage({ "flowrecall:factCursor": "3" });
+    clearAllLocalUserData();
+    expect(store.has("flowrecall:factCursor")).toBe(false);
   });
 });

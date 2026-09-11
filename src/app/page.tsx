@@ -3,12 +3,15 @@
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { getFactCursor, hasOwnDeck, setFactCursor, useSavedDecks } from "@/lib/storage";
+import { getFactCursor, setFactCursor, useSavedDecks } from "@/lib/storage";
 import { factAt, nextCursor } from "@/lib/brainFacts";
 import { useIsNative } from "@/lib/useIsNative";
+import { useHomeProjection } from "@/lib/useHomeProjection";
 import { asPercent, CURVE } from "@/lib/forgettingCurve";
 import LogoMark from "@/components/LogoMark";
 import FilmGrain from "@/components/FilmGrain";
+import ExamCountdown from "@/components/ExamCountdown";
+import HomeHeroNumber from "@/components/HomeHeroNumber";
 import MemoryOverview from "@/components/MemoryOverview";
 import RetentionCurve from "@/components/RetentionCurve";
 import TodaySession from "@/components/TodaySession";
@@ -219,60 +222,6 @@ function BrainFactSection() {
           {factAt(factCursor)}
         </motion.p>
       )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// WHAT'S INSIDE
-// ---------------------------------------------------------------------------
-
-/** The four tabs, for somebody who has not opened any of them yet.
- *
- * The tab bar gives a new student six words and no reason to tap any of them. This is
- * four rows of about eight words - an invitation, not a description, because every one of
- * those screens already describes itself the moment it opens.
- *
- * It disappears as soon as the student has a deck of their OWN: `hasOwnDeck` rather than
- * `decks.length === 0`, since a library holding only the starter deck we put there is
- * still an empty library from their side.
- */
-const INSIDE = [
-  { href: "/ingest", label: "Ingest", body: "A PDF becomes cards in seconds." },
-  { href: "/reader", label: "Reader", body: "EPUB and PDF, any word defined in place." },
-  { href: "/map", label: "Mindmap", body: "How a deck's concepts hold each other up." },
-  { href: "/library", label: "Library", body: "Everything you have made, searchable." },
-];
-
-function WhatsInsideSection() {
-  return (
-    <section
-      aria-labelledby="whats-inside-heading"
-      className="relative z-10 mx-auto w-full max-w-lg px-6 pb-4 pt-10"
-    >
-      <h2
-        id="whats-inside-heading"
-        className="text-center text-[11px] font-medium uppercase tracking-widest text-muted-foreground"
-      >
-        What&apos;s inside
-      </h2>
-      <div className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface/60 md:backdrop-blur-xl">
-        {INSIDE.map(({ href, label, body }) => (
-          <Link
-            key={href}
-            href={href}
-            className="flex items-baseline gap-3 px-4 py-3.5 transition-colors active:bg-foreground/5 sm:hover:bg-foreground/5"
-          >
-            <span className="w-16 shrink-0 text-sm font-semibold text-foreground">{label}</span>
-            <span className="min-w-0 flex-1 text-sm leading-snug text-muted-foreground">
-              {body}
-            </span>
-            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground/60" aria-hidden="true">
-              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </Link>
-        ))}
-      </div>
     </section>
   );
 }
@@ -910,6 +859,8 @@ function SiteFooter() {
 
 export default function Home() {
   const decks = useSavedDecks();
+  // One read, shared by the two components that render the number. See useHomeProjection.
+  const projection = useHomeProjection(decks);
   // Navbar.tsx hides itself entirely on native (MobileTabBar is its only
   // chrome) - the hero's min-h-[88vh]/justify-center centering was tuned for
   // the web layout, where that floating navbar above it justifies some
@@ -965,34 +916,47 @@ export default function Home() {
       <FilmGrain />
 
         <div className="relative z-10 flex w-full flex-col items-center">
+        {/* THE PITCH - WEB ONLY. A badge, a headline and a subhead are how you introduce
+            an app to a stranger; they are not how you open one somebody installed. On
+            native the screen now leads with a number instead (see HomeHeroNumber and
+            MemoryOverview), which is the readiness-dashboard shape: one figure, one
+            action, nothing else competing for the top of the screen. */}
+        {!isNative && (
+          <>
         <motion.p
-          initial={{ opacity: 0, y: -24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={SNAP}
-          className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground backdrop-blur-md"
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
-          Active recall, disguised as doomscrolling
-        </motion.p>
-        <motion.h1
-          initial={{ opacity: 0, y: 32 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...SNAP, delay: 0.05 }}
-          id="hero-heading"
-          className={`max-w-2xl pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] md:text-7xl ${
-            isNative ? "mt-12" : ""
-          }`}
-        >
-          Stop re-reading. Start recalling.
-        </motion.h1>
-        <motion.p
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ ...SNAP, delay: 0.1 }}
-          className="mt-5 w-full max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
-        >
-          Upload a PDF. Read it, map it, and review it right before you&apos;d forget.
-        </motion.p>
+              initial={{ opacity: 0, y: -24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={SNAP}
+              className="mb-5 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border border-border bg-foreground/5 px-3 py-1 sm:px-4 sm:py-1.5 text-[10px] sm:text-xs font-medium uppercase tracking-widest text-foreground backdrop-blur-md"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-pulse-accent shadow-[0_0_8px_2px_hsl(var(--pulse-accent)/0.6)]" />
+              Active recall, disguised as doomscrolling
+            </motion.p>
+            <motion.h1
+              initial={{ opacity: 0, y: 32 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...SNAP, delay: 0.05 }}
+              id="hero-heading"
+              className={`max-w-2xl pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] md:text-7xl ${
+                isNative ? "mt-12" : ""
+              }`}
+            >
+              Stop re-reading. Start recalling.
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ ...SNAP, delay: 0.1 }}
+              className="mt-5 w-full max-w-xl text-lg leading-relaxed text-muted-foreground [text-wrap:balance] sm:text-xl"
+            >
+              Upload a PDF. Read it, map it, and review it right before you&apos;d forget.
+            </motion.p>
+          </>
+        )}
+        {/* WEB ONLY. On native the primary action is now the hero's own button - study
+            what is in front of you - and Ingest is one tap away in the tab bar. A
+            returning student does not open a study app to be told to add more material. */}
+        {!isNative && (
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1024,27 +988,45 @@ export default function Home() {
             Start ingesting notes
           </Link>
         </motion.div>
+        )}
 
-        {/* The engine's answer to "what should I study?" - and, since the deck grid
-            moved to /library, the only thing on this screen that asks for a decision.
-            Renders nothing when signed out or when there is no memory to schedule
-            against yet. */}
-        <TodaySession decks={decks} />
+        {/* THE DASHBOARD, in the order a student actually needs it.
+            This used to run session-then-projection, both beneath a marketing hero, with
+            the best number in the app at 30px and fourth on the screen. Reordered on the
+            readiness-dashboard model: the stake, then the one figure, then the one action.
 
-        {/* What they will still know later, under what to do tonight. Deliberately
-            second: the session offer is the action, and this is the reason it is
-            worth taking - a number that only moves because they took it. */}
-        <MemoryOverview decks={decks} />
+            1. How long until the paper. Needs no account and no history - just a deck
+               with an exam date - so it is the only line here that can greet a student on
+               their first evening.
+            2. The number. MemoryOverview when the engine has a projection to make;
+               HomeHeroNumber's honest smaller version when it does not. Exactly one of
+               them renders - both read the same `hasProjection` so they cannot disagree. */}
+        <div className="mt-8 flex w-full flex-col items-center gap-6">
+          {/* NATIVE ONLY, both of them. On the web these sit under a marketing hero that
+              is already doing the job of a first impression, so a visitor got two heroes
+              stacked - a headline telling them what the app is, and a dashboard telling
+              them where they are in a deck they have never opened. The web keeps its
+              landing page; the dashboard is what replaces one on the installed app. */}
+          {isNative && (
+            <>
+              <ExamCountdown decks={decks} />
+              <HomeHeroNumber
+                decks={decks}
+                hasProjection={projection.hasProjection}
+                signedIn={projection.signedIn}
+              />
+            </>
+          )}
+          {/* Web and native alike: a signed-in student with history should see their
+              projection on either. */}
+          <MemoryOverview overview={projection.overview} show={projection.hasProjection} />
+          {/* 3. The action. Renders nothing signed out, which is why HomeHeroNumber
+                 carries its own button. */}
+          <TodaySession decks={decks} />
+        </div>
 
         </div>
       </section>
-
-      {/* ========================= WHAT'S INSIDE ======================= */}
-      {/* Native only, and only until they have made something of their own. The web
-          already answers "what is in here" at length, three sections down - showing this
-          above that would be saying it twice, which is the thing this page was just cut
-          in half to stop doing. */}
-      {isNative && !hasOwnDeck(decks) && <WhatsInsideSection />}
 
       {/* ============================ THE FACT ========================= */}
       {/* The one piece of the page below the hero that native keeps: it is a

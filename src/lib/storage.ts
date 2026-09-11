@@ -1,11 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { Concept, ConceptEdge, Deck, QueueItem, StudyProgress } from "./types";
-import {
-  buildStarterDeck,
-  isStarterDeck,
-  STARTER_DECK_ID,
-  STARTER_SEEDED_KEY,
-} from "./starterDeck";
+import { buildStarterDeck, STARTER_DECK_ID, STARTER_SEEDED_KEY } from "./starterDeck";
 
 const STUDY_DECK_STORAGE_KEY = "flowrecall:studyDeck";
 const STUDY_SESSION_STORAGE_KEY = "flowrecall:studySession";
@@ -281,15 +276,6 @@ export function seedStarterDeck(now: number = Date.now()): void {
     // Deliberately silent. Nothing the student did failed, and nothing they can do fixes
     // it - the app is fully usable without a starter deck.
   }
-}
-
-/** Whether the student has made anything of their own yet.
- *
- * The home screen's "what's inside" strip asks this rather than `decks.length === 0`,
- * which stopped being the right question the moment a starter deck shipped: a library
- * holding only the deck we put there is still an empty library from the student's side. */
-export function hasOwnDeck(decks: readonly Deck[]): boolean {
-  return decks.some((deck) => !isStarterDeck(deck));
 }
 
 /** Persists a freshly generated deck so it survives a page refresh. Newest

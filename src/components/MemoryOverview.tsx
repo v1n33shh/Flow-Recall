@@ -1,10 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { useSession } from "next-auth/react";
-import type { Deck } from "@/lib/types";
-import { soonestExamDate } from "@/lib/recallModel";
-import { useMemoryOverview } from "@/lib/recallStorage";
+import type { MemoryOverview } from "@/lib/recallStorage";
 import { MASTERY_LABEL } from "@/lib/masteryCopy";
 
 /** What you will still know later - the number no other flashcard app can print.
@@ -22,23 +19,22 @@ import { MASTERY_LABEL } from "@/lib/masteryCopy";
  * it records nothing; with a library nobody has answered yet, "0 of 94" is
  * arithmetically true and reads as an accusation, so the block waits. */
 
-export default function MemoryOverview({ decks }: { decks: readonly Deck[] }) {
-  const { data: session } = useSession();
-  const userId = session?.user?.id;
+export default function MemoryOverview({
+  overview,
+  show,
+}: {
+  overview: MemoryOverview;
+  /** `hasProjection` from useHomeProjection. The decision lives there rather than here so
+   * this panel and HomeHeroNumber cannot both render, or both decline to. */
+  show: boolean;
+}) {
   const reduceMotion = useReducedMotion();
-
-  // Resolved without reading the clock - a component may not - so "is that exam still
-  // ahead" is decided inside the hook, where it can be.
-  const { overview, loading } = useMemoryOverview(userId, soonestExamDate(decks));
   // Both the horizon and its label come from the read rather than from `Date.now()`
   // here, so the caption can never name a different day than the number was computed
   // for.
   const { summary, expected, total, horizonDays: days, anchoredToExam } = overview;
 
-  // `met` is a unit with no credited success, so this is "has anything actually
-  // been answered" rather than "does a library exist".
-  const studied = summary.units - summary.met;
-  if (!userId || loading || total === 0 || studied === 0) return null;
+  if (!show) return null;
 
   const rows = [
     { key: "solid", label: MASTERY_LABEL.solid, value: summary.solid },
@@ -54,33 +50,48 @@ export default function MemoryOverview({ decks }: { decks: readonly Deck[] }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 280, damping: 26 }}
       aria-labelledby="memory-heading"
-      className="mt-6 w-full max-w-4xl rounded-2xl border border-border bg-surface/60 p-5 text-left shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] md:backdrop-blur-xl"
+      // No card chrome and centred, because this is now the FIRST thing on the native home
+      // rather than a tile partway down it. A border around the hero number would frame
+      // the one figure the screen exists to show as though it were a widget.
+      className="w-full max-w-sm text-center"
     >
       <p
         id="memory-heading"
-        className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+        className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground"
       >
         {anchoredToExam
           ? `On exam day (${days} ${days === 1 ? "day" : "days"})`
           : `In ${days} ${days === 1 ? "day" : "days"}`}
       </p>
 
-      <p className="mt-1.5 text-3xl font-bold tracking-tight tabular-nums text-foreground">
-        {Math.round(expected)}{" "}
-        <span className="text-xl font-semibold text-muted-foreground">of {total}</span>
+      {/* The best number this app has, finally at the size it deserves. It was 30px,
+          fourth from the top, under a marketing headline - while the readiness dashboards
+          this borrows from put their one figure at roughly 72pt as the first thing on
+          screen, readable at arm's length. */}
+      <p className="mt-3 font-sans text-6xl font-bold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
+        {Math.round(expected)}
       </p>
-      <p className="mt-0.5 text-sm text-muted-foreground">
-        concepts you&apos;ll still recall
+      <p className="mt-2 text-sm text-muted-foreground">
+        of {total} concepts you&apos;ll still recall
       </p>
       {/* Says what the number IS, and it is not a forecast of a student who keeps
           studying - it is what happens if they stop. Getting this caption wrong
           would make an honest projection into a quiet promise. */}
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
         If you don&apos;t review between now and then. Studying moves it up.
       </p>
+      {/* What the number is made of, pointed at what to do about it. The counts below say
+          six are fading; without this they are trivia, and with it they are the reason the
+          session underneath exists. */}
+      {summary.fading > 0 && (
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-foreground/80">
+          {summary.fading} {summary.fading === 1 ? "is" : "are"} slipping — that is what
+          tonight is for.
+        </p>
+      )}
 
       {rows.length > 0 && (
-        <dl className="mt-4 flex flex-wrap items-baseline gap-x-5 gap-y-2 border-t border-border pt-3">
+        <dl className="mt-5 flex flex-wrap items-baseline justify-center gap-x-5 gap-y-2 border-t border-border pt-4">
           {rows.map((row) => (
             <div key={row.key} className="flex items-baseline gap-1.5">
               <dt className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">

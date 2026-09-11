@@ -1123,7 +1123,16 @@ export const PROJECTION_FALLBACK_DAYS = 7;
 export type MemoryOverview = {
   summary: DeckSummary;
   expected: number;
+  /** Every concept in the live library, studied or not. */
   total: number;
+  /** Concepts the engine has actually been given something to project FROM.
+   *
+   * The denominator that matters, and the reason this field exists. The home screen used
+   * `total`, so a student with 351 concepts who had answered 20 of them read "5 of 351" -
+   * their recall measured against 330 concepts they had never been shown. That is not a
+   * prediction, it is a library count in a forecast's clothes, and it is the most
+   * demoralising thing the app could have led with. */
+  studied: number;
   /** The instant projected to, and how far ahead that was when the number was
    * computed. Both handed back so the UI labels the projection from the same read
    * that produced it - recomputing `Date.now()` at render time is how a caption
@@ -1140,6 +1149,7 @@ const EMPTY_OVERVIEW: MemoryOverview = {
   summary: { units: 0, solid: 0, fading: 0, holding: 0, familiar: 0, met: 0, resting: 0 },
   expected: 0,
   total: 0,
+  studied: 0,
   atMs: 0,
   horizonDays: PROJECTION_FALLBACK_DAYS,
   anchoredToExam: false,
@@ -1165,11 +1175,12 @@ export async function readMemoryOverview(
   const units = allUnits.filter((unit) => live.has(unit.sourceDeckId));
 
   const { summary } = masteryOver(units, memories, reviews, () => true);
-  const { expected, total } = projectedRecall(units, memories, atMs);
+  const { expected, total, studied } = projectedRecall(units, memories, atMs);
   return {
     summary,
     expected,
     total,
+    studied,
     atMs,
     // Calendar days, both ends snapped to local midnight, exactly as daysUntilExam
     // computes them. Measuring elapsed hours from `now` instead made this disagree with

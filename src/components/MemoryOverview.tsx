@@ -32,7 +32,7 @@ export default function MemoryOverview({
   // Both the horizon and its label come from the read rather than from `Date.now()`
   // here, so the caption can never name a different day than the number was computed
   // for.
-  const { summary, expected, total, horizonDays: days, anchoredToExam } = overview;
+  const { summary, expected, studied, horizonDays: days, anchoredToExam } = overview;
 
   if (!show) return null;
 
@@ -53,45 +53,36 @@ export default function MemoryOverview({
       // No card chrome and centred, because this is now the FIRST thing on the native home
       // rather than a tile partway down it. A border around the hero number would frame
       // the one figure the screen exists to show as though it were a widget.
-      className="w-full max-w-sm text-center"
+      className="w-full max-w-xl text-left"
     >
+      {/* DEMOTED, on purpose. This was the 72pt hero for two rebuilds and it is better as
+          a sentence: the statement above already says what tonight is, and a second
+          competing number was half of why the screen read as a readout.
+
+          The denominator is `studied`, not `total`, and that is a correctness fix rather
+          than a design one. projectedRecall only sums units it has a memory for, but this
+          used to divide against every concept in the library - so a student with 351
+          concepts who had answered 20 read "5 of 351", their recall measured against 330
+          concepts they had never been shown. That is not a prediction. */}
       <p
         id="memory-heading"
-        className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground"
+        className="text-sm leading-relaxed text-muted-foreground"
       >
+        Of the{" "}
+        <span className="font-medium tabular-nums text-foreground">{studied}</span> you have
+        studied, you will still hold{" "}
+        <span className="font-medium tabular-nums text-foreground">{Math.round(expected)}</span>{" "}
         {anchoredToExam
-          ? `On exam day (${days} ${days === 1 ? "day" : "days"})`
-          : `In ${days} ${days === 1 ? "day" : "days"}`}
+          ? `on exam day, ${days} ${days === 1 ? "day" : "days"} from now`
+          : `in ${days} ${days === 1 ? "day" : "days"}`}
+        {" — "}
+        {/* Says what the number IS: not a forecast of a student who keeps studying, but
+            what happens if they stop. Without it an honest projection reads as a promise. */}
+        if you review nothing between now and then.
       </p>
-
-      {/* The best number this app has, finally at the size it deserves. It was 30px,
-          fourth from the top, under a marketing headline - while the readiness dashboards
-          this borrows from put their one figure at roughly 72pt as the first thing on
-          screen, readable at arm's length. */}
-      <p className="mt-3 font-sans text-6xl font-semibold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
-        {Math.round(expected)}
-      </p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        of {total} concepts you&apos;ll still recall
-      </p>
-      {/* Says what the number IS, and it is not a forecast of a student who keeps
-          studying - it is what happens if they stop. Getting this caption wrong
-          would make an honest projection into a quiet promise. */}
-      <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-        If you don&apos;t review between now and then. Studying moves it up.
-      </p>
-      {/* What the number is made of, pointed at what to do about it. The counts below say
-          six are fading; without this they are trivia, and with it they are the reason the
-          session underneath exists. */}
-      {summary.fading > 0 && (
-        <p className="mt-1 text-[11px] font-medium leading-relaxed text-foreground/80">
-          {summary.fading} {summary.fading === 1 ? "is" : "are"} fading — that is what
-          tonight is for.
-        </p>
-      )}
 
       {rows.length > 0 && (
-        <dl className="mt-5 flex flex-wrap items-baseline justify-center gap-x-5 gap-y-2 border-t border-border pt-4">
+        <dl className="mt-4 flex flex-wrap items-baseline gap-x-5 gap-y-2">
           {rows.map((row) => (
             <div key={row.key} className="flex items-baseline gap-1.5">
               <dt className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">

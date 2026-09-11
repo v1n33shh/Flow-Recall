@@ -994,26 +994,6 @@ export default function Home() {
         </motion.div>
         )}
 
-        {/* THE DASHBOARD, in the order a student actually needs it.
-            This used to run session-then-projection, both beneath a marketing hero, with
-            the best number in the app at 30px and fourth on the screen. Reordered on the
-            readiness-dashboard model: the stake, then the one figure, then the one action.
-
-            1. How long until the paper. Needs no account and no history - just a deck
-               with an exam date - so it is the only line here that can greet a student on
-               their first evening.
-            2. The number. MemoryOverview when the engine has a projection to make;
-               HomeHeroNumber's honest smaller version when it does not. Exactly one of
-               them renders - both read the same `hasProjection` so they cannot disagree. */}
-        {/* THE APP'S ONLY FACE ON NATIVE.
-            Navbar returns null here, the footer is web-only and MobileTabBar carries no
-            brand, so a signed-in student saw the FlowRecall mark precisely nowhere - and
-            cutting the badge and headline for the dashboard removed the last accidental
-            trace of it. This is not a new pattern: Library, Mindmap, Reader and Ingest all
-            open with a top-left title, and Home was the only tab without one.
-
-            The chip is Navbar's, verbatim, so it reads as the same lockup rather than a
-            second one - minus the hover transforms, since nothing here is a link. */}
         {isNative && (
           <div className="mb-10 flex w-full items-center gap-2 self-start">
             <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[28%] bg-gradient-to-br from-zinc-800 to-zinc-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
@@ -1024,32 +1004,37 @@ export default function Home() {
           </div>
         )}
 
-        <div className="mt-8 flex w-full flex-col items-center gap-6">
-          {/* NATIVE ONLY, both of them. On the web these sit under a marketing hero that
-              is already doing the job of a first impression, so a visitor got two heroes
-              stacked - a headline telling them what the app is, and a dashboard telling
-              them where they are in a deck they have never opened. The web keeps its
-              landing page; the dashboard is what replaces one on the installed app. */}
-          {isNative && (
-            <>
-              {/* Only when there is no projection. MemoryOverview's own eyebrow already
-                  names the exam ("On exam day (11 days)") when it renders, so showing both
-                  stacked two countdowns for the same date - which is how I found that they
-                  were computing it differently and disagreeing by a day. */}
-              {!projection.hasProjection && <ExamCountdown decks={decks} />}
-              <HomeHeroNumber
-                decks={decks}
-                hasProjection={projection.hasProjection}
-                signedIn={projection.signedIn}
-              />
-            </>
-          )}
-          {/* Web and native alike: a signed-in student with history should see their
-              projection on either. */}
-          <MemoryOverview overview={projection.overview} show={projection.hasProjection} />
-          {/* 3. The action. Renders nothing signed out, which is why HomeHeroNumber
-                 carries its own button. */}
+        {/* THE SCREEN, in reading order.
+
+            Attempt five, and the first that does not lead with a number. Four rebuilds led
+            with either a marketing headline or a 72pt figure, and both read as a readout
+            nobody wanted to look at. This opens with a SENTENCE about tonight, in
+            mid-weight type, because the warmth in a screen like this comes from weight and
+            spacing cadence rather than from adding things to it.
+
+            1. The exam, if there is one, and only when the projection is not already
+               naming it.
+            2. TodaySession: the statement, the button, and why the session looks like it
+               does. This is the screen now.
+            3. The projection, demoted from hero to one quiet line.
+            4. HomeHeroNumber, only for the signed-out ladder, where there is no session
+               to make a statement out of. */}
+        <div className="mt-6 flex w-full flex-col items-start gap-8">
+          {/* Native only: the web has a marketing hero above this already, and stacking a
+              dashboard under it gave a visitor two first impressions at once. */}
+          {isNative && !projection.hasProjection && <ExamCountdown decks={decks} />}
+
           <TodaySession decks={decks} />
+
+          <MemoryOverview overview={projection.overview} show={projection.hasProjection} />
+
+          {isNative && (
+            <HomeHeroNumber
+              decks={decks}
+              hasProjection={projection.hasProjection}
+              signedIn={projection.signedIn}
+            />
+          )}
         </div>
 
         </div>

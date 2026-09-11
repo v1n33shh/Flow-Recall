@@ -568,7 +568,7 @@ export function projectedRecall(
   units: readonly KnowledgeUnit[],
   memories: readonly MemoryRecord[],
   atMs: number,
-): { expected: number; total: number } {
+): { expected: number; total: number; studied: number } {
   const byUnit = new Map<string, MemoryRecord[]>();
   for (const memory of memories) {
     const list = byUnit.get(memory.unitId);
@@ -577,14 +577,18 @@ export function projectedRecall(
   }
 
   let expected = 0;
+  let studied = 0;
   for (const unit of units) {
     const rows = byUnit.get(unit.id);
+    // A unit with no memory has never been asked, so it contributes nothing to the
+    // forecast. It must not contribute to the DENOMINATOR either - see `studied`.
     if (!rows || rows.length === 0) continue;
+    studied += 1;
     const sum = rows.reduce((total, row) => total + retrievabilityAt(row, atMs), 0);
     expected += sum / rows.length;
   }
 
-  return { expected, total: units.length };
+  return { expected, total: units.length, studied };
 }
 
 /** Sorted worst-first: whatever is furthest below its own retention target

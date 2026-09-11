@@ -236,13 +236,6 @@ export default function StreakModal({
             transition={{ type: "tween", duration: 0.15, ease: "easeOut" }}
             className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-black p-6 sm:p-8 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_80px_-20px_rgba(0,0,0,0.9)]"
           >
-            {/* Streak Freeze pill - paywall bait. Static count (0 for free). */}
-            <div className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-medium text-zinc-300">
-              <span aria-hidden="true">❄️</span>
-              <span className="tabular-nums">0</span>
-              <span className="text-zinc-500">Freezes</span>
-            </div>
-
             <div className="flex flex-col items-center">
               <BreathingFlame streak={streakValue} />
 
@@ -268,13 +261,10 @@ export default function StreakModal({
                 </p>
               )}
 
-              <Link
-                href="/pricing"
-                onClick={onClose}
-                className="mt-4 block text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
-              >
-                Protect your flame. Unlock Streak Freezes with Pro →
-              </Link>
+              <p className="mt-4 text-[11px] leading-relaxed text-zinc-500">
+                A streak is not the point. Coming back on the days the scheduler picks is
+                what turns a run of answers into a memory.
+              </p>
 
               <Link
                 href="/ingest"

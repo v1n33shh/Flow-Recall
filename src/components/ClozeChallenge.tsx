@@ -224,6 +224,7 @@ export default function ClozeChallenge({ concept, unitId, onAnswered }: ClozeCha
 
       {resolved && (
         <ConceptDebrief
+          path="cloze"
           concept={concept}
           unitId={unitId}
           correct={correct}

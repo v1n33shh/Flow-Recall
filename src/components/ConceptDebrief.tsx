@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 import type { Concept } from "@/lib/types";
-import type { Confidence } from "@/lib/recallModel";
+import type { Confidence, RetrievalPath } from "@/lib/recallModel";
+import { RETRIEVAL_LABEL } from "@/lib/retrievalCopy";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
 import ConceptStar from "./ConceptStar";
@@ -32,10 +33,14 @@ export default function ConceptDebrief({
   unitId,
   correct,
   note,
+  path,
   onConfidence,
   showAnswer = true,
 }: {
   concept: Concept;
+  /** Which retrieval format this answer came from, for the mechanism eyebrow. Optional:
+   * a caller that does not know renders no label rather than a wrong one. */
+  path?: RetrievalPath;
   /** `${deckId}::${conceptId}`, for storing questions against this concept. */
   unitId: string;
   correct: boolean;
@@ -75,6 +80,15 @@ export default function ConceptDebrief({
           correct ? "border-success/30 bg-success/10" : "border-danger/30 bg-danger/10"
         }`}
       >
+        {/* What kind of memory work that was. Two words, mono, the same "citation not a
+            headline" idiom the home page's Effect eyebrow uses - see retrievalCopy.ts for
+            why it is a label and not a sentence. Achromatic on purpose: the verdict below
+            owns the one colour this card is allowed. */}
+        {path && (
+          <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            {RETRIEVAL_LABEL[path]}
+          </p>
+        )}
         <p className={`font-medium ${correct ? "text-success" : "text-danger"}`}>
           {correct ? "Correct!" : "Not quite"}
         </p>

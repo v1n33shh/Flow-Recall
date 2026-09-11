@@ -217,6 +217,7 @@ export default function SwipeChallenge({ concept, unitId, onAnswered, ref }: Swi
         // `outcome === true` rather than `outcome`: `resolved` is derived from a
         // null check, which TypeScript cannot use to narrow `boolean | null` here.
         <ConceptDebrief
+          path="swipe"
           concept={concept}
           unitId={unitId}
           correct={outcome === true}

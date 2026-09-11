@@ -410,6 +410,11 @@ export type DeckMastery = {
   units: Map<string, KnowledgeUnit>;
   /** unitIds with nothing currently due - `resting`, per unit rather than counted. */
   resting: Set<string>;
+  /** When each concept next comes back: the SOONEST dueAt across its formats, since a
+   * concept the student will meet again on Tuesday in one format is a concept they meet
+   * again on Tuesday. Absent for a unit with no memory yet - never answered, so there is
+   * no schedule to report rather than a schedule of zero. Feeds `returnSchedule`. */
+  dueByUnit: Map<string, number>;
 };
 
 /** The one pass, over whichever units the caller cares about.
@@ -450,6 +455,7 @@ export function masteryOver(
   };
   const byUnit = new Map<string, MasteryEvidence>();
   const resting = new Set<string>();
+  const dueByUnit = new Map<string, number>();
 
   for (const unitId of units.keys()) {
     const unitMemories = memoriesByUnit.get(unitId) ?? [];
@@ -460,9 +466,14 @@ export function masteryOver(
       summary.resting += 1;
       resting.add(unitId);
     }
+    // Computed in the pass that already has this unit's memories in hand, rather than in
+    // a second one: this loop is the only place they are grouped.
+    if (unitMemories.length > 0) {
+      dueByUnit.set(unitId, Math.min(...unitMemories.map((m) => m.dueAt)));
+    }
   }
 
-  return { summary, byUnit, units, resting };
+  return { summary, byUnit, units, resting, dueByUnit };
 }
 
 // ── Due selection ────────────────────────────────────────────────────────────

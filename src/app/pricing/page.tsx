@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useEffect, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Script from "next/script";
@@ -8,6 +8,7 @@ import { Capacitor } from "@capacitor/core";
 import { useIsNative } from "@/lib/useIsNative";
 import { vibrateTap } from "@/lib/haptics";
 import { FREE_DECKS_PER_MONTH, FREE_LOOKUPS_PER_MONTH } from "@/lib/freeQuota";
+import { launchOfferActive, launchOfferEndLabel, LAUNCH_OFFER_WAS } from "@/lib/launchOffer";
 
 // Read from the constants rather than written out, because this copy was wrong
 // for a fortnight after the launch tranche and nobody noticed: it still promised
@@ -20,17 +21,27 @@ const FREE_FEATURES = [
   `${FREE_DECKS_PER_MONTH} decks a month, free`,
   `${FREE_LOOKUPS_PER_MONTH} AI lookups a month — definitions, ask-anything, concept maps`,
   "Qwen3 27B — fast, capable free model",
-  "AI-generated active-recall study feed",
-  "Daily streak tracking",
-  "Save decks to your library",
+  "AI-generated active-recall study feed, scheduled by FSRS-6",
+  // The Reader and the Mindmap were missing from this page entirely, which meant two of
+  // the three things this app has that Anki does not were invisible at the point of sale.
+  // They belong on the FREE side: they are a better argument for the free tier than a
+  // deck count is, and they cost nothing to offer.
+  "Reader for EPUB, PDF and pasted text — define any word in place",
+  "Concept Mindmap and revision sheet for every deck",
+  "Deck library with search, and a daily streak",
 ];
 
+// Every line here has to be something an account actually receives. "Streak Freezes" sat
+// in this list with no database column, no route and no logic anywhere - the modal that
+// advertised it rendered a hardcoded 0, so a student who paid for it got a counter that
+// never moved. Removed rather than built; see the plan. Do not add a line here before the
+// thing it names exists.
 const PRO_FEATURES = [
   "Everything in Free",
   "Unlimited deck generation",
   "Claude Haiku — smarter AI, optimised for deep material",
   "Infinite Recall Mode — AI generates new angles forever",
-  "Streak Freezes — protect your flame on off-days",
+  "Unlimited AI lookups — definitions, ask-anything, concept maps",
 ];
 
 function Check() {
@@ -66,6 +77,10 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isYearly, setIsYearly] = useState(true);
+  // Read once at mount rather than on every render: the answer cannot change while the
+  // page is open, and calling the clock during render is impure (react-hooks/purity is
+  // an error here).
+  const offerActive = useMemo(() => launchOfferActive(), []);
   // Tri-state (null until Capacitor answers), not the default `false`, for the
   // reason spelled out at length in account/page.tsx: defaulting to false means
   // the WEB branch mounts on native for a beat. There it bounced the tab to
@@ -249,9 +264,13 @@ export default function PricingPage() {
           </span>
           <h2 className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</h2>
           <div className="mt-3 flex flex-col gap-0.5">
-            <span className="text-xs font-medium text-muted-foreground line-through">
-              {isYearly ? "₹3588/yr" : "₹499/mo"}
-            </span>
+            {/* Only while the offer actually holds - see launchOffer.ts. Shown forever,
+                a "was" price is a decoration pretending to be a discount. */}
+            {offerActive && (
+              <span className="text-xs font-medium text-muted-foreground line-through">
+                {isYearly ? `${LAUNCH_OFFER_WAS.yearly}/yr` : `${LAUNCH_OFFER_WAS.monthly}/mo`}
+              </span>
+            )}
             <div className="flex items-baseline gap-1">
               <span className="bg-gradient-to-b from-foreground to-muted-foreground bg-clip-text text-4xl font-semibold text-transparent">
                 {isYearly ? "₹2499" : "₹299"}
@@ -260,6 +279,13 @@ export default function PricingPage() {
                 {isYearly ? "/yr" : "/mo"}
               </span>
             </div>
+            {/* Names the offer and its deadline. A struck price with neither is the thing
+                India's 2023 dark-pattern guidance calls fabricated reference pricing. */}
+            {offerActive && (
+              <span className="text-[11px] font-medium text-muted-foreground">
+                Launch price · until {launchOfferEndLabel()}
+              </span>
+            )}
             {isYearly && (
               <p className="mt-1 text-xs font-medium text-accent">
                 That&apos;s just ₹208/month

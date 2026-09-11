@@ -8,6 +8,7 @@ import { appendToNote, definitionAsText, NOTE_MAX_LENGTH } from "@/lib/definitio
 import type { SelectionAnchor } from "./selection";
 import { useIsTouchDevice } from "./useIsTouchDevice";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+import { FREE_LOOKUPS_PER_MONTH } from "@/lib/freeQuota";
 
 // PERFORMANCE CONTRACT (matches StreakModal/StudyFeed): entrance/exit only
 // ever animates transform + opacity. backdrop-blur is static.
@@ -415,7 +416,7 @@ function DefinitionContent({
                 onClick={openNoteEditor}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-reader-highlight/40 bg-reader-highlight/10 px-2.5 py-2 text-[13px] font-medium text-reader-highlight transition-colors hover:bg-reader-highlight/20 active:scale-[0.97]"
               >
-                <span aria-hidden="true">📝</span> {savedNote ? "Edit Note" : "+ Note"}
+                <span aria-hidden="true">✎</span> {savedNote ? "Edit Note" : "+ Note"}
               </button>
             )}
             {isHighlighted && (
@@ -571,12 +572,18 @@ function DefinitionContent({
             className="flex flex-col items-center gap-3 py-1 text-center"
           >
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-b from-accent/25 to-accent/10 ring-1 ring-inset ring-accent/40 shadow-[0_0_24px_-4px_hsl(var(--accent)/0.5)]">
-              <span className="text-2xl" aria-hidden="true">
-                🔒
-              </span>
+              {/* Drawn, not borrowed from the OS. A colour emoji here is the one thing
+                  globals.css's first line forbids, and it rendered differently on every
+                  platform besides. */}
+              <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-accent" aria-hidden="true">
+                <rect x="4" y="10.5" width="16" height="10" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+                <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
             </div>
             <div>
-              <p className="text-[14px] font-semibold text-foreground">You&rsquo;ve used your 20 free AI lookups</p>
+              <p className="text-[14px] font-semibold text-foreground">
+                You&rsquo;ve used your {FREE_LOOKUPS_PER_MONTH} free AI lookups this month
+              </p>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Upgrade to Pro for infinite definitions - never break your reading flow again.
               </p>
@@ -627,7 +634,7 @@ function DefinitionContent({
                   disabled={savingNote}
                   className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-accent px-3 py-2 text-[13px] font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_6px_20px_-4px_rgba(0,0,0,0.45),0_0_30px_-8px_hsl(var(--reader-highlight)/0.7)] transition-all duration-150 hover:bg-accent/90 active:scale-[0.97] disabled:opacity-70"
                 >
-                  <span aria-hidden="true">📝</span>{" "}
+                  <span aria-hidden="true">✎</span>{" "}
                   {savingNote ? "Saving..." : savedNote ? "Add to Note" : "Save as Note"}
                 </button>
               )}

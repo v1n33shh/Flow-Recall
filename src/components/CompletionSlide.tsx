@@ -6,7 +6,8 @@ import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
 import { fireCelebration } from "@/lib/confetti";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
-import { summariseDeck, type DeckSummary } from "@/lib/recallStorage";
+import { deckMastery, type DeckSummary } from "@/lib/recallStorage";
+import { returnSchedule, type ReturnSchedule } from "@/lib/returnSchedule";
 
 // Mirrors the tier thresholds in StreakCounter / StreakModal so all
 // three components stay in visual sync.
@@ -91,6 +92,9 @@ export default function CompletionSlide({
   // reaches this slide rather than in an effect - it costs two IndexedDB reads
   // and there is no reason to pay them for a session nobody finishes.
   const [memoryOfDeck, setMemoryOfDeck] = useState<DeckSummary | null>(null);
+  // When the concepts in this deck come back. The scheduler has always computed a due
+  // date for every card at the moment it was answered and nothing ever showed one.
+  const [returning, setReturning] = useState<ReturnSchedule | null>(null);
   const hasCelebrated = useRef(false);
 
   const accuracy = total > 0 ? Math.round((cleared / total) * 100) : 0;
@@ -110,9 +114,14 @@ export default function CompletionSlide({
     if (userId && deckId) {
       // Best-effort: the celebration stands on its own if the engine has
       // nothing to say yet, or fails to answer.
-      summariseDeck(userId, deckId)
-        .then(setMemoryOfDeck)
-        .catch((error) => console.error("summariseDeck failed", error));
+      // deckMastery rather than summariseDeck: same three reads, and it also carries the
+      // per-concept due dates the return schedule is built from.
+      deckMastery(userId, deckId)
+        .then((mastery) => {
+          setMemoryOfDeck(mastery.summary);
+          setReturning(returnSchedule(mastery.dueByUnit.values()));
+        })
+        .catch((error) => console.error("deckMastery failed", error));
     }
   }
 
@@ -212,6 +221,23 @@ export default function CompletionSlide({
             </div>
 
             <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              {/* When they come back. Put here rather than after every answer: a due date
+                  repeated on all forty cards of a session is noise, but the same forty
+                  dates summarised once, at the end, is the spacing effect stated on the
+                  student's own material. */}
+              {returning && returning.total > 0 && (
+                <span className="mb-2 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+                  Back:{" "}
+                  {[
+                    returning.today > 0 ? `${returning.today} today` : null,
+                    returning.tomorrow > 0 ? `${returning.tomorrow} tomorrow` : null,
+                    returning.thisWeek > 0 ? `${returning.thisWeek} this week` : null,
+                    returning.later > 0 ? `${returning.later} later` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              )}
               {memoryOfDeck.resting > 0
                 ? `${memoryOfDeck.resting} ${memoryOfDeck.resting === 1 ? "concept is" : "concepts are"} resting — you have ${memoryOfDeck.resting === 1 ? "it" : "these"} solidly, so reviewing ${memoryOfDeck.resting === 1 ? "it" : "them"} tonight would have bought you almost nothing.`
                 : "A concept turns solid once you've answered it two different ways, including once after a week away. That gap is the part that proves it stuck."}
@@ -263,7 +289,7 @@ export default function CompletionSlide({
             <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-accent/15 blur-2xl" />
             <p className="text-xs font-semibold uppercase tracking-widest text-accent">Pro</p>
             <p className="mt-1.5 text-sm font-medium text-foreground leading-snug">
-              Unlock unlimited decks, Infinite Recall and Streak Freezes.
+              Unlock unlimited decks, smarter models and Infinite Recall.
             </p>
             <Link
               href="/pricing"

@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import type { Deck } from "@/lib/types";
 import { soonestExamDate } from "@/lib/recallModel";
 import { useMemoryOverview } from "@/lib/recallStorage";
+import { MASTERY_LABEL } from "@/lib/masteryCopy";
 
 /** What you will still know later - the number no other flashcard app can print.
  *
@@ -40,9 +41,11 @@ export default function MemoryOverview({ decks }: { decks: readonly Deck[] }) {
   if (!userId || loading || total === 0 || studied === 0) return null;
 
   const rows = [
-    { key: "solid", label: "Solid", value: summary.solid },
-    { key: "holding", label: "Holding", value: summary.holding },
-    { key: "fading", label: "Slipping", value: summary.fading },
+    { key: "solid", label: MASTERY_LABEL.solid, value: summary.solid },
+    { key: "holding", label: MASTERY_LABEL.holding, value: summary.holding },
+    // Was "Slipping" here and "Fading" on every other screen - the same state under two
+    // names, which a student had no way to connect. See masteryCopy.ts.
+    { key: "fading", label: MASTERY_LABEL.fading, value: summary.fading },
   ].filter((row) => row.value > 0);
 
   return (

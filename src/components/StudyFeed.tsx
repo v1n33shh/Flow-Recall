@@ -152,8 +152,12 @@ export default function StudyFeed({
   // Fire once when the user actually opens a study session. The server
   // increments the streak if this is a new calendar day, and we refresh
   // the session so the navbar flame updates instantly without a reload.
-  const { data: session, update: updateSession } = useSession();
+  const { data: session, status: authStatus, update: updateSession } = useSession();
   const isPro = session?.user?.plan === "PRO";
+  // Signed out is not the same as signed-in-and-free, and the upsell used to treat them
+  // identically: it showed "Upgrade to Pro" to someone with no account, pointing them at
+  // a checkout they cannot complete. The feature needs an account before it needs a plan.
+  const isSignedOut = authStatus === "unauthenticated";
   // Every recall-engine record is scoped to the account, so two people signing
   // in on one phone can never merge learning histories - the wart the reader
   // library has. Undefined while the session loads or when signed out, in which
@@ -628,7 +632,7 @@ export default function StudyFeed({
               <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-accent/20 blur-3xl" />
               <div className="relative">
                 <span className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-accent">
-                  Pro · Infinite Recall
+                  {isSignedOut ? "Infinite Recall" : "Pro · Infinite Recall"}
                 </span>
                 <h2 className="mt-5 text-2xl font-bold tracking-tight text-foreground">
                   Don&apos;t memorize the card. Master the concept.
@@ -640,10 +644,10 @@ export default function StudyFeed({
                   so you never freeze on an exam again.
                 </p>
                 <Link
-                  href="/pricing"
+                  href={isSignedOut ? "/login" : "/pricing"}
                   className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-accent px-6 py-3.5 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 hover:bg-accent/90 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.22),0_12px_40px_-6px_rgba(0,0,0,0.55)] active:scale-[0.98]"
                 >
-                  Upgrade to Pro
+                  {isSignedOut ? "Sign in to use it" : "Upgrade to Pro"}
                 </Link>
                 <button
                   type="button"

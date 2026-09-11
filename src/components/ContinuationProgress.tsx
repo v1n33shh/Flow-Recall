@@ -1,6 +1,7 @@
 "use client";
 
 import type { ContinuousProgress } from "@/lib/ingestChunks";
+import BrainFactTicker from "@/components/BrainFactTicker";
 
 /** Live state of a continuous continuation, on the deck's own card.
  *
@@ -37,10 +38,18 @@ export default function ContinuationProgress({
         <p className="mt-0.5 text-xs text-muted-foreground">{progress.waitingReason}</p>
       )}
       <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
+        {/* scaleX rather than width: animating width lays out every frame, which is
+            exactly what the performance contract forbids. Same fix as ReaderChrome's. */}
         <div
-          className="h-full bg-accent transition-all"
-          style={{ width: started ? `${Math.round((current / total) * 100)}%` : "0%" }}
+          className="h-full w-full origin-left bg-accent transition-transform duration-300"
+          style={{ transform: `scaleX(${started ? Math.min(current / total, 1) : 0})` }}
         />
+      </div>
+      {/* This component's own docblock: "a run can last twenty minutes and contain
+          several 62-second rate-limit waits". Twenty minutes of a card counter is the
+          same dead air the ingest panel had. */}
+      <div className="mt-4 border-t border-border pt-4">
+        <BrainFactTicker />
       </div>
       <button
         type="button"

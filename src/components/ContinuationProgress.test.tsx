@@ -24,10 +24,15 @@ function renderProgress(p: ContinuousProgress | undefined) {
   return onStop;
 }
 
-/** The bar's fill, as the component actually set it. */
-function barWidth(): string {
+/** How full the bar is, 0 to 1, as the component actually set it.
+ *
+ * Reads the transform rather than the width: the fill is scaled, not resized, because
+ * animating width lays out every frame and the performance contract forbids it. The
+ * proportion being asserted is the same one as before that change. */
+function barFill(): number {
   const bar = document.querySelector<HTMLElement>(".bg-accent");
-  return bar?.style.width ?? "";
+  const match = /scaleX\(([\d.]+)\)/.exec(bar?.style.transform ?? "");
+  return match ? Number(match[1]) : Number.NaN;
 }
 
 describe("before the runner's first tick", () => {
@@ -38,7 +43,7 @@ describe("before the runner's first tick", () => {
     renderProgress(undefined);
     expect(screen.getByText("Starting...")).toBeTruthy();
     expect(screen.queryByText(/section 1 of 1/)).toBeNull();
-    expect(barWidth()).toBe("0%");
+    expect(barFill()).toBe(0);
   });
 
   it("still offers Stop, because the first request is already in flight", () => {
@@ -52,7 +57,7 @@ describe("once it is running", () => {
   it("counts the section across the whole run, not within the batch", () => {
     renderProgress(progress);
     expect(screen.getByText(/Generating section 90 of 121/)).toBeTruthy();
-    expect(barWidth()).toBe("74%");
+    expect(barFill()).toBeCloseTo(0.74, 2);
   });
 
   it("reports only the cards already persisted", () => {

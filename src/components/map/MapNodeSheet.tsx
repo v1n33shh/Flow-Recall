@@ -6,6 +6,7 @@ import { unitIdFor } from "@/lib/recallModel";
 import type { Concept, ConceptEdge } from "@/lib/types";
 import { factSentence, readableBody } from "@/lib/conceptProse";
 import { prerequisiteChain } from "@/lib/conceptGraph";
+import { MASTERY_LABEL, MASTERY_MEANING } from "@/lib/masteryCopy";
 import ConceptAsk from "@/components/ConceptAsk";
 import ConceptRelations from "@/components/ConceptRelations";
 import { vibrateTap } from "@/lib/haptics";
@@ -24,14 +25,6 @@ import { vibrateTap } from "@/lib/haptics";
  * which is the order a person actually needs them in - what it is, how it works, what
  * you need first, why you care, and what you are probably getting wrong.
  */
-
-const LEVEL_COPY: Record<MasteryLevel, string> = {
-  solid: "Solid",
-  fading: "Fading",
-  holding: "Holding",
-  familiar: "Familiar",
-  met: "Met once",
-};
 
 export default function MapNodeSheet({
   deckId,
@@ -90,9 +83,17 @@ export default function MapNodeSheet({
             {concept.concept}
           </h2>
           {level !== null && (
-            <p className="mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-              {LEVEL_COPY[level]}
-            </p>
+            <>
+              <p className="mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+                {MASTERY_LABEL[level]}
+              </p>
+              {/* What the word means. Nowhere in the app said, and these definitions are
+                  the research stated as a rule - "solid" is retrieval practice plus the
+                  spacing effect written as an acceptance test. See masteryCopy.ts. */}
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground/80">
+                {MASTERY_MEANING[level]}
+              </p>
+            </>
           )}
         </div>
         <button

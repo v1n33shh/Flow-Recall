@@ -120,7 +120,10 @@ export default function LoginPage() {
           <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
             Welcome back
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">Sign in to pick up where you left off.</p>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            Sign in to pick up where you left off - your decks, your streak, and what the
+            scheduler says you are closest to forgetting.
+          </p>
         </div>
 
         <div className="flex flex-col gap-5 rounded-3xl border border-border bg-foreground/[0.02] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] backdrop-blur-xl sm:p-8">

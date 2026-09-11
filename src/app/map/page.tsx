@@ -16,6 +16,7 @@ import ConceptMapView from "@/components/map/ConceptMapView";
 import MapNodeSheet from "@/components/map/MapNodeSheet";
 import FilmGrain from "@/components/FilmGrain";
 import { vibrateTap } from "@/lib/haptics";
+import { MASTERY_DOT_LABEL } from "@/lib/masteryCopy";
 
 /** The deck as a subject rather than a pile.
  *
@@ -276,9 +277,9 @@ function DeckMap({
           something, the lines say how the ideas relate. The line styles had no key at
           all, which made solid-versus-dashed a code nobody was given. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
-        <Key className="bg-accent" label="Solid" />
-        <Key className="bg-pending" label="Fading" />
-        <Key className="bg-foreground/25" label="Not yet" />
+        <Key className="bg-accent" label={MASTERY_DOT_LABEL.solid} />
+        <Key className="bg-pending" label={MASTERY_DOT_LABEL.fading} />
+        <Key className="bg-foreground/25" label={MASTERY_DOT_LABEL.notYet} />
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] text-muted-foreground">
         <LineKey label="Build on first" />

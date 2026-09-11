@@ -8,6 +8,10 @@ import type { Concept } from "@/lib/types";
 import { factSentence, readableBody } from "@/lib/conceptProse";
 import { deckMastery, type DeckMastery } from "@/lib/recallStorage";
 import { unitIdFor, type MasteryLevel } from "@/lib/recallModel";
+// Only the label here: this screen is a dense, scannable list of concepts, and a
+// definition under every chip would be noise. MASTERY_MEANING is surfaced where a
+// single concept is the whole view - the map's node sheet.
+import { MASTERY_LABEL } from "@/lib/masteryCopy";
 import { setStudyDeck, takeReviseFocus, useSavedDecks } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import ConceptAsk from "./ConceptAsk";
@@ -28,14 +32,6 @@ import DeckLearningPath, { useConceptMap } from "./DeckLearningPath";
  * and `factSentence` turns the cloze back into the statement it was cut from. */
 
 type Filter = "all" | "needs-work" | "solid";
-
-const LEVEL_LABEL: Record<MasteryLevel, string> = {
-  met: "Met",
-  familiar: "Familiar",
-  holding: "Holding",
-  solid: "Solid",
-  fading: "Fading",
-};
 
 /** `--pending` and `--accent` rather than raw Tailwind colours, so both invert
  * with the theme. globals.css scopes success/danger/pending to answer-correctness
@@ -294,7 +290,7 @@ export default function RevisionSheet({
                     <span
                       className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest ${LEVEL_CHIP[level]}`}
                     >
-                      {LEVEL_LABEL[level]}
+                      {MASTERY_LABEL[level]}
                     </span>
                   )}
                 </div>

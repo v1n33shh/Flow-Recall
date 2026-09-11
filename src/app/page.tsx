@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { motion, useReducedMotion } from "motion/react";
-import { getFactCursor, setFactCursor, useSavedDecks } from "@/lib/storage";
+import { getFactCursor, hasOwnDeck, setFactCursor, useSavedDecks } from "@/lib/storage";
 import { factAt, nextCursor } from "@/lib/brainFacts";
 import { useIsNative } from "@/lib/useIsNative";
 import { asPercent, CURVE } from "@/lib/forgettingCurve";
@@ -219,6 +219,60 @@ function BrainFactSection() {
           {factAt(factCursor)}
         </motion.p>
       )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// WHAT'S INSIDE
+// ---------------------------------------------------------------------------
+
+/** The four tabs, for somebody who has not opened any of them yet.
+ *
+ * The tab bar gives a new student six words and no reason to tap any of them. This is
+ * four rows of about eight words - an invitation, not a description, because every one of
+ * those screens already describes itself the moment it opens.
+ *
+ * It disappears as soon as the student has a deck of their OWN: `hasOwnDeck` rather than
+ * `decks.length === 0`, since a library holding only the starter deck we put there is
+ * still an empty library from their side.
+ */
+const INSIDE = [
+  { href: "/ingest", label: "Ingest", body: "A PDF becomes cards in seconds." },
+  { href: "/reader", label: "Reader", body: "EPUB and PDF, any word defined in place." },
+  { href: "/map", label: "Mindmap", body: "How a deck's concepts hold each other up." },
+  { href: "/library", label: "Library", body: "Everything you have made, searchable." },
+];
+
+function WhatsInsideSection() {
+  return (
+    <section
+      aria-labelledby="whats-inside-heading"
+      className="relative z-10 mx-auto w-full max-w-lg px-6 pb-4 pt-10"
+    >
+      <h2
+        id="whats-inside-heading"
+        className="text-center text-[11px] font-medium uppercase tracking-widest text-muted-foreground"
+      >
+        What&apos;s inside
+      </h2>
+      <div className="mt-5 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface/60 md:backdrop-blur-xl">
+        {INSIDE.map(({ href, label, body }) => (
+          <Link
+            key={href}
+            href={href}
+            className="flex items-baseline gap-3 px-4 py-3.5 transition-colors active:bg-foreground/5 sm:hover:bg-foreground/5"
+          >
+            <span className="w-16 shrink-0 text-sm font-semibold text-foreground">{label}</span>
+            <span className="min-w-0 flex-1 text-sm leading-snug text-muted-foreground">
+              {body}
+            </span>
+            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 self-center text-muted-foreground/60" aria-hidden="true">
+              <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </Link>
+        ))}
+      </div>
     </section>
   );
 }
@@ -945,13 +999,19 @@ export default function Home() {
           transition={{ ...SNAP, delay: 0.15 }}
           className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row"
         >
-          {/* Secondary CTA - minimalist glassmorphic outline. */}
-          <Link
-            href="/pricing"
-            className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
-          >
-            View Pro Plans
-          </Link>
+          {/* Secondary CTA - minimalist glassmorphic outline. WEB ONLY: on the installed
+              app this was the first thing a student met, above the button that actually
+              does something, before they had made a single deck. Nobody should be sold a
+              plan before they have used the free thing once. The web keeps it, because
+              the web is where a purchase can actually happen (see Navbar's own note). */}
+          {!isNative && (
+            <Link
+              href="/pricing"
+              className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
+            >
+              View Pro Plans
+            </Link>
+          )}
           {/* Primary CTA - the achromatic accent token (brilliant white in dark
               mode, pitch black in light), which under "Pure Monochrome" is the
               only thing on the page allowed to pop. An inset top highlight and
@@ -978,6 +1038,13 @@ export default function Home() {
 
         </div>
       </section>
+
+      {/* ========================= WHAT'S INSIDE ======================= */}
+      {/* Native only, and only until they have made something of their own. The web
+          already answers "what is in here" at length, three sections down - showing this
+          above that would be saying it twice, which is the thing this page was just cut
+          in half to stop doing. */}
+      {isNative && !hasOwnDeck(decks) && <WhatsInsideSection />}
 
       {/* ============================ THE FACT ========================= */}
       {/* The one piece of the page below the hero that native keeps: it is a

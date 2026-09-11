@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
 import MobileAuthBridge from "@/components/MobileAuthBridge";
+import StarterDeckSeeder from "@/components/StarterDeckSeeder";
 import SyncEngine from "@/components/SyncEngine";
 import ReminderScheduler from "@/components/ReminderScheduler";
 import BackButtonBridge from "@/components/BackButtonBridge";
@@ -164,6 +165,7 @@ export default function RootLayout({
         >
           <NativeAppClass />
           <MobileAuthBridge />
+          <StarterDeckSeeder />
           <SyncEngine />
           <ReminderScheduler />
           <BackButtonBridge />

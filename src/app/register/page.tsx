@@ -111,7 +111,11 @@ export default function RegisterPage() {
           <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">
             Create your account
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            An account is what turns a PDF into cards, remembers what you are forgetting,
+            and keeps your decks across devices.
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground/80">
             Free forever. No credit card, no friction.
           </p>
         </div>

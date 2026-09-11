@@ -38,6 +38,7 @@ import DeckExamDate from "@/components/DeckExamDate";
 import DeckTitle from "@/components/DeckTitle";
 import DeckUndoBar, { type PendingDelete } from "@/components/DeckUndoBar";
 import FilmGrain from "@/components/FilmGrain";
+import { isStarterDeck } from "@/lib/starterDeck";
 
 /** Every deck the student has made, on a screen of its own.
  *
@@ -555,6 +556,16 @@ export default function LibraryPage() {
                       {deck.concepts.length} concept{deck.concepts.length === 1 ? "" : "s"}
                       {" · "}
                       {formatDate(deck.createdAt)}
+                      {/* The one deck nobody here made. Said plainly on the card, because
+                          a student finding work in their library they do not remember
+                          doing has a worse problem than an unlabelled demo. Delete it and
+                          it stays deleted - see seedStarterDeck. */}
+                      {isStarterDeck(deck) && (
+                        <>
+                          {" · "}
+                          <span className="text-foreground/70">Sample deck</span>
+                        </>
+                      )}
                       {/* Why this deck is in the results when its name gives nothing
                           away - without it, a title-less match looks like a bug. */}
                       {cardMatches > 0 && (

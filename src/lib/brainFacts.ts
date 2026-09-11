@@ -48,6 +48,29 @@ export const BRAIN_FACTS: readonly string[] = [
   "Massed practice climbs fastest and falls fastest. Spacing the same hours out is what makes them hold.",
   // Testing effect vs the fluency illusion.
   "Testing yourself changes the memory. Re-reading mostly changes how familiar it feels.",
+  // ── Added when the ingest wait started showing these ────────────────────────
+  // Fourteen lines rotate in under three minutes, and a first generation can run for
+  // twenty (see ContinuationProgress). These carry the rest of that wait.
+  // Desirable difficulty: retrieval strength scales with the effort of the retrieval.
+  "The harder a memory is to pull up, the more retrieving it strengthens it.",
+  // Generation effect: self-produced items outperform read ones.
+  "A word you produced yourself is remembered better than the same word you only read.",
+  // Encoding specificity: context reinstatement as a retrieval cue.
+  "Your surroundings get stored with the memory, which is why a place can hand a fact back.",
+  // Interference theory: competition at retrieval, not decay in storage.
+  "Most forgetting isn't decay. It's similar memories getting in each other's way.",
+  // Retrieval-induced forgetting: recalling one item suppresses its competitors.
+  "Pulling up one memory can push a competing one further out of reach.",
+  // Chunking and expertise: capacity is fixed, chunk size is what grows.
+  "Experts don't hold more in mind at once. They've learned to make each piece bigger.",
+  // Hippocampal replay compression during slow-wave sleep.
+  "The brain replays the day's lessons while you sleep, far faster than you lived them.",
+  // Testing effect: the advantage over restudy appears at a delay, not immediately.
+  "The gap between testing and re-reading doesn't show today. It shows next week.",
+  // Adult hippocampal neurogenesis in the dentate gyrus.
+  "The hippocampus keeps making new neurons in adulthood, and wires them into new memories.",
+  // Levels of processing: semantic encoding beats perceptual encoding.
+  "Asking what something means fixes it better than asking what it looks like.",
 ];
 
 /** The fact at a given position in the cycle.

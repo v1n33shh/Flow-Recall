@@ -1,5 +1,11 @@
 import { useSyncExternalStore } from "react";
 import type { Concept, ConceptEdge, Deck, QueueItem, StudyProgress } from "./types";
+import {
+  buildStarterDeck,
+  isStarterDeck,
+  STARTER_DECK_ID,
+  STARTER_SEEDED_KEY,
+} from "./starterDeck";
 
 const STUDY_DECK_STORAGE_KEY = "flowrecall:studyDeck";
 const STUDY_SESSION_STORAGE_KEY = "flowrecall:studySession";
@@ -241,6 +247,49 @@ export function mergeRemoteDecks(remote: readonly Deck[]): void {
   for (const deck of remote) byId.set(deck.id, deck);
   // Newest first, matching saveDeck's own ordering.
   persistDecks([...byId.values()].sort((a, b) => b.createdAt - a.createdAt));
+}
+
+/** Puts the shipped starter deck on the shelf, once per install.
+ *
+ * Called from StarterDeckSeeder on mount, on web and native alike. What it is FOR is in
+ * starterDeck.ts; what matters here is that it must be impossible to get wrong twice:
+ *
+ *   - A row already carrying the starter's id stops it, and `getAllDeckRows` includes
+ *     TOMBSTONES. So a student who deletes the starter has deleted it - the next launch
+ *     finds the tombstone and leaves it alone. That check, not the flag, is what actually
+ *     guarantees this, which is why it comes first.
+ *   - The flag is the cheap path for the common case, so an ordinary launch does one
+ *     localStorage read and stops.
+ *   - The whole thing is wrapped: seeding is a nicety, and a device with no room left for
+ *     decks (DeckStorageFullError) must still boot. The flag is only set on a write that
+ *     landed, so a device that frees up space gets its starter on a later launch.
+ */
+export function seedStarterDeck(now: number = Date.now()): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (window.localStorage.getItem(STARTER_SEEDED_KEY)) return;
+    const rows = getAllDeckRows();
+    if (rows.some((deck) => deck.id === STARTER_DECK_ID)) {
+      // Present already, live or deleted. Record that so the scan stops happening.
+      window.localStorage.setItem(STARTER_SEEDED_KEY, "1");
+      return;
+    }
+    // Newest first, the ordering saveDeck and mergeRemoteDecks both keep.
+    persistDecks([buildStarterDeck(now), ...rows].sort((a, b) => b.createdAt - a.createdAt));
+    window.localStorage.setItem(STARTER_SEEDED_KEY, "1");
+  } catch {
+    // Deliberately silent. Nothing the student did failed, and nothing they can do fixes
+    // it - the app is fully usable without a starter deck.
+  }
+}
+
+/** Whether the student has made anything of their own yet.
+ *
+ * The home screen's "what's inside" strip asks this rather than `decks.length === 0`,
+ * which stopped being the right question the moment a starter deck shipped: a library
+ * holding only the deck we put there is still an empty library from the student's side. */
+export function hasOwnDeck(decks: readonly Deck[]): boolean {
+  return decks.some((deck) => !isStarterDeck(deck));
 }
 
 /** Persists a freshly generated deck so it survives a page refresh. Newest

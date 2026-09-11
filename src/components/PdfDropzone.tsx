@@ -174,9 +174,15 @@ export default function PdfDropzone({ onExtracted }: PdfDropzoneProps) {
                   <>
                     <p className="text-xs text-muted-foreground">{progress}</p>
                     <div className="h-1 w-40 overflow-hidden rounded-full bg-foreground/10">
+                      {/* scaleX, not width - a width animation lays out every frame.
+                          No brain-fact ticker here, deliberately: this wait is about a
+                          minute against generation's twenty, and the box already names
+                          the file and the page it has reached. */}
                       <div
-                        className="h-full bg-accent transition-all"
-                        style={{ width: `${(status.pagesDone / status.totalPages) * 100}%` }}
+                        className="h-full w-full origin-left bg-accent transition-transform duration-300"
+                        style={{
+                          transform: `scaleX(${Math.min(status.pagesDone / status.totalPages, 1)})`,
+                        }}
                       />
                     </div>
                   </>

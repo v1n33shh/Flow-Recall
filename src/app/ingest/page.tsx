@@ -13,6 +13,7 @@ import {
   setStudyDeck,
 } from "@/lib/storage";
 import PdfDropzone from "@/components/PdfDropzone";
+import BrainFactTicker from "@/components/BrainFactTicker";
 import RecognisedSourceCard from "@/components/RecognisedSourceCard";
 import { vibrateTap } from "@/lib/haptics";
 import { FREE_DECKS_PER_MONTH } from "@/lib/freeQuota";
@@ -488,8 +489,49 @@ export default function IngestPage() {
         disabled={loading || text.trim().length === 0 || !isAuthenticated || proModelLocked}
         className="mt-4 self-stretch rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-6 py-3.5 text-base font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 sm:self-start sm:py-2.5 sm:text-sm"
       >
-        {loading ? `Generating part ${currentChunk} of ${totalChunks}...` : "Generate micro-concepts"}
+        {loading ? "Generating…" : "Generate micro-concepts"}
       </button>
+
+      {/* The wait, given something to look at.
+          This is the longest wait in the app - a 20-chunk deck on the free tier is one
+          request a minute, with 62-second rate-limit pauses on top (see ingestChunks).
+          The count, the bar and the retry reason used to be three separate fragments
+          scattered below the paywall block, and the button label carried the only thing
+          that moved. One panel, directly under the button that started it, plus a rotating
+          fact so there is something to read rather than a number that ticks once a minute. */}
+      {loading && (
+        <div className="mt-4 rounded-2xl border border-border bg-surface/60 p-5 md:backdrop-blur-xl">
+          <p className="text-center text-sm font-medium text-foreground">
+            {totalChunks > 1 ? `Generating part ${currentChunk} of ${totalChunks}` : "Generating"}
+          </p>
+
+          {totalChunks > 1 && (
+            <div
+              className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={totalChunks}
+              aria-valuenow={currentChunk}
+            >
+              {/* scaleX, not width: a width animation lays out every frame, which is the
+                  thing the performance contract exists to stop. ReaderChrome's progress
+                  bar is built the same way for the same reason. */}
+              <div
+                className="h-full w-full origin-left bg-accent transition-transform duration-300"
+                style={{ transform: `scaleX(${Math.min(currentChunk / totalChunks, 1)})` }}
+              />
+            </div>
+          )}
+
+          {waitingReason && (
+            <p className="mt-3 text-center text-xs text-muted-foreground">{waitingReason}</p>
+          )}
+
+          <div className="mt-5 border-t border-border pt-5">
+            <BrainFactTicker />
+          </div>
+        </div>
+      )}
 
       {recognised && <RecognisedSourceCard
         deck={recognised.deck}
@@ -524,19 +566,6 @@ export default function IngestPage() {
             Upgrade to Pro &rarr;
           </Link>
         </div>
-      )}
-
-      {loading && totalChunks > 1 && (
-        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-foreground/10">
-          <div
-            className="h-full bg-accent transition-all"
-            style={{ width: `${(currentChunk / totalChunks) * 100}%` }}
-          />
-        </div>
-      )}
-
-      {loading && waitingReason && (
-        <p className="mt-2 text-center text-xs text-muted-foreground">{waitingReason}</p>
       )}
 
       {truncated && (

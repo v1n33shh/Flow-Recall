@@ -337,6 +337,24 @@ function ReaderLibrary({ onOpenBook }: { onOpenBook: (id: string) => void }) {
           )}
         </>
       )}
+
+      {/* An empty shelf used to render NOTHING - the whole block above is gated on
+          `books.length > 0`, so a student with no books saw the dropzone and then bare
+          page to the bottom. The deck library has had a real empty state all along; this
+          is its sibling screen and had none. Says what lands here and what it will be
+          worth, rather than just admitting the shelf is empty. */}
+      {!loading && books.length === 0 && (
+        <div className="mt-12 rounded-3xl border border-dashed border-border px-6 py-10 text-center">
+          <p className="text-base font-medium text-foreground">Nothing on the shelf yet.</p>
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
+            Whatever you open here stays on this device, remembers your place, and lets you
+            long-press any word for a definition without leaving the page.
+          </p>
+          <p className="mt-4 text-xs text-muted-foreground/80">
+            EPUB, PDF or pasted text
+          </p>
+        </div>
+      )}
     </main>
   );
 }

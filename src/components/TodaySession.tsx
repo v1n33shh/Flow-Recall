@@ -9,8 +9,6 @@ import { buildSession } from "@/lib/sessionBuilder";
 import { readSessionInputs, type SessionInputs } from "@/lib/recallStorage";
 import { setStudySession } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
-import { sessionSentence } from "@/lib/sessionSentence";
-import { whyTonight } from "@/lib/whyTonight";
 
 /** The three offers, in minutes. A budget rather than a card count, because the student
  * knows how long they have and does not know what 40 cards costs. */
@@ -63,99 +61,62 @@ export default function TodaySession({ decks }: { decks: Deck[] }) {
   if (!userId || decks.length === 0 || !plan) return null;
 
   const nothingDue = plan.items.length === 0;
-  // The statement, and the explanation under it. Both pure functions over the plan, so the
-  // copy lives somewhere reviewable and testable rather than inside this JSX - see
-  // sessionSentence.ts for why the card count never appears in either.
-  const sentence = sessionSentence(plan);
-  const why = whyTonight(plan);
+
+  // Nothing at all when there is nothing due. An introduction page does not need to
+  // announce an empty queue, and "nothing needs you tonight" sitting above a pitch reads
+  // as a dead end rather than as the good news it is - the completion slide and the
+  // library both say it where it means something.
+  if (nothingDue) return null;
 
   return (
     <motion.section
       aria-labelledby="tonight-heading"
-      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 280, damping: 24 }}
-      className="relative w-full max-w-xl text-left"
+      className="mt-10 w-full max-w-md rounded-2xl border border-border bg-surface/60 p-4 text-left md:backdrop-blur-xl"
     >
-      <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-        Tonight
+      {/* ONE LINE, NO COUNTS. This slot carried "Start 108 cards", then "11 slipping · 97
+          new · across 6 decks", then "Eleven questions are nearly gone" - each one a wall
+          of arithmetic on a page whose job is to introduce the app. A returning student
+          needs a door back into tonight, not a readout. The numbers live where they mean
+          something: per deck in the Library, and at the end of a session. */}
+      <p id="tonight-heading" className="text-sm text-muted-foreground">
+        Pick up where you left off · about{" "}
+        <span className="tabular-nums text-foreground">{budget}</span> minutes
       </p>
 
-      {/* THE STATEMENT. Weight 540, not 600 - an in-between weight only a variable font
-          can render, which Geist is (verified by measuring 400/500/540/600 and finding
-          all four distinct). Superhuman's system calls these mid-weights "quiet warmth",
-          and that warmth is the entire reason this screen leads with a sentence in
-          arbitrary-weight type instead of a 72pt numeral. Negative tracking and a 1.1
-          line-height give it the editorial density that goes with it. */}
-      <h2
-        id="tonight-heading"
-        className="mt-3 font-sans text-[28px] leading-[1.1] tracking-[-0.02em] text-foreground sm:text-[34px]"
-        style={{ fontWeight: 540 }}
-      >
-        {sentence.lead}
-      </h2>
-      {sentence.offer && (
-        <p className="mt-2 text-base font-normal leading-relaxed text-muted-foreground">
-          {sentence.offer}
-        </p>
-      )}
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleStart}
+          disabled={starting}
+          className="rounded-full bg-accent px-6 py-2.5 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] transition-all duration-200 active:scale-[0.98] disabled:opacity-70"
+        >
+          {starting ? "Starting…" : "Continue"}
+        </button>
 
-      {!nothingDue && (
-        <>
-          <div className="mt-6 flex items-center gap-2">
+        {/* The only control kept: how long. Removing it would take away the student's say
+            over session length, which is a function rather than a decoration. */}
+        <div className="flex gap-1.5">
+          {BUDGETS.map((minutes) => (
             <button
+              key={minutes}
               type="button"
-              onClick={handleStart}
-              disabled={starting}
-              className="rounded-full bg-accent px-8 py-3.5 text-sm font-semibold text-accent-foreground ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_28px_-6px_rgba(0,0,0,0.45)] transition-all duration-200 active:scale-[0.98] disabled:opacity-70"
+              onClick={() => { vibrateTap(); setBudget(minutes); }}
+              aria-pressed={budget === minutes}
+              aria-label={`${minutes} minute session`}
+              className={`rounded-full border px-2.5 py-1.5 text-[11px] font-medium tabular-nums transition-all duration-200 active:scale-[0.98] ${
+                budget === minutes
+                  ? "border-foreground/30 bg-foreground/10 text-foreground"
+                  : "border-border text-muted-foreground"
+              }`}
             >
-              {/* No card count. "Start 108 cards" was a wall; the chips beside it already
-                  say how long, and the sentence above says what for. */}
-              {starting ? "Starting…" : "Start"}
+              {minutes}m
             </button>
-
-            <div className="flex gap-1.5">
-              {BUDGETS.map((minutes) => (
-                <button
-                  key={minutes}
-                  type="button"
-                  onClick={() => { vibrateTap(); setBudget(minutes); }}
-                  aria-pressed={budget === minutes}
-                  aria-label={`${minutes} minute session`}
-                  className={`rounded-full border px-3 py-2 text-[11px] font-medium tabular-nums transition-all duration-200 active:scale-[0.98] ${
-                    budget === minutes
-                      ? "border-foreground/30 bg-foreground/10 text-foreground"
-                      : "border-border text-muted-foreground"
-                  }`}
-                >
-                  {minutes}m
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* No number here on purpose. A student with a full library sees a deferred
-              count in the hundreds, and "379 more waiting" is the same wall as the card
-              count this screen just removed - it reframes a finished session as a rounding
-              error. That there IS more is worth saying; how much is not. */}
-          {plan.deferred > 0 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              More is waiting — a longer session reaches further down the list.
-            </p>
-          )}
-        </>
-      )}
-
-      {/* WHY IT LOOKS LIKE THIS. The content about the app, and it is not onboarding: it
-          explains the decision the scheduler just made, using the mechanism behind it. */}
-      {why && (
-        <div className="mt-8 border-t border-border pt-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
-            {why.title}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{why.body}</p>
+          ))}
         </div>
-      )}
+      </div>
     </motion.section>
   );
 }

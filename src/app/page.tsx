@@ -6,13 +6,9 @@ import { motion, useReducedMotion } from "motion/react";
 import { getFactCursor, setFactCursor, useSavedDecks } from "@/lib/storage";
 import { factAt, nextCursor } from "@/lib/brainFacts";
 import { useIsNative } from "@/lib/useIsNative";
-import { useHomeProjection } from "@/lib/useHomeProjection";
 import { asPercent, CURVE } from "@/lib/forgettingCurve";
 import LogoMark from "@/components/LogoMark";
 import FilmGrain from "@/components/FilmGrain";
-import ExamCountdown from "@/components/ExamCountdown";
-import HomeHeroNumber from "@/components/HomeHeroNumber";
-import MemoryOverview from "@/components/MemoryOverview";
 import RetentionCurve from "@/components/RetentionCurve";
 import TodaySession from "@/components/TodaySession";
 
@@ -863,8 +859,6 @@ function SiteFooter() {
 
 export default function Home() {
   const decks = useSavedDecks();
-  // One read, shared by the two components that render the number. See useHomeProjection.
-  const projection = useHomeProjection(decks);
   // Navbar.tsx hides itself entirely on native (MobileTabBar is its only
   // chrome) - the hero's min-h-[88vh]/justify-center centering was tuned for
   // the web layout, where that floating navbar above it justifies some
@@ -920,13 +914,12 @@ export default function Home() {
       <FilmGrain />
 
         <div className="relative z-10 flex w-full flex-col items-center">
-        {/* THE PITCH - WEB ONLY. A badge, a headline and a subhead are how you introduce
-            an app to a stranger; they are not how you open one somebody installed. On
-            native the screen now leads with a number instead (see HomeHeroNumber and
-            MemoryOverview), which is the readiness-dashboard shape: one figure, one
-            action, nothing else competing for the top of the screen. */}
-        {!isNative && (
-          <>
+        {/* THE PITCH, ON BOTH PLATFORMS AGAIN. This was web-only for six commits on my
+            argument that an installed app is past being introduced, and that was the root
+            of everything that followed: with it gone the app stopped saying what it was.
+            The home page IS the introduction to FlowRecall, and the app and the website
+            show the same one. */}
+        <>
         <motion.p
               initial={{ opacity: 0, y: -24 }}
               animate={{ opacity: 1, y: 0 }}
@@ -955,31 +948,20 @@ export default function Home() {
             >
               Upload a PDF. Read it, map it, and review it right before you&apos;d forget.
             </motion.p>
-          </>
-        )}
-        {/* WEB ONLY. On native the primary action is now the hero's own button - study
-            what is in front of you - and Ingest is one tap away in the tab bar. A
-            returning student does not open a study app to be told to add more material. */}
-        {!isNative && (
+        </>
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ ...SNAP, delay: 0.15 }}
           className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row"
         >
-          {/* Secondary CTA - minimalist glassmorphic outline. WEB ONLY: on the installed
-              app this was the first thing a student met, above the button that actually
-              does something, before they had made a single deck. Nobody should be sold a
-              plan before they have used the free thing once. The web keeps it, because
-              the web is where a purchase can actually happen (see Navbar's own note). */}
-          {!isNative && (
-            <Link
-              href="/pricing"
-              className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
-            >
-              View Pro Plans
-            </Link>
-          )}
+          {/* Secondary CTA - minimalist glassmorphic outline. */}
+          <Link
+            href="/pricing"
+            className="w-full rounded-full border border-border bg-transparent px-6 py-3.5 text-center text-base font-medium text-foreground backdrop-blur-md transition-all duration-200 hover:scale-[1.03] hover:bg-foreground/5 active:scale-[0.97] sm:w-auto sm:py-3 sm:text-sm"
+          >
+            View Pro Plans
+          </Link>
           {/* Primary CTA - the achromatic accent token (brilliant white in dark
               mode, pitch black in light), which under "Pure Monochrome" is the
               only thing on the page allowed to pop. An inset top highlight and
@@ -992,81 +974,49 @@ export default function Home() {
             Start ingesting notes
           </Link>
         </motion.div>
-        )}
 
-        {isNative && (
-          <div className="mb-10 flex w-full items-center gap-2 self-start">
-            <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[28%] bg-gradient-to-br from-zinc-800 to-zinc-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
-              <LogoMark sheen className="h-[64%] w-[64%]" />
-              <div className="pointer-events-none absolute inset-0 rounded-[28%] ring-1 ring-inset ring-white/10" />
-            </div>
-            <span className="font-retro mt-0.5 text-lg text-foreground">FlowRecall</span>
-          </div>
-        )}
+        {/* THE PROOF, in the hero. The research on landing-page copy is blunt that a
+            claim without a number reads as fluff, and this app computes its own proof and
+            then buries it three sections down. Both figures come from CURVE, which is
+            plotted by the same FSRS-6 scheduler that will schedule the reader - so this is
+            evidence rather than encouragement, which is the only kind of motivation worth
+            putting on a page for students. */}
+        <motion.p
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ ...SNAP, delay: 0.2 }}
+          className="mt-6 text-sm text-muted-foreground"
+        >
+          Three reviews in six months.{" "}
+          <span className="font-medium text-foreground tabular-nums">
+            {asPercent(CURVE.endRecall.reviewed)}% recalled
+          </span>{" "}
+          instead of{" "}
+          <span className="tabular-nums">{asPercent(CURVE.endRecall.studiedOnce)}%</span>.
+        </motion.p>
 
-        {/* THE SCREEN, in reading order.
-
-            Attempt five, and the first that does not lead with a number. Four rebuilds led
-            with either a marketing headline or a 72pt figure, and both read as a readout
-            nobody wanted to look at. This opens with a SENTENCE about tonight, in
-            mid-weight type, because the warmth in a screen like this comes from weight and
-            spacing cadence rather than from adding things to it.
-
-            1. The exam, if there is one, and only when the projection is not already
-               naming it.
-            2. TodaySession: the statement, the button, and why the session looks like it
-               does. This is the screen now.
-            3. The projection, demoted from hero to one quiet line.
-            4. HomeHeroNumber, only for the signed-out ladder, where there is no session
-               to make a statement out of. */}
-        <div className="mt-6 flex w-full flex-col items-start gap-8">
-          {/* Native only: the web has a marketing hero above this already, and stacking a
-              dashboard under it gave a visitor two first impressions at once. */}
-          {isNative && !projection.hasProjection && <ExamCountdown decks={decks} />}
-
-          <TodaySession decks={decks} />
-
-          <MemoryOverview overview={projection.overview} show={projection.hasProjection} />
-
-          {isNative && (
-            <HomeHeroNumber
-              decks={decks}
-              hasProjection={projection.hasProjection}
-              signedIn={projection.signedIn}
-            />
-          )}
-        </div>
+        {/* The one thing an introduction owes a returning student: a way back into
+            tonight's study. One line and a button, no counts - see TodaySession. Renders
+            nothing at all when signed out, which is the right answer for a stranger who is
+            here to read an introduction. */}
+        <TodaySession decks={decks} />
 
         </div>
       </section>
 
       {/* ============================ THE FACT ========================= */}
-      {/* The one piece of the page below the hero that native keeps: it is a
-          single sentence, and it is different every time the app is opened. */}
+      {/* One true thing about the brain, different every time the page is opened. */}
       <BrainFactSection />
 
-      {/* ======================= WEB-ONLY MARKETING ===================== */}
-      {/* Everything below is the pitch, and an installed app is past being
-          pitched to - a student who opens FlowRecall to study should not scroll
-          a landing page to reach the end of their own home screen. Native stops
-          at the fact above; MobileTabBar is the chrome from there, and Privacy
-          stays reachable from the Account tab.
-
-          Gated on the DEFAULT-FALSE useIsNative() on purpose, the same way the
-          hero's grid and glow orbs already are. useIsNative<boolean|null>(null)
-          would render none of this during the server/export pass, which would
-          hide the entire marketing page - headings, FAQ, JSON-LD - from every
-          crawler. Web renders it; native drops it a microtask after mount. */}
-      {!isNative && (
-        <>
-          <CurveSection />
-          <FeaturesSection />
-          <HowItWorksSection />
-          <FaqSection />
-          <FinalCtaSection />
-          <SiteFooter />
-        </>
-      )}
+      {/* THE INTRODUCTION, on the app and the website alike. These were web-only for six
+          commits and that was the mistake this whole rewrite undoes: it left the installed
+          app with nothing that said what FlowRecall is. */}
+      <CurveSection />
+      <FeaturesSection />
+      <HowItWorksSection />
+      <FaqSection />
+      <FinalCtaSection />
+      <SiteFooter />
     </main>
   );
 }

@@ -38,6 +38,8 @@ import DeckExamDate from "@/components/DeckExamDate";
 import DeckTitle from "@/components/DeckTitle";
 import DeckUndoBar, { type PendingDelete } from "@/components/DeckUndoBar";
 import FilmGrain from "@/components/FilmGrain";
+import MemoryOverview from "@/components/MemoryOverview";
+import { useHomeProjection } from "@/lib/useHomeProjection";
 import { isStarterDeck } from "@/lib/starterDeck";
 
 /** Every deck the student has made, on a screen of its own.
@@ -135,6 +137,7 @@ function DeckSkeleton() {
 export default function LibraryPage() {
   const router = useRouter();
   const decks = useSavedDecks();
+  const projection = useHomeProjection(decks);
   const hydrated = useHydrated();
   // Ambient glow orbs are web-only, exactly as on the home hero: they were tuned
   // for a tall desktop viewport and read as isolated grey blobs on a phone.
@@ -372,6 +375,13 @@ export default function LibraryPage() {
             >
               {factAt(factCursor)}
             </motion.p>
+          )}
+
+          {/* Moved off the home page, which is an introduction to FlowRecall and has no
+              business opening with arithmetic. Here it sits among deck counts and progress
+              bars, where a student already came to look at numbers. */}
+          {hydrated && (
+            <MemoryOverview overview={projection.overview} show={projection.hasProjection} />
           )}
 
           {/* Feedback on a query rather than a total, so it exists only while there

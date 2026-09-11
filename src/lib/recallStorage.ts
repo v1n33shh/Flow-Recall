@@ -19,6 +19,7 @@ import {
   type MasteryEvidence,
   type DeckMastery,
   type DeckSummary,
+  localMidnight,
 } from "./recallModel";
 import { buildSession, type SessionPlan } from "./sessionBuilder";
 import { planSync, rebuildMemory, replayDivergences, type SyncPayload } from "./recallSync";
@@ -1170,7 +1171,10 @@ export async function readMemoryOverview(
     expected,
     total,
     atMs,
-    horizonDays: Math.max(1, Math.round((atMs - now) / MS_PER_DAY)),
+    // Calendar days, both ends snapped to local midnight, exactly as daysUntilExam
+    // computes them. Measuring elapsed hours from `now` instead made this disagree with
+    // that function by a day for most of the afternoon - and the home screen shows both.
+    horizonDays: Math.max(1, Math.round((localMidnight(atMs) - localMidnight(now)) / MS_PER_DAY)),
     anchoredToExam,
   };
 }

@@ -350,7 +350,7 @@ export default function LibraryPage() {
               sentence twice, in a hero device borrowed from the landing page, on a
               screen whose job is to get out of the way. /reader, this screen's
               sibling, has never had one either. */}
-          <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+          <h1 className="font-sans text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
             Your Library
           </h1>
           {/* One true thing about the brain, different every visit. Deliberately

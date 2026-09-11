@@ -68,7 +68,7 @@ export default function MemoryOverview({
           fourth from the top, under a marketing headline - while the readiness dashboards
           this borrows from put their one figure at roughly 72pt as the first thing on
           screen, readable at arm's length. */}
-      <p className="mt-3 font-sans text-6xl font-bold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
+      <p className="mt-3 font-sans text-6xl font-semibold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
         {Math.round(expected)}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
@@ -85,7 +85,7 @@ export default function MemoryOverview({
           session underneath exists. */}
       {summary.fading > 0 && (
         <p className="mt-1 text-[11px] font-medium leading-relaxed text-foreground/80">
-          {summary.fading} {summary.fading === 1 ? "is" : "are"} slipping — that is what
+          {summary.fading} {summary.fading === 1 ? "is" : "are"} fading — that is what
           tonight is for.
         </p>
       )}

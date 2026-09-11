@@ -71,12 +71,23 @@ export default function HomeHeroNumber({
 
       {/* Readable at arm's length, which is the whole idea - the app's biggest numeral
           before this was 36px, on a screen nobody sees until a session ends. */}
-      <p className="mt-3 font-sans text-6xl font-bold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
+      <p className="mt-3 font-sans text-6xl font-semibold leading-none tracking-tight tabular-nums text-foreground sm:text-7xl">
         {value}
       </p>
       <p className="mt-2 text-sm text-muted-foreground">
         {inProgress ? `of ${hero.total} answered` : `concepts, ready when you are`}
       </p>
+
+      {/* What this app is, exactly once. Shown only in the `waiting` state - a library
+          nobody has opened yet - and gone for good the moment anything is answered.
+          The mobile UX guidance is blunt about this: show onboarding to first-time users,
+          not to returning ones. A returning student does not need to be told daily what
+          they installed; a new one has nothing else on this screen telling them. */}
+      {!inProgress && (
+        <p className="mx-auto mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
+          Your notes become questions, scheduled for the day you would have forgotten them.
+        </p>
+      )}
 
       <Link
         href="/study"

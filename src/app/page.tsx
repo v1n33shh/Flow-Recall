@@ -267,7 +267,7 @@ function CurveSection() {
         </p>
         <h2
           id="curve-heading"
-          className="font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
+          className="font-sans text-3xl font-semibold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
         >
           Three reviews in six months.{" "}
           <span className="whitespace-nowrap">
@@ -318,7 +318,7 @@ function CurveSection() {
                 </svg>
               )}
               <div className="rounded-2xl border border-border bg-foreground/[0.03] px-4 py-3 text-center sm:px-6">
-                <div className="font-sans text-2xl font-bold tabular-nums leading-none text-foreground sm:text-3xl">
+                <div className="font-sans text-2xl font-semibold tabular-nums leading-none text-foreground sm:text-3xl">
                   {gap}
                 </div>
                 <div className="mt-1.5 text-[10px] uppercase tracking-widest text-muted-foreground sm:text-xs">
@@ -357,7 +357,7 @@ function FeaturesSection() {
         </p>
         <h2
           id="features-heading"
-          className="font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
+          className="font-sans text-3xl font-semibold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
         >
           Every screen is one finding about memory, built.
         </h2>
@@ -675,7 +675,7 @@ function HowItWorksSection() {
         </p>
         <h2
           id="how-it-works-heading"
-          className="mt-3 max-w-xl font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
+          className="mt-3 max-w-xl font-sans text-3xl font-semibold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-4xl"
         >
           From a PDF to still knowing it, in four steps.
         </h2>
@@ -688,6 +688,10 @@ function HowItWorksSection() {
       <div className="mt-12 grid grid-cols-2 gap-x-6 gap-y-10 sm:mt-14 lg:grid-cols-4 lg:gap-x-8">
         {HOW_IT_WORKS_STEPS.map((step, i) => (
           <motion.div key={step.n} {...reveal(0.06 * i)} className="relative">
+            {/* The one weight above 600 left in the app, and deliberately: at 6% opacity
+                this is texture behind a heading, not type anybody reads. The "display
+                never appears at 700/800" rule the rest of this file now follows is about
+                type. */}
             <span
               aria-hidden="true"
               className="pointer-events-none absolute -left-1 -top-7 select-none font-sans text-6xl font-black leading-none text-foreground/[0.06] sm:text-7xl"
@@ -728,7 +732,7 @@ function FaqSection() {
       <motion.h2
         {...reveal()}
         id="faq-heading"
-        className="text-center font-sans text-3xl font-bold leading-tight tracking-tight text-foreground sm:text-4xl"
+        className="text-center font-sans text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl"
       >
         Frequently asked questions
       </motion.h2>
@@ -783,7 +787,7 @@ function FinalCtaSection() {
       <motion.h2
         {...reveal()}
         id="final-cta-heading"
-        className="pb-2 font-sans text-3xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
+        className="pb-2 font-sans text-3xl font-semibold leading-tight tracking-tight text-foreground [text-wrap:balance] sm:text-5xl"
       >
         You&apos;ll forget most of this by tomorrow.
       </motion.h2>
@@ -937,7 +941,7 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ ...SNAP, delay: 0.05 }}
               id="hero-heading"
-              className={`max-w-2xl pb-2 font-sans text-4xl sm:text-5xl font-bold leading-tight tracking-tight text-foreground [text-wrap:balance] md:text-7xl ${
+              className={`max-w-2xl pb-2 font-sans text-4xl sm:text-5xl font-semibold leading-tight tracking-tight text-foreground [text-wrap:balance] md:text-7xl ${
                 isNative ? "mt-12" : ""
               }`}
             >
@@ -1001,6 +1005,25 @@ export default function Home() {
             2. The number. MemoryOverview when the engine has a projection to make;
                HomeHeroNumber's honest smaller version when it does not. Exactly one of
                them renders - both read the same `hasProjection` so they cannot disagree. */}
+        {/* THE APP'S ONLY FACE ON NATIVE.
+            Navbar returns null here, the footer is web-only and MobileTabBar carries no
+            brand, so a signed-in student saw the FlowRecall mark precisely nowhere - and
+            cutting the badge and headline for the dashboard removed the last accidental
+            trace of it. This is not a new pattern: Library, Mindmap, Reader and Ingest all
+            open with a top-left title, and Home was the only tab without one.
+
+            The chip is Navbar's, verbatim, so it reads as the same lockup rather than a
+            second one - minus the hover transforms, since nothing here is a link. */}
+        {isNative && (
+          <div className="mb-10 flex w-full items-center gap-2 self-start">
+            <div className="relative flex h-8 w-8 items-center justify-center overflow-hidden rounded-[28%] bg-gradient-to-br from-zinc-800 to-zinc-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
+              <LogoMark sheen className="h-[64%] w-[64%]" />
+              <div className="pointer-events-none absolute inset-0 rounded-[28%] ring-1 ring-inset ring-white/10" />
+            </div>
+            <span className="font-retro mt-0.5 text-lg text-foreground">FlowRecall</span>
+          </div>
+        )}
+
         <div className="mt-8 flex w-full flex-col items-center gap-6">
           {/* NATIVE ONLY, both of them. On the web these sit under a marketing hero that
               is already doing the job of a first impression, so a visitor got two heroes
@@ -1009,7 +1032,11 @@ export default function Home() {
               landing page; the dashboard is what replaces one on the installed app. */}
           {isNative && (
             <>
-              <ExamCountdown decks={decks} />
+              {/* Only when there is no projection. MemoryOverview's own eyebrow already
+                  names the exam ("On exam day (11 days)") when it renders, so showing both
+                  stacked two countdowns for the same date - which is how I found that they
+                  were computing it differently and disagreeing by a day. */}
+              {!projection.hasProjection && <ExamCountdown decks={decks} />}
               <HomeHeroNumber
                 decks={decks}
                 hasProjection={projection.hasProjection}

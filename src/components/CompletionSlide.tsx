@@ -164,7 +164,7 @@ export default function CompletionSlide({
         >
           <CompletionFlame streak={displayStreak} />
           <div className="mt-1">
-            <p className="text-4xl font-bold tracking-tight text-foreground tabular-nums">
+            <p className="text-4xl font-semibold tracking-tight text-foreground tabular-nums">
               {displayStreak === 0 ? "Day 1" : `Day ${displayStreak}`}
             </p>
             <p className="mt-0.5 text-sm font-medium text-muted-foreground">{tier.label}</p>
@@ -199,19 +199,19 @@ export default function CompletionSlide({
 
             <div className="mt-3 flex items-baseline gap-5">
               <span className="flex flex-col">
-                <span className="text-2xl font-bold tabular-nums text-accent">{memoryOfDeck.solid}</span>
+                <span className="text-2xl font-semibold tabular-nums text-accent">{memoryOfDeck.solid}</span>
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Solid
                 </span>
               </span>
               <span className="flex flex-col">
-                <span className="text-2xl font-bold tabular-nums text-pending">{memoryOfDeck.fading}</span>
+                <span className="text-2xl font-semibold tabular-nums text-pending">{memoryOfDeck.fading}</span>
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   Fading
                 </span>
               </span>
               <span className="flex flex-col">
-                <span className="text-2xl font-bold tabular-nums text-foreground">
+                <span className="text-2xl font-semibold tabular-nums text-foreground">
                   {memoryOfDeck.holding + memoryOfDeck.familiar + memoryOfDeck.met}
                 </span>
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -255,14 +255,14 @@ export default function CompletionSlide({
           className="grid w-full grid-cols-2 gap-3"
         >
           <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
-            <span className="text-2xl font-bold tabular-nums text-foreground">{cleared}</span>
+            <span className="text-2xl font-semibold tabular-nums text-foreground">{cleared}</span>
             <span className="mt-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Cleared
             </span>
           </div>
           <div className="flex flex-col items-center rounded-2xl border border-border bg-foreground/[0.03] py-4">
             <span
-              className={`text-2xl font-bold tabular-nums ${
+              className={`text-2xl font-semibold tabular-nums ${
                 accuracy >= 80
                   ? "text-success"
                   : accuracy >= 50

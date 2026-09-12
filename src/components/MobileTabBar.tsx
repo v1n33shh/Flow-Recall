@@ -51,9 +51,16 @@ import { vibrateTap } from "@/lib/haptics";
  *
  * `pt-[4.75rem]` on the nav is the FAB's `h-16` (64px) plus a 12px gap, and the FAB's
  * `-top-[4.75rem]` lifts it by the same amount from the pill's top edge. Those two values
- * are one measurement and must move together - because `--tabbar-h` is published from the
- * ResizeObserver below and an absolutely-positioned FAB contributes nothing to
- * offsetHeight, so content would otherwise scroll underneath it.
+ * are one measurement and must move together.
+ *
+ * THAT 76dp BAND IS THE PRICE OF A CENTRED FAB, and it is worth knowing what it buys. It
+ * was removed once, on the reasoning that a floating control should not reserve layout -
+ * and the FAB promptly came to rest on top of the "10m" session chip, because centred is
+ * the one position where scrolling content cannot pass a FAB safely. It is reserved again.
+ * A corner FAB would free it; that is a design decision, not a spacing one.
+ *
+ * The nav is `pointer-events-none` with `auto` on the pill, which is correct either way: a
+ * fixed, full-width, invisible 76dp strip should never eat a tap, reserved or not.
  */
 
 type Tab = {
@@ -167,18 +174,23 @@ export default function MobileTabBar() {
   const navRef = useRef<HTMLElement>(null);
   const [adding, setAdding] = useState(false);
 
-  // Publishes the bar's real rendered height (FAB + gap + pill + safe area) as --tabbar-h
-  // on <html>, so PageTransition's native scroll container and this file's own spacer
-  // reserve exactly the right space - not a guessed number - even as OS text scaling
-  // changes label height or this design changes again later.
+  // TWO MEASUREMENTS, BECAUSE "how tall is the bar" AND "how much must content clear"
+  // ARE DIFFERENT QUESTIONS, AND CONFLATING THEM COST 40% OF THE SCREEN.
+  //
+  // --tabbar-h is the whole bar: FAB zone + gap + pill + safe area. DeckUndoBar sits on
+  // top of it and two other screens pad against it, so its meaning is fixed and this
+  // change does not touch it.
+  //
+  // Measured on a 1080x2400 device: with the safe area double-counted below, page content
+  // stopped 960 device pixels short of the bottom of the screen.
   useEffect(() => {
-    const el = navRef.current;
-    if (!el) return;
+    const nav = navRef.current;
+    if (!nav) return;
     const root = document.documentElement;
-    const publish = () => root.style.setProperty("--tabbar-h", `${el.offsetHeight}px`);
+    const publish = () => root.style.setProperty("--tabbar-h", `${nav.offsetHeight}px`);
     publish();
     const observer = new ResizeObserver(publish);
-    observer.observe(el);
+    observer.observe(nav);
     return () => observer.disconnect();
   }, []);
 
@@ -191,17 +203,42 @@ export default function MobileTabBar() {
   return (
     <>
       {/* In-flow spacer so scrollable content clears the floating bar. It shares this
-          component's render conditions, so it vanishes on /reader, /study and at sm:+. */}
+          component's render conditions, so it vanishes on /reader, /study and at sm:+.
+
+          IT COUNTS THE SAFE AREA ONCE, AND THAT IS THE WHOLE FIX. It used to read
+          `var(--tabbar-h) + env(safe-area-inset-bottom) + 1rem`, and --tabbar-h is the
+          nav's offsetHeight - which ALREADY contains the nav's own
+          `paddingBottom: calc(env(safe-area-inset-bottom) + 1rem)`. Both were counted
+          twice: about 40dp of every screen in this app, spent on nothing.
+
+          IT STILL RESERVES THE FAB'S 4.75rem ZONE, AND THAT WAS TRIED THE OTHER WAY FIRST.
+          Reserving only the pill recovered another 76dp and looked like a clear win in a
+          screenshot of a fresh scroll position - then the FAB, which is CENTRED, came to
+          rest exactly on top of the "10m" session-length chip and covered it. A floating
+          FAB over scrolling content is an ordinary pattern when the FAB is in a corner,
+          because it only ever obscures the edge of a row. Centred, it blocks the middle of
+          whatever passes beneath it, and there is no scroll position at which that is
+          safe. Moving the FAB to a corner would free those 76dp honestly; until someone
+          decides that, the zone stays reserved and this comment is the receipt.
+
+          The 0.5rem is the only judgement left in the line - a hairline of air so the last
+          row of a library grid does not touch the FAB's own glass edge. */}
       <div
         aria-hidden="true"
         className="sm:hidden"
-        style={{ height: "calc(var(--tabbar-h, 8rem) + env(safe-area-inset-bottom) + 1rem)" }}
+        style={{ height: "calc(var(--tabbar-h, 8rem) + 0.5rem)" }}
       />
 
       <nav
         ref={navRef}
         aria-label="Primary"
-        className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pt-[4.75rem] sm:hidden"
+        // `pointer-events-none` HERE AND `auto` ON THE PILL BELOW, AND IT IS LOAD-BEARING NOW.
+        // `pt-[4.75rem]` makes this fixed element 76dp taller than the pill so the FAB's
+        // zone is inside its box and gets measured. That band used to sit over reserved
+        // empty space and swallowing taps in it cost nothing. Content scrolls under it
+        // now, so a full-width invisible strip that ate every tap would be a real bug -
+        // the page would have a dead ribbon across it just above the bar.
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center px-3 pt-[4.75rem] sm:hidden"
         // NO PALETTE SPREAD HERE ANY MORE, and that is the point of src/lib/spatial.ts.
         // This bar is a SIBLING of <main> in layout.tsx, so it never inherited the scoped
         // custom properties the screens declared - which made `oklch(var(--nk-gold))` an
@@ -209,7 +246,9 @@ export default function MobileTabBar() {
         // and rendered as nothing at all. Literal Tailwind utilities cannot fail that way.
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
       >
-        <div className="relative flex w-full max-w-[420px] items-center gap-0.5 rounded-full border border-white/10 bg-white/5 px-1.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl">
+        <div
+          className="pointer-events-auto relative flex w-full max-w-[420px] items-center gap-0.5 rounded-full border border-white/10 bg-white/5 px-1.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl"
+        >
           {TABS.map((tab) => (
             <TabLink key={tab.href} {...tab} active={isActive(tab.href)} />
           ))}

@@ -28,34 +28,14 @@ import {
 } from "@/lib/ingestChunks";
 import { sourceKeyFor } from "@/lib/sourceKey";
 import { apiUrl, API_FETCH_CREDENTIALS } from "@/lib/apiUrl";
+// The app-wide screen title (src/lib/spatial.ts). Colour supplied here rather
+// than by the constant: this screen is token-based, so it must follow the theme.
+import { SCREEN_TITLE } from "@/lib/spatial";
 
 // The ids this app is realistically pinned to, with the names their makers use. A map
 // rather than a clever transform because "gpt-oss" prettifies to "Gpt Oss" and no
 // amount of casing rules fixes that.
-//
-// DECLARED BEFORE MODEL_OPTIONS, and it has to stay that way: MODEL_OPTIONS calls
-// freeModelLabel() during module evaluation, and a `const` read from inside a function
-// called before its own declaration is a temporal-dead-zone ReferenceError, not
-// undefined. Function declarations hoist; const bindings do not. Getting this order
-// wrong broke a production build with "Cannot access 'x' before initialization" while
-// `tsc --noEmit` stayed perfectly clean - TypeScript does not model TDZ across a call.
-const FREE_MODEL_LABELS: Record<string, string> = {
-  "qwen/qwen3.6-27b": "Qwen 3.6 27B",
-  "openai/gpt-oss-120b": "GPT-OSS 120B",
-  "openai/gpt-oss-20b": "GPT-OSS 20B",
-};
 
-/** The dropdown's name for the free model. Falls back to a best-effort prettifier so
- * an unrecognised id still reads as something rather than breaking the label. */
-function freeModelLabel(id: string): string {
-  const known = FREE_MODEL_LABELS[id];
-  if (known) return known;
-  const name = id.split("/").pop() ?? id;
-  return name
-    .split("-")
-    .map((part) => (/^\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(" ");
-}
 
 // Kept local (not imported from @/lib/ai) on purpose: that module pulls in the
 // server-side provider SDKs, and importing it here would drag them into the
@@ -65,10 +45,26 @@ function freeModelLabel(id: string): string {
 // than an app release - see the FREE_MODEL comment in @/lib/ai, which this must stay
 // in lockstep with. The label is derived rather than hardcoded for the same reason.
 const DEFAULT_MODEL = process.env.NEXT_PUBLIC_GROQ_FREE_MODEL || "qwen/qwen3.6-27b";
-const MODEL_OPTIONS = [
-  { id: DEFAULT_MODEL, label: `${freeModelLabel(DEFAULT_MODEL)} (Free)`, pro: false },
-  { id: "claude-haiku-latest", label: "Claude Haiku (Pro)", pro: true },
-] as const;
+/** The model a plan gets. NOT a question the student is asked any more.
+ *
+ * This was a `<select>` on the ingest form with two options - the free Groq model and
+ * "Claude Haiku (Pro)" - and it was the wrong control to put in front of this buyer.
+ * A student two weeks from an exam cannot evaluate Haiku against Qwen and should not
+ * have to: it asks them to price an INPUT, which is both the hardest sell available
+ * and the one least connected to why they opened the app. The pricing page made the
+ * same mistake in words ("unlock the smartest models") and has been rewritten too.
+ *
+ * THE ENTITLEMENT IS UNCHANGED - a PRO account still gets the better model on dense
+ * material. It simply arrives as quality rather than as a dropdown, which is how every
+ * product that sells an outcome ships its supply chain. The server is unaffected:
+ * /api/ingest still validates the id against PRO_MODELS and still rejects a FREE
+ * account that asks for a PRO one (see isProModel in @/lib/ai), so this is a UI
+ * simplification and not a new trust boundary. */
+const PRO_MODEL = "claude-haiku-latest";
+
+function modelForPlan(plan: string): string {
+  return plan === "PRO" ? PRO_MODEL : DEFAULT_MODEL;
+}
 
 // Coverage cap. Sequential chunking is safe from rate limits, but 40 requests is
 // five minutes of standing still on a phone. At the 4500-character chunk size
@@ -88,7 +84,9 @@ export default function IngestPage() {
   const plan = session?.user?.plan ?? "FREE";
   const isAuthenticated = status === "authenticated";
 
-  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
+  // Derived, not chosen - see PRO_MODEL above. Recomputes when the session lands, so a
+  // PRO account is not pinned to the free model by whatever the first paint saw.
+  const selectedModel = modelForPlan(plan);
   const [text, setText] = useState("");
   const [title, setTitleState] = useState("Untitled Notes");
   // saveDeck() needs the title as of whenever generation actually finishes,
@@ -157,9 +155,13 @@ export default function IngestPage() {
     };
   }, [recognisedDeckId, continuing, isAuthenticated]);
 
-  const selectedIsPro = MODEL_OPTIONS.find((m) => m.id === selectedModel)?.pro ?? false;
   // A free user who picked a Pro model - the one state we hard-block generation on.
-  const proModelLocked = selectedIsPro && plan !== "PRO";
+  // WAS `selectedIsPro && plan !== "PRO"`, guarding a state that can no longer be
+  // reached: the model is derived from the plan now, so a FREE account cannot ask for
+  // a PRO model from this form at all. Kept as a named `false` rather than deleted
+  // outright because the SERVER still enforces the same rule (isProModel in @/lib/ai)
+  // and a future surface that lets a model be chosen again would want this branch back.
+  const proModelLocked = false;
 
   function setTitle(value: string) {
     titleRef.current = value;
@@ -409,7 +411,7 @@ export default function IngestPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Auto-Ingest</h1>
+      <h1 className={`${SCREEN_TITLE} text-foreground`}>Auto-Ingest</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Paste your lecture notes, textbook chapter, or a PDF below. We&apos;ll
         break it into micro-concepts ready for recall practice.
@@ -453,29 +455,6 @@ export default function IngestPage() {
         className="mt-1.5 w-full rounded-xl border border-border bg-surface px-4 py-3 text-base text-foreground placeholder-muted-foreground outline-none focus:"
       />
 
-      <label
-        htmlFor="model-select"
-        className="mt-6 block text-xs font-bold uppercase tracking-widest text-foreground"
-      >
-        Model
-      </label>
-      <div className="relative mt-1.5">
-        <select
-          id="model-select"
-          value={selectedModel}
-          onChange={(e) => setSelectedModel(e.target.value)}
-          className="w-full cursor-pointer appearance-none rounded-lg border border-border bg-surface px-4 py-3 pr-11 text-base font-bold text-foreground outline-none transition-all focus:-translate-x-0.5 focus:-translate-y-0.5 focus:"
-        >
-          {MODEL_OPTIONS.map((m) => (
-            <option key={m.id} value={m.id} className="bg-surface font-medium text-foreground">
-              {m.label}
-            </option>
-          ))}
-        </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-foreground">
-          ▾
-        </span>
-      </div>
 
       {proModelLocked && (
         <div className="mt-3 rounded-lg border border-border bg-surface px-4 py-3 text-sm font-bold text-foreground">
@@ -556,8 +535,8 @@ export default function IngestPage() {
           </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Your allowance resets at the start of next month. Everything you&apos;ve already
-            made stays free to study, review and map. Pro removes the limit and unlocks the
-            smartest models.
+            made stays free to study, review and map — Pro removes the ceiling, it does not
+            hold your work behind it.
           </p>
           <Link
             href="/pricing"

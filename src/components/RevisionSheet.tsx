@@ -237,7 +237,6 @@ export default function RevisionSheet({
       </div>
 
       <DeckLearningPath
-        showMapLink
         concepts={concepts}
         map={map}
         labelOf={labelOf}

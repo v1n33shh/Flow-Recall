@@ -40,6 +40,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-dropzone": "^15.0.0",
+    "resend": "^6.28.0",
     "stripe": "^22.3.0",
     "zod": "^4.4.3"
   },

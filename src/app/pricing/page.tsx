@@ -20,14 +20,13 @@ import { launchOfferActive, launchOfferEndLabel, LAUNCH_OFFER_WAS } from "@/lib/
 const FREE_FEATURES = [
   `${FREE_DECKS_PER_MONTH} decks a month, free`,
   `${FREE_LOOKUPS_PER_MONTH} AI lookups a month — definitions, ask-anything, concept maps`,
-  "Qwen3 27B — fast, capable free model",
   "AI-generated active-recall study feed, scheduled by FSRS-6",
-  // The Reader and the Mindmap were missing from this page entirely, which meant two of
+  // The Reader was missing from this page entirely, which meant one of
   // the three things this app has that Anki does not were invisible at the point of sale.
   // They belong on the FREE side: they are a better argument for the free tier than a
   // deck count is, and they cost nothing to offer.
   "Reader for EPUB, PDF and pasted text — define any word in place",
-  "Concept Mindmap and revision sheet for every deck",
+  "Revision sheet for every deck",
   "Deck library with search, and a daily streak",
 ];
 
@@ -36,12 +35,25 @@ const FREE_FEATURES = [
 // advertised it rendered a hardcoded 0, so a student who paid for it got a counter that
 // never moved. Removed rather than built; see the plan. Do not add a line here before the
 // thing it names exists.
+//
+// THESE LINES SELL OUTCOMES NOW, NOT MODELS, AND THAT IS THE POINT OF THE REWRITE.
+// Three of them used to name the supply chain - "Claude Haiku", "Qwen3 27B" on the
+// free side, "the smartest models" in the subhead three times over. A student two
+// weeks from an exam cannot evaluate Haiku against Qwen and does not want to; they
+// are buying a pass, not an inference provider. Naming the model asks them to value
+// an input, which is the hardest possible sell and the one least connected to why
+// they opened the app.
+//
+// The ENTITLEMENTS are unchanged - every line below still names something an account
+// actually receives, per the rule above. Only the words moved, from what we buy to
+// what they get. The better model is still there and still shipped; it is described
+// by what it does rather than by whose it is.
 const PRO_FEATURES = [
   "Everything in Free",
-  "Unlimited deck generation",
-  "Claude Haiku — smarter AI, optimised for deep material",
-  "Infinite Recall Mode — AI generates new angles forever",
-  "Unlimited AI lookups — definitions, ask-anything, concept maps",
+  "Decks without a monthly ceiling — carry a whole book through exam season",
+  "Every word, every question, all term — no lookup counter",
+  "Infinite Recall Mode — new angles on a concept, forever",
+  "Deeper AI on dense material, where the free model runs shallow",
 ];
 
 function Check() {
@@ -120,7 +132,7 @@ export default function PricingPage() {
         amount: data.amount,
         currency: data.currency,
         name: "FlowRecall",
-        description: "Pro Plan - Unlock the smartest AI models.",
+        description: "FlowRecall Pro - unlimited decks and lookups.",
         order_id: data.id,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         handler: async function (response: any) {
@@ -200,8 +212,8 @@ export default function PricingPage() {
       </h1>
       <p className="mx-auto mt-3 max-w-md text-center text-sm text-muted-foreground">
         {isNative
-          ? "Start free. Pro unlocks the smartest models for serious study."
-          : "Start free. Upgrade when you want the smartest models on your side."}
+          ? "Start free. Pro is for the month the exam is in."
+          : "Start free. Upgrade when a limit is the only thing between you and the exam."}
       </p>
 
       {/* Monthly / Yearly Toggle */}
@@ -292,7 +304,7 @@ export default function PricingPage() {
               </p>
             )}
           </div>
-          <p className="mt-2 text-sm text-foreground">The frontier models, unlocked for serious study.</p>
+          <p className="mt-2 text-sm text-foreground">For the term you cannot afford to run out mid-chapter.</p>
 
           <ul className="mt-6 flex flex-1 flex-col gap-3 text-sm text-foreground">
             {PRO_FEATURES.map((f) => (

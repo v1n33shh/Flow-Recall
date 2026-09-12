@@ -21,6 +21,16 @@ import { clearAllLocalUserData } from "@/lib/storage";
 import { vibrateTap } from "@/lib/haptics";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { useIsNative } from "@/lib/useIsNative";
+// THE SHARED SCREEN TITLE (src/lib/spatial.ts), and the colour is supplied HERE on
+// purpose. This is the one screen in the app that genuinely re-themes - it owns the
+// Appearance switch below - so a title with `text-white` baked into the constant would
+// paint white-on-near-white the moment a user picks light mode, on the very screen that
+// offers the choice. `text-foreground` inverts with the theme instead.
+//
+// Its zinc text went to `text-muted-foreground` for the same reason, and NOT to the
+// white-alpha ramp that the identical defect in Navbar.tsx was fixed with - that bar is
+// dark-only, this screen is not. Same defect, different correct answer.
+import { SCREEN_TITLE } from "@/lib/spatial";
 
 // Was a Server Component reading `auth()` + `prisma.user.findUnique` directly.
 // That doesn't run in the Capacitor static export (no server behind the
@@ -290,7 +300,7 @@ function WebAccountCard() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
+      <h1 className={`${SCREEN_TITLE} text-foreground`}>Account</h1>
 
       <div className="mt-6 flex items-center gap-4 rounded-2xl border-2 border-white/10 bg-white/5 p-5">
         {/* #18181b is intentionally an inline style — Tailwind purges utility
@@ -304,12 +314,12 @@ function WebAccountCard() {
         </span>
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold text-white">{user.name ?? "Student"}</p>
-          <p className="truncate text-sm text-zinc-400">{user.email}</p>
+          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
         </div>
       </div>
 
       <div className="mt-4 rounded-2xl border-2 border-white/10 bg-white/5 p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Plan</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan</p>
         <p className="mt-1 text-lg font-semibold text-white">
           {user.plan === "PRO" ? "Pro" : "Free"}
         </p>
@@ -324,7 +334,7 @@ function WebAccountCard() {
         onClick={() => {
           if (!dataExport.busy) void dataExport.run();
         }}
-        className="mt-6 self-center text-xs font-medium text-zinc-400 underline underline-offset-2 transition-colors hover:text-zinc-200"
+        className="mt-6 self-center text-xs font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground"
       >
         {dataExport.busy ? "Preparing your export…" : "Download my data"}
       </button>
@@ -340,8 +350,8 @@ function WebAccountCard() {
         Delete account
       </button>
 
-      <p className="mt-6 text-center text-xs text-zinc-500">
-        <Link href="/privacy" className="underline underline-offset-2 hover:text-zinc-300">
+      <p className="mt-6 text-center text-xs text-muted-foreground">
+        <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
           Privacy Policy
         </Link>
       </p>
@@ -569,7 +579,7 @@ function SignedOutPrompt() {
         initial={{ opacity: 0, scale: 0.85 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 320, damping: 22 }}
-        className="relative flex h-16 w-16 items-center justify-center rounded-[28%] border border-white/10 bg-gradient-to-br from-zinc-800 to-zinc-950 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_32px_-8px_rgba(0,0,0,0.7)]"
+        className="relative flex h-16 w-16 items-center justify-center rounded-[28%] border border-white/10 bg-black bg-gradient-to-br from-white/[0.08] to-transparent text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_32px_-8px_rgba(0,0,0,0.7)]"
       >
         <LogoMark sheen className="h-[64%] w-[64%]" />
         <div className="pointer-events-none absolute inset-0 rounded-[28%] ring-1 ring-inset ring-white/5" />
@@ -580,7 +590,7 @@ function SignedOutPrompt() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 32, delay: 0.08 }}
       >
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome to FlowRecall</h1>
+        <h1 className={`${SCREEN_TITLE} text-foreground`}>Welcome to FlowRecall</h1>
         <p className="mx-auto mt-2 max-w-[22rem] text-sm text-muted-foreground">
           Sign in to see your plan, streak, and account settings.
         </p>
@@ -727,6 +737,19 @@ const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION;
 
 function NativeAccountScreen() {
   const { data: session, status } = useSession();
+  /** Days left on a PRO entitlement, or null when there is nothing to say.
+   *
+   * WHY THIS SCREEN HAS TO SAY IT. The Razorpay path is a one-time payment, not a
+   * recurring mandate - it grants 30 or 365 days and then the account silently drops
+   * to FREE. There is no dunning email because there is no email provider in this
+   * project at all (notifications.ts is Capacitor LocalNotifications, device-local and
+   * not drivable from a server). Without this line a subscriber's first notice that
+   * their plan ended is a feature quietly refusing to work.
+   *
+   * Cosmetic on failure, deliberately: a missing count is a worse screen, not a broken
+   * one, so the fetch stays unguarded by any loading state and simply renders nothing
+   * if it never lands. The server is still the authority on the entitlement itself. */
+  const [proDaysLeft, setProDaysLeft] = useState<number | null>(null);
   const [theme, setThemeState] = useState<Theme>("dark");
   const [graceElapsed, setGraceElapsed] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -744,6 +767,21 @@ function NativeAccountScreen() {
     const timer = setTimeout(() => setGraceElapsed(true), AUTH_GRACE_MS);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    let cancelled = false;
+    fetch(apiUrl("/api/account/usage?tzOffset=0"), { credentials: API_FETCH_CREDENTIALS })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setProDaysLeft(typeof data.proDaysRemaining === "number" ? data.proDaysRemaining : null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [status]);
 
   function toggleTheme() {
     vibrateTap();
@@ -768,7 +806,7 @@ function NativeAccountScreen() {
   return (
     <PullToRefresh>
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-8">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Account</h1>
+        <h1 className={`${SCREEN_TITLE} text-foreground`}>Account</h1>
 
         <Reveal index={0}>
           <div className="mt-6 flex flex-col items-center gap-3 text-center">
@@ -797,6 +835,20 @@ function NativeAccountScreen() {
               <p className={`mt-0.5 text-lg font-bold ${isPro ? "text-accent" : "text-foreground"}`}>
                 {isPro ? "Pro" : "Free"}
               </p>
+              {/* Only ever shown to a PRO account with a real expiry. A manually
+                  granted account has no period end and the route sends null, which
+                  must read as "nothing to say" rather than as "expires today". */}
+              {isPro && proDaysLeft !== null && (
+                <p
+                  className={`mt-1 text-[11px] tabular-nums ${
+                    proDaysLeft <= 7 ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {proDaysLeft === 0
+                    ? "Ends today · renew to keep it"
+                    : `${proDaysLeft} ${proDaysLeft === 1 ? "day" : "days"} left`}
+                </p>
+              )}
             </div>
             <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Streak</p>

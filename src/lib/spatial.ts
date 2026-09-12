@@ -34,7 +34,147 @@
  * behind it (the sheet over the library grid, the tab bar over scrolling content). That is
  * why GlowField keeps one whisper-faint achromatic sheen - it gives the panes on the home
  * screen something to refract. Delete that one div and this all still works, flatter.
+ *
+ * ---------------------------------------------------------------------------
+ * CHROMA LIVES BELOW THE VISIBILITY THRESHOLD AND IS LIFTED BY THE GLASS
+ * ---------------------------------------------------------------------------
+ * The sentence at the top - "there is no brand colour in this world at all" - is now one
+ * qualification short of true, and the qualification is the whole idea, so it is worth
+ * stating precisely rather than quietly relaxing.
+ *
+ * DESIGN.md:107 records that a saturated ground was tried and rejected: at the low alpha a
+ * glow needs, chroma carries where luminance does not, so a saturated wash tints the whole
+ * upper page where the same value in white stays a glow. That finding is not overturned
+ * here. It is the constraint this layer is built around.
+ *
+ * The mesh (CHROMA below, painted by GlowField) sits at 1.8-3.5% alpha on pure black.
+ *
+ * THOSE ALPHAS WERE SET FROM A SCREENSHOT, NOT FROM ARITHMETIC, AND THE FIRST PASS WAS
+ * WRONG BY ABOUT 3x. It shipped at 5.5-10%, reasoned on paper to land "one 8-bit step off
+ * the ground". Measured off an actual 390x844 capture, the violet lobe read rgb(14,10,22)
+ * and the cyan lobe rgb(3,15,17) on BARE CANVAS, with no pane over either - a channel
+ * spread of 11 and 13. That is not a step, that is a visible teal cast down the right edge
+ * and a violet one behind the header: precisely the wash DESIGN.md:107 rejected, rebuilt
+ * by hand. At a third of the alpha the same lobes measure a spread of about 4, which is
+ * inside the dither and reads as black.
+ *
+ * SO THE RULE, AND IT IS A MEASUREMENT RULE: bare-canvas channel spread (max minus min
+ * channel, sampled away from any pane) must stay at or under ~4. Above that the hue is a
+ * tint and this whole layer has failed at the one thing it is for. Re-measure after any
+ * change here; the arithmetic is not trustworthy at these values and has already proved
+ * it once.
+ *
+ * `backdrop-saturate` is what makes it something, and only where a pane is. A saturate
+ * filter scales chroma around luma, so it multiplies a colour that is already there and
+ * cannot invent one that is not: over the achromatic parts of the ground it is an exact
+ * no-op, and over the mesh it lifts the chroma while leaving brightness alone.
+ *
+ * 2.2 AND NOT MORE, AND THE CEILING IS SET BY CONTENT RATHER THAN BY THE MESH. A pane does
+ * not only ever sit over the ground - the selection bar and the tab bar sit over cover art,
+ * which has real colour in it already. The mesh would happily take 3x; a book jacket would
+ * go lurid at it. 2.2 is the most that can be spent without the filter announcing itself
+ * on the one backdrop that is not ours to restyle.
+ * So the violet/cyan/coral is legible INSIDE a frosted pane and invisible beside it -
+ * "sits behind the pitch-black canvas, bleeds through frosted glass only", implemented
+ * rather than approximated.
+ *
+ * It also, finally, gives the blur something to do. The paragraph above concedes that
+ * `backdrop-blur` over flat #000 is a no-op and the glass is really just a 5% white fill.
+ * With a mesh behind it the filter is working on real content, which is the difference
+ * between a material and a rectangle.
+ *
+ * ONE CONSTANT REVERSES IT. Set every alpha in CHROMA to 0 and this world is achromatic
+ * again with no call site touched - `backdrop-saturate` over a grey backdrop changes
+ * nothing. That is deliberate: the hue is the newest and least proven idea in a system
+ * whose whole argument is restraint, so it is built to be withdrawn in one edit.
  */
+
+/** THE MESH. Three saturated stops and one achromatic sheen, as exact values.
+ *
+ * Read the CHROMA section of the file header before changing any alpha here - these
+ * numbers are chosen to sit UNDER the threshold where a hue reads as a tint, because the
+ * pane's `backdrop-saturate` is what is meant to make them visible, not the ground.
+ *
+ * THE HUES. Deep violet, cyan, coral - a triad rather than a single brand hue, because a
+ * single one reads as a tint the moment it is detectable at all, where three that never
+ * meet read as depth. They are placed far apart and never overlap at more than a few
+ * percent: the violet anchors the top-left where the white sheen already is, the cyan sits
+ * off the right edge at eye level, the coral is low and mostly below the fold.
+ *
+ * THE ALPHAS ARE NOT UNIFORM, AND THAT IS PERCEPTUAL RATHER THAN ARBITRARY. Cyan is the
+ * brightest of the three at equal alpha (its luma coefficient is dominated by G) and coral
+ * the next, so equal alphas would put a cyan bar across the right of every screen. They
+ * are tuned to equal apparent weight instead: violet .035, cyan .022, coral .018 - and
+ * the ratios between them matter more than the absolute values, which are set by the
+ * measurement rule in the file header.
+ *
+ * NEVER ANIMATED, AND THIS IS THE EXPENSIVE RULE. An animated backdrop invalidates every
+ * `backdrop-filter` above it on every frame - so a moving background does not cost its own
+ * paint, it costs the blur of every pane on the screen. That lesson cost this shell a full
+ * revision (DESIGN.md). One `background-image`, painted once.
+ *
+ * IT NEEDS THE DITHER. A gradient falling from 10% to nothing across a viewport spans
+ * about one 8-bit step, and a step that small bands into visible rings on the cheap
+ * Android panels this ships to. FilmGrain is what breaks it up; the two ship together.
+ */
+export const CHROMA = {
+  /** Deep violet, top-left, behind the header. The largest and the only one that overlaps
+   * the achromatic sheen - they are both anchored off the same corner, so the lit edge of
+   * a pane up there catches a little of each. */
+  violet: "rgba(124, 58, 237, 0.035)",
+  /** Cyan, off the right edge at roughly eye level. Held tighter than the violet so it
+   * reads as a source rather than a fill. */
+  cyan: "rgba(34, 211, 238, 0.022)",
+  /** Coral, low and centred, mostly below the fold on a phone - it exists so that a long
+   * scroll changes temperature rather than repeating one frame forever. */
+  coral: "rgba(251, 113, 133, 0.018)",
+  /** The original achromatic sheen, unchanged and still doing the same job: a suggestion
+   * that the room has a light in it off the top-left. The mesh is layered UNDER this, not
+   * instead of it - drop all three hues and what is left is exactly the world before. */
+  sheen: "rgba(255, 255, 255, 0.035)",
+} as const;
+
+/** The mesh as one `background-image`, composed here so GlowField and anything else that
+ * ever needs the same ground cannot drift apart in the retuning.
+ *
+ * Order is paint order, back to front: the three hues, then the white sheen on top, which
+ * is why the sheen still reads as the light source rather than as a fourth colour. */
+export const MESH_BACKGROUND_IMAGE = [
+  `radial-gradient(72% 52% at 14% 4%, ${CHROMA.violet} 0%, transparent 68%)`,
+  `radial-gradient(56% 44% at 96% 34%, ${CHROMA.cyan} 0%, transparent 66%)`,
+  `radial-gradient(68% 46% at 46% 104%, ${CHROMA.coral} 0%, transparent 64%)`,
+  `radial-gradient(120% 85% at 0% 0%, ${CHROMA.sheen} 0%, rgba(255,255,255,0.014) 26%, rgba(255,255,255,0.004) 42%, transparent 60%)`,
+].join(", ");
+
+/** The metadata pill: a file type, a count, a status. Not a control - nothing here is
+ * tappable, and it must not look like it is.
+ *
+ * TRACKING IS POSITIVE HERE AND THE BRIEF SAYS TIGHT, SO: tight tracking is a DISPLAY
+ * instruction and it is honoured where display type lives (headings run at -0.03em, the
+ * wordmark at -0.02em). Ten-pixel uppercase is the one place in typography where negative
+ * tracking is simply wrong - caps have no ascender/descender rhythm to separate them, so
+ * they collide and the word turns into a shape. +0.12em is what keeps it a word.
+ *
+ * NO BLUR, BUT YES SATURATE, AND THE SPLIT IS NOT A COMPROMISE - THE TWO FILTERS BEHAVE
+ * DIFFERENTLY AT THIS SIZE. A blur has a RADIUS: 64px of it inside a 24px-tall pill samples
+ * almost entirely from outside the pill, so it is paid for and not seen. Saturate has no
+ * radius at all - it is per-pixel - so it works exactly as well on a pill as on a full-
+ * bleed panel, and costs a fraction of the blur.
+ *
+ * This was briefly written the other way, with the blur argument used to justify no
+ * backdrop-filter at all. That was wrong, and wrong in a way that showed up on screen: the
+ * library's chrome is pills and a segmented control, so with no saturate anywhere on it
+ * there was nothing on that entire screen lifting the mesh - leaving the hue doing only the
+ * thing it must never do, tinting the bare canvas.
+ *
+ * The fill matches GLASS_STATIC rather than GLASS_PANEL for the usual reason: it is the
+ * lighter 6% so it still reads as the same material without the blur behind it. */
+export const META_PILL = [
+  "inline-flex items-center gap-1.5 rounded-full",
+  "border border-white/10 bg-white/[0.06] backdrop-saturate-[2.2]",
+  "px-2.5 py-1",
+  "text-[10px] font-medium uppercase tracking-[0.12em] text-white/60",
+].join(" ");
 
 /** The spatial pane. Cards, widgets, panels - anything that holds content.
  *
@@ -44,7 +184,7 @@
  * revision; see DESIGN.md.
  */
 export const GLASS_PANEL = [
-  "bg-white/5 backdrop-blur-3xl",
+  "bg-white/5 backdrop-blur-3xl backdrop-saturate-[2.2]",
   "border border-white/10",
   // An inset top highlight, not a drop shadow. A pane catches light along its top edge; it
   // does not cast anything onto a room that has no floor.
@@ -59,7 +199,7 @@ export const GLASS_PANEL = [
  * has to be unambiguous: 10/20 against 5/10 reads instantly, 7/12 would not.
  */
 export const GLASS_CONTROL = [
-  "bg-white/10 backdrop-blur-2xl",
+  "bg-white/10 backdrop-blur-2xl backdrop-saturate-[2.2]",
   "border border-white/20",
   "shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]",
 ].join(" ");
@@ -76,7 +216,7 @@ export const GLASS_CONTROL = [
  * it. Two blur radii is the most this system should ever carry, and one is better.
  */
 export const GLASS_PANEL_SOFT = [
-  "bg-white/5 backdrop-blur-md",
+  "bg-white/5 backdrop-blur-md backdrop-saturate-[2.2]",
   "border border-white/10",
   "shadow-[inset_0_1px_0_rgba(255,255,255,0.09)]",
 ].join(" ");
@@ -114,6 +254,48 @@ export const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.18em] text
  * pulling in Inter would ship a second UI grotesk alongside the one already here.
  */
 export const WORDMARK = "font-sans text-[17px] font-semibold tracking-[-0.02em] text-white";
+
+/** THE SCREEN TITLE. One voice for "where you are", on every tab of the app.
+ *
+ * The shell had three treatments for one object: `text-[28px]` at -0.03em (Library),
+ * `text-2xl` at `tracking-tight` (Ingest, Account), a `font-bold` variant on Account's
+ * signed-out state, and no title at all on the Reader. Three sizes, three tracking
+ * values, two weights, one screen with nothing - which is what made moving between tabs
+ * feel like moving between apps.
+ *
+ * SERIF, BECAUSE THE TITLES ARE SINGLE WORDS. The website's headlines are two-voice - a
+ * sans statement handing its clause to an italic serif ("Answer it / *before you're
+ * told*"). "Library" has no clause to hand over, so the pattern cannot be copied
+ * literally. What carries across instead is the FACE: chrome stays sans, screen identity
+ * becomes Newsreader, and the app inherits the site's voice without pretending to a
+ * structure its labels do not have.
+ *
+ * `font-normal italic` IS LOAD-BEARING, NOT STYLING. Newsreader is loaded italic at
+ * weight 400 and nothing else (layout.tsx). An `<h1>` that inherits or sets 600 has no
+ * real weight to reach for, so the browser SYNTHESISES one and smears the italic. The
+ * fallback stack behind it (Georgia, Times) does have real weights, which is worse: the
+ * bug then appears only once the webfont loads, i.e. never in the first paint you would
+ * screenshot to check it.
+ *
+ * ---------------------------------------------------------------------------
+ * IT CARRIES NO TEXT COLOUR, AND THAT IS THE IMPORTANT PART.
+ * ---------------------------------------------------------------------------
+ * Every other constant in this file hardcodes white, because the Spatial Glass world is
+ * pure black and always will be. This one is used outside that world too: Account is the
+ * single screen in the app that genuinely re-themes - it OWNS the Appearance setting
+ * (getTheme/setTheme) and is built on the semantic tokens rather than on literals.
+ *
+ * Baking `text-white` in here would therefore paint the Account title white-on-near-white
+ * in light mode - on the exact screen that offers the switch, which is the one place such
+ * a bug is guaranteed to be found by a user rather than by us. So the call site supplies
+ * the colour: `text-white` on the dark-only screens, `text-foreground` on the themed ones.
+ *
+ * That is a deliberate exception to this file's "literal Tailwind utilities and nothing
+ * else" rule rather than a hole in it: the rule exists because a SCOPED custom property
+ * (--au-*, --nk-*) fails to inherit to siblings of <main>. `--foreground` is defined on
+ * :root, inherits everywhere, and is not what that rule was written about. */
+export const SCREEN_TITLE =
+  "font-editorial text-[30px] font-normal italic leading-none tracking-[-0.01em]";
 
 /** Interaction, as CSS. No JS animation runs anywhere in this shell except the upload
  * sheet's drag gesture, which tracks a finger in real time and has no CSS equivalent. */

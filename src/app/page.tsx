@@ -5,6 +5,20 @@ import Link from "next/link";
 import { getFactCursor, setFactCursor, useSavedDecks } from "@/lib/storage";
 import { factAt, nextCursor } from "@/lib/brainFacts";
 import { useIsNative } from "@/lib/useIsNative";
+// The Reader's OWN type stacks, imported rather than retyped. `READER_FONTS_HREF`
+// is already linked globally (layout.tsx), so Inter and Atkinson Hyperlegible are
+// on this page today - the specimens below cost no additional bytes, and the mock
+// renders in literally the face the Reader renders in.
+import { FONT_FAMILY_CSS } from "@/lib/readerPreferences";
+// The eye filter's OWN computation, not an impression of it. `eyeFilterColor` is
+// the same pure function EyeFilterOverlay.tsx calls to paint the real reader, so
+// the swatches below are the shipped colours rather than hand-picked ambers.
+//
+// Importing is cheap here and that was checked: eyeFilter.ts is ~6KB, most of it
+// docblocks, and its only non-React dependency is readerPreferences - already in
+// this file's import graph for the serif stack above. (Contrast starterDeck.ts,
+// which LOOP_CARD copies from by hand precisely because it is 20.9KB in one const.)
+import { eyeFilterColor, WARMTH_IDS, WARMTH_LABELS } from "@/lib/eyeFilter";
 import { asPercent, CURVE } from "@/lib/forgettingCurve";
 import LogoMark from "@/components/LogoMark";
 import FilmGrain from "@/components/FilmGrain";
@@ -141,7 +155,6 @@ const SOFTWARE_APP_JSONLD = {
     "Retention projection - what you will still recall on exam day",
     "EPUB, PDF and plain-text reader with in-place word definitions",
     "Highlights that carry notes, and a warm eye filter for night reading",
-    "Concept mindmap of prerequisites, explanations and easily-confused pairs",
     "Deck library with search across titles and concept labels",
     "Explain-it-back grading in your own words",
     "Gamified streaks and daily study sessions",
@@ -167,32 +180,47 @@ const SOFTWARE_APP_JSONLD = {
 // Single source of truth for the FAQ: drives BOTH the visible accordion and the
 // FAQPage JSON-LD, so the structured data always matches the on-page text
 // (Google requires the answer to be present on the page).
+/** The three shelves the questions sit on, in the order a stranger asks them:
+ * what is this, how does it work, should I pick it. The array is the render
+ * order - `FaqCell` walks it and filters, rather than each group knowing its own
+ * position - so re-ordering the section is a one-line edit here.
+ *
+ * A GROUP IS A FIELD ON THE ITEM, NOT A NESTED ARRAY, AND THAT IS DELIBERATE.
+ * `FAQPAGE_JSONLD` maps over `FAQ_ITEMS` destructuring `{ q, a }`; nesting the
+ * items one level deeper would have rewritten that schema, and a FAQPage whose
+ * answers move is exactly the thing Google issues manual actions over. A extra
+ * key is invisible to the destructure, so the emitted JSON-LD is byte-identical
+ * to what it was before this section was reorganised. Verified, not assumed. */
+const FAQ_GROUPS = ["Starting out", "How it works", "Choosing it"] as const;
+
 const FAQ_ITEMS = [
   {
+    group: "Starting out",
     q: "What is an active recall app?",
     a: "An active recall app makes you retrieve answers from memory instead of passively re-reading notes — the most effective, research-backed way to study. FlowRecall turns your notes into an endless feed of active-recall questions, so you practise retrieval every time you open it.",
   },
   {
+    group: "Starting out",
     q: "Can I generate flashcards from a PDF?",
     a: "Yes. Upload any PDF — lecture slides, a textbook chapter, or research papers — and FlowRecall's AI automatically generates hundreds of flashcards in seconds. No manual typing or formatting required.",
   },
   {
+    group: "How it works",
     q: "What spaced repetition algorithm does FlowRecall use?",
     a: "FSRS-6 — the Free Spaced Repetition Scheduler — ported from its published specification rather than approximated. It keeps a stability and a difficulty for every concept, and schedules the next review for the day your recall is predicted to fall to 90%. It runs on your device, so the feed works offline.",
   },
   {
+    group: "How it works",
     q: "Can I read books and PDFs inside FlowRecall?",
     a: "Yes. The Reader opens EPUBs, PDFs and pasted text, remembers your place in each, and lets you long-press any word for a definition without leaving the page. Highlights carry notes, type is serif, sans or hyperlegible, and a warm eye filter takes the glare off late-night reading.",
   },
   {
-    q: "What is the concept mindmap for?",
-    a: "Isolated facts are harder to retrieve than connected ones. The mindmap draws a deck as a graph — what you need first, what explains what, which pairs get confused — and names the keystone: the weak concept the most others are built on.",
-  },
-  {
+    group: "Choosing it",
     q: "Is FlowRecall better than Anki for med school?",
     a: "FlowRecall skips Anki's biggest cost: building the deck by hand. Upload your material and FlowRecall's AI writes the flashcards for you in seconds, then serves them as a gamified active-recall feed instead of a static list. For medical students juggling huge volumes of content, that means hours saved on deck-building and more time spent actually reviewing.",
   },
   {
+    group: "Choosing it",
     q: "Is FlowRecall free?",
     a: "FlowRecall is free to start, with no credit card required. It is powered by Groq for blazing-fast card generation on any device, with optional Pro plans for power users.",
   },
@@ -406,7 +434,30 @@ function HeroCluster({
           className="fr-rise inline-flex w-fit items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/80 backdrop-blur-md sm:gap-2 sm:px-4 sm:py-1.5 sm:text-xs"
           style={{ "--fr-d": "0ms" } as React.CSSProperties}
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_10px_2px_rgba(255,255,255,0.55)]" />
+          {/* THE ONE HUE ON THIS PAGE, AND IT IS THE ONE THE SYSTEM ALREADY OWNS.
+              `hsl(217 91% 60%)` is `--reader-highlight` - globals.css's single
+              sanctioned exception to "no hue anywhere", and the only colour in this
+              codebase that does NOT invert between themes, because the same azure
+              reads on a near-black and a near-white ground alike.
+
+              WHY IT IS WRITTEN OUT RATHER THAN READ FROM A TOKEN. Two reasons, and
+              the second is the real one. First, `.aw-page` re-declares its palette
+              as literals by design (see globals.css) - this page does not follow
+              the theme, so a token here would be the odd one out. Second, the token
+              that *should* fit, `--pulse-accent`, is defined for exactly this job
+              ("is this alive" signal colour) and was this exact blue before being
+              retired to white - but it currently has ZERO call sites anywhere in
+              the app. Routing through it would not make this dot configurable, it
+              would revive a dead token to serve one element, and the next reader
+              would reasonably assume changing it does something elsewhere.
+
+              THE GLOW IS BRIGHTER THAN THE WHITE ONE IT REPLACES, AND THAT IS
+              ARITHMETIC RATHER THAN TASTE. White spills at luma 255; this blue
+              computes to rgb(60,131,246), luma ~124 - a little under half. At the
+              old 10px/0.55 the dot stopped reading as lit and started reading as a
+              blue disc with a smudge, so the bloom is widened and lifted to carry
+              the same presence. */}
+          <span className="h-1.5 w-1.5 rounded-full bg-[hsl(217_91%_60%)] shadow-[0_0_12px_3px_rgba(60,131,246,0.7)]" />
           Active recall, disguised as doomscrolling
         </p>
 
@@ -463,20 +514,29 @@ function HeroCluster({
           Both forms ship in the markup and CSS picks one. The hidden branch is
           `display:none`, so it is not announced and not tabbable.
 
-          NO `.fr-rise` ON THIS SLAB OR THE PROOF SLAB, AND THAT WAS A BUG BEFORE
-          IT WAS A DECISION. Putting an entrance on a whole pane meant the primary
-          action did not exist for the first second of the page. The slabs are
-          present at first paint; only the words move. */}
+          NO `.fr-rise` ON THIS SLAB, AND THAT WAS A BUG BEFORE IT WAS A DECISION.
+          Putting an entrance on a whole pane meant the primary action did not
+          exist for the first second of the page. The slab is present at first
+          paint; only the words move. (This rule used to name a second pane, the
+          proof slab that sat beside this one at columns 5-7 - that cell is gone
+          and this row now belongs to this slab alone.) */}
       <section
         aria-label="Get started"
-        className={`${GLASS_LARGE} ${PAD} group/action flex flex-col justify-center gap-6 sm:p-10 lg:col-span-4 lg:col-start-1 lg:row-start-2`}
+        className={`${GLASS_LARGE} ${PAD} group/action flex flex-col justify-center gap-6 sm:p-10 lg:col-span-7 lg:col-start-1 lg:row-start-2`}
       >
         <TodaySession decks={decks} />
 
-        {/* No session: the pair of pills, full-width, one left edge. */}
-        <div className="flex flex-col gap-3 group-has-[#tonight-heading]/action:hidden">
-          <PrimaryCta className="w-full" />
-          <SecondaryCta className="w-full" />
+        {/* No session: the pair of pills. Stacked and full-width on a phone, side
+            by side from `lg` - which is new, and it is the width change forcing it
+            rather than a restyle. This slab was four columns and is now seven, so
+            two stacked `w-full` pills went from a tidy column to a pair of ~800px
+            lozenges at the page's max width, which is the shape of a form field,
+            not of a call to action. `sm:flex-row` + `sm:w-auto` is the same pattern
+            CloseCell already uses for the same pair; it is keyed at `lg` here
+            because that is where the slab actually widens. */}
+        <div className="flex flex-col gap-3 group-has-[#tonight-heading]/action:hidden lg:flex-row lg:items-center">
+          <PrimaryCta className="w-full lg:w-auto" />
+          <SecondaryCta className="w-full lg:w-auto" />
         </div>
 
         {/* Session present: the same two destinations, demoted to what they are -
@@ -495,28 +555,6 @@ function HeroCluster({
             View Pro Plans
           </Link>
         </div>
-      </section>
-
-      {/* THE PROOF SLAB. A visual block rather than a reading block, so it is
-          centred - the one place on this page where centring is right, because
-          there is no second line to align a ragged edge against.
-
-          It stays a sentence rather than becoming a big-number tile. Both
-          figures come from CURVE, computed by the same FSRS-6 scheduler that
-          will schedule whoever reads them, and a number lifted out of the
-          sentence that qualifies it is a statistic without its own conditions. */}
-      <section
-        aria-label="What the scheduler predicts"
-        className={`${GLASS_LARGE} ${PAD} flex flex-col items-center justify-center text-center sm:p-10 lg:col-span-3 lg:col-start-5 lg:row-start-2`}
-      >
-        <p className="max-w-xs text-[15px] leading-relaxed text-white/60 [text-wrap:balance] sm:text-base">
-          Three reviews in six months.{" "}
-          <span className="font-medium tabular-nums text-white">
-            {asPercent(CURVE.endRecall.reviewed)}% recalled
-          </span>{" "}
-          instead of{" "}
-          <span className="tabular-nums">{asPercent(CURVE.endRecall.studiedOnce)}%</span>.
-        </p>
       </section>
 
       <LoopCell />
@@ -552,80 +590,159 @@ function LoopCell() {
   return (
     <article
       // Explicitly placed: the loop is the right-hand column of the hero
-      // cluster and spans BOTH its rows, so the action and proof tiles sit
-      // under the headline rather than under the loop. Without the row-span it
-      // auto-placed into row 1 only and left columns 8-12 of row 2 as a hole in
-      // the grid - which is the same "floating in a void" the cluster exists to
-      // remove, just relocated.
+      // cluster and spans BOTH its rows, so the action tile sits under the
+      // headline rather than under the loop. Without the row-span it auto-placed
+      // into row 1 only and left columns 8-12 of row 2 as a hole in the grid -
+      // which is the same "floating in a void" the cluster exists to remove,
+      // just relocated.
       className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-10 lg:col-span-5 lg:col-start-8 lg:row-span-2 lg:row-start-1`}
     >
-      <Effect>The testing effect</Effect>
-      <h2 className="font-sans text-[clamp(1.75rem,4.4vw,2.5rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white">
-        Answer it before you&apos;re told
+      {/* THE HEADLINE BREAKS ACROSS TWO VOICES, WHICH IS THIS PAGE'S OWN MOVE
+          RATHER THAN A NEW ONE. The hero sets "Stop re-reading." in the sans and
+          hands "Start recalling." to the serif; CloseCell does the same with "by
+          tomorrow". This cell was the one display headline still set entirely in
+          Geist, so it read as a section label beside two headlines that read as
+          typography. Now the sans states the instruction and the serif carries
+          the turn - "Answer it / *before you're told*" - which is also where the
+          sentence's meaning actually pivots.
+
+          `font-normal` ON THE SERIF IS LOAD-BEARING, NOT DECORATION. Newsreader
+          is loaded at weight 400 italic and nothing else (layout.tsx). The `h2`
+          is `font-semibold`, and a child inherits that - so without this reset
+          the browser has no 600 to reach for and SYNTHESISES one, smearing the
+          italic to fake a bold. The fallback stack behind it (Georgia, Times)
+          does have real weights, which is worse: the bug then only appears when
+          the webfont loads, i.e. not in the first paint you would screenshot.
+
+          THE TWO LINES CARRY OPPOSITE TRACKING ON PURPOSE. Display sans wants to
+          be pulled tight (-0.04em, the value every other headline here uses); an
+          italic serif is already tightly fitted by its own drawing, and pulling
+          it in collides the descenders into the next letter's bowl. -0.01em is
+          effectively "leave it alone", and it is written out rather than omitted
+          so a later pass does not "fix" the inconsistency by matching them.
+
+          `text-[1.12em]` RATHER THAN A SECOND `clamp()`: it multiplies whatever
+          the parent clamp resolved to, so the two lines scale together at every
+          width and there is no second fluid ramp to keep in sync with the first. */}
+      <h2 className="font-sans text-[clamp(1.9rem,4.6vw,2.7rem)] font-semibold leading-[1.0] tracking-[-0.04em] text-white">
+        Answer it
+        <span className="mt-1 block font-editorial text-[1.12em] font-normal italic tracking-[-0.01em]">
+          before you&apos;re told
+        </span>
       </h2>
-      <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/60 sm:text-base">
+
+      {/* /60 and not lower. It is the documented floor for real prose on this
+          ground - 7.4:1 on pure black - and this is prose, not chrome. */}
+      <p className="mt-5 max-w-sm text-sm leading-relaxed text-white/60 sm:text-base">
         Drop a PDF in. <Hi>Swipe a claim true or false</Hi> — then{" "}
         <Hi>type it back from memory</Hi>.
       </p>
 
-      {/* The loop itself. min-w-0 throughout: a flex item defaults to
-          min-width:auto, so without it a column refuses to shrink below its own
-          min-content and pushes past the cell at 360dp - clipped rather than
-          scrolling, which is the worst kind of bug because the page still looks
-          fine in a width test. */}
-      <div className="mt-9 flex flex-1 flex-col justify-end" aria-hidden="true">
+      {/* THE LOOP, AS TWO PANES AND A WAIT - NOT AS THREE STACKED BOXES.
+          It was three blocks, each opening with its own full-width `border-t`
+          and mono label. Three horizontal rules at even intervals is a table of
+          contents, and it made the most important drawing on the page read as
+          furniture. Two of those rules are gone. What is left is the shape of
+          the thing being described: a card you answer, a gap you forget across,
+          and a card you answer again with nothing to recognise.
+
+          THE STAGGER IS THE MOTION, AND IT COSTS NOTHING TO RENDER. The question
+          pane is inset from the right and the answer pane from the left, so the
+          eye travels diagonally down the cell instead of straight down a stack.
+          `sm:` only - at 360dp the cell has no width to spend on an indent, and
+          a stagger that narrows the panes on the smallest screen is decoration
+          charged to the people with the least room for it.
+
+          NO HOVER LIFT ON ANY OF IT, DELIBERATELY. `.fr-lift` was available and
+          is the wrong tool twice over: this subtree is `aria-hidden` and
+          non-interactive, so a hover response would promise an affordance that
+          does not exist, and the panes carry `backdrop-blur-3xl` - scaling one
+          re-samples a 64px filter every frame it runs. The page's standing rule
+          is one authored moment, in the hero. This is not it.
+
+          `min-w-0` THROUGHOUT: a flex item defaults to min-width:auto, so
+          without it a column refuses to shrink below its own min-content and
+          pushes past the cell at 360dp - clipped rather than scrolling, which is
+          the worst kind of bug because the page still looks fine in a width
+          test. */}
+      <div className="mt-10 flex flex-1 flex-col justify-end" aria-hidden="true">
         {/* BEAT ONE — the question. A claim, and two ways to answer it. */}
-        <div className="border-t border-white/10 pt-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Question</p>
-          <div className="mt-3 min-w-0 rounded-2xl border border-white/10 bg-white/[0.05] p-3.5">
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-white/60">
-              True or false
+        <figure className="min-w-0 sm:mr-7">
+          <figcaption className="mb-2.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+            Question
+          </figcaption>
+          {/* The prompt sits ABOVE the card, small and muted, because that is
+              where SwipeChallenge.tsx:147 puts it - the question frames the card,
+              it is not part of it. */}
+          <p className="mb-2.5 text-[13px] leading-snug text-white/50">{LOOP_CARD.question}</p>
+
+          <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-3xl">
+            {/* `← False` / `True →` in the corners, 10px uppercase and widely
+                tracked, copied from SwipeChallenge.tsx:185-193. They are the whole
+                instruction: two directions and a claim between them. Bars could
+                not say this, and the sentence above the drawing had to. */}
+            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+              <span>&larr; False</span>
+              <span>True &rarr;</span>
             </div>
-            <div className="mt-2.5 h-1.5 w-4/5 rounded bg-white/15" />
-            <div className="mt-1.5 h-1.5 w-3/5 rounded bg-white/10" />
-            <div className="mt-3.5 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10">
-                <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-white/60">
-                  <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-              </span>
-              <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/60">
-                <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-white">
-                  <path d="M5 12.5l4 4 10-10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </span>
-            </div>
+            <p className="mt-3.5 text-[15px] font-medium leading-snug text-white">
+              {LOOP_CARD.claim}
+            </p>
           </div>
+        </figure>
+
+        {/* BEAT TWO — the wait. It is a gap, not a screen, so it is drawn as one:
+            the two panes' breathing room, with a hairline crossing it and the
+            scheduler's own word for what happens in there. The rule fades out to
+            the right so it reads as time passing rather than as a divider. */}
+        <div className="flex items-center gap-3 py-6">
+          <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+            Think
+          </span>
+          <span className="h-px min-w-0 flex-1 bg-gradient-to-r from-white/20 via-white/10 to-transparent" />
+          <span className="shrink-0 font-editorial text-sm italic text-white/50">days later</span>
         </div>
 
-        {/* BEAT TWO — the think. It is a wait, not a screen, so it is drawn as
-            one: a gap with a hairline running through it and the scheduler's own
-            word for what happens in it. */}
-        <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Think</p>
-          <span className="h-px flex-1 bg-gradient-to-r from-white/25 to-transparent" />
-          <span className="font-editorial text-sm italic text-white/60">days later</span>
-        </div>
-
-        {/* BEAT THREE — the answer. Nothing on screen to recognise, and the one
-            element in the loop lit from the front. */}
-        <div className="mt-5 border-t border-white/10 pt-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Answer</p>
-          <div className={`mt-3 min-w-0 rounded-2xl border border-white/20 bg-white/[0.07] p-3.5 ${GLOW}`}>
-            <div className="text-[10px] font-semibold uppercase tracking-wide text-white">
+        {/* BEAT THREE — the answer, and the climax the whole cell is built to
+            reach. Brighter glass, a lit edge, and `GLOW` - the page's white
+            spill, spent in exactly two places (the primary CTA and here), which
+            is the accent spent where the loop pays off. Nothing on screen to
+            recognise: the blank is the point. */}
+        <figure className="min-w-0 sm:ml-7">
+          <figcaption className="mb-2.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+            Answer
+          </figcaption>
+          <div className={`min-w-0 rounded-2xl border border-white/20 bg-white/[0.07] p-4 backdrop-blur-3xl ${GLOW}`}>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
               Type it from memory
             </div>
-            {/* The blank is flex-1 rather than a fixed width so it gives way
-                first when the cell narrows, instead of forcing the row past the
-                cell edge. */}
-            <div className="mt-2.5 flex items-center gap-1.5">
-              <span className="h-1.5 w-6 shrink-0 rounded bg-white/20" />
-              <span className="h-5 min-w-0 flex-1 rounded border border-dashed border-white/40 sm:max-w-[6rem]" />
-              <span className="h-1.5 w-4 shrink-0 rounded bg-white/20 sm:w-8" />
-            </div>
-            <div className="mt-2.5 h-1.5 w-1/2 rounded bg-white/10" />
+            {/* THE BLANK IS INLINE, IN THE SENTENCE - not a box under it. That is
+                how ClozeChallenge.tsx:136 renders it (an input with `border-b-2`
+                in the accent colour, sitting in the run of text), and it is the
+                difference between "fill this field" and "finish this sentence".
+
+                IT IS EMPTY, AND THAT IS THE POINT OF THE WHOLE BEAT. The first
+                card hands you a claim to judge; this one hands you nothing to
+                recognise. Pre-filling it with the answer would quietly turn the
+                climax of the loop back into recognition - the exact thing the
+                page argues re-reading already does. */}
+            <p className="mt-3 text-[15px] leading-relaxed text-white">
+              {/* `trimEnd()` + a NON-BREAKING space, so the blank cannot be
+                  separated from the word it belongs to. The cloze reads
+                  "...because retrieval _____ the memory", and at this column width
+                  the line broke in the one place it must not: "retrieval" ending
+                  line one and the gap opening line two, where a bare rule at the
+                  left margin reads as a divider rather than as the missing word.
+                  Bound to the verb, the pair wraps together or not at all. */}
+              {LOOP_CARD.clozeBefore.trimEnd()}
+              <span className="whitespace-nowrap">
+                &nbsp;
+                <span className="inline-block w-20 border-b-2 border-white align-[-0.1em]" />
+              </span>
+              {LOOP_CARD.clozeAfter}
+            </p>
           </div>
-        </div>
+        </figure>
       </div>
     </article>
   );
@@ -735,7 +852,7 @@ function CurveCell() {
   return (
     <section
       aria-labelledby="curve-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-12 lg:col-span-8`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-12 lg:col-span-12`}
     >
       <h2
         id="curve-heading"
@@ -818,74 +935,248 @@ function GapsCell() {
 // THE PRODUCT
 // ---------------------------------------------------------------------------
 
-/** The statement that frames the product cells. Four columns, so it reads as
- * one of them rather than as a banner over them.
+/** THE READER, seven columns beside the four steps.
  *
- * Its "Why FlowRecall" label is gone for the same reason the curve's was. */
-function StatementCell() {
-  return (
-    <section
-      aria-labelledby="features-heading"
-      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 flex flex-col justify-center sm:col-span-6 lg:col-span-5`}
-    >
-      <h2
-        id="features-heading"
-        className="font-sans text-[clamp(1.9rem,3.6vw,2.6rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white [text-wrap:balance]"
-      >
-        Every screen is one finding about memory,{" "}
-        <span className="font-editorial italic">built</span>.
-      </h2>
-      <p className="mt-5 max-w-prose text-sm leading-relaxed text-white/60 sm:text-base">
-        Not a flashcard app with the science in the marketing copy.{" "}
-        <Hi>The mechanism each surface is built on is named on the card.</Hi>
-      </p>
-    </section>
-  );
-}
-
-/** THE READER, and the one product cell that keeps a drawing.
+ * WHY IT IS BACK. This component existed and was rendered by nothing - one of
+ * four cells left defined-but-unreachable in this file. That is how the page
+ * ended up describing a study loop and never once mentioning that the documents
+ * it studies can be READ inside the app: the reader's only trace was one FAQ
+ * answer, eleven screens down, past the point anyone deciding still reads.
  *
- * Six of the seven product cards used to carry a small aria-hidden mock each -
- * widening bars, three relationship pills, a tick list, a search field. Five of
- * them are gone, and the reason is what they were saying: the tick list read
- * "Got right / Left out / Had wrong" directly under a sentence containing the
- * words "what you left out and what you had wrong", the pills read
- * "needs / explains / vs" under a sentence naming all three, and the bars drew
- * the same widening interval the 2/12/50 cell draws to scale two rows above. A
- * diagram that repeats its own caption is not evidence, it is furniture - and
- * seven of them stacked into one column on a phone is most of what made this
- * page feel busy.
+ * IT PAIRS WITH `FaqCell`, AND THE PAIR IS THE ARGUMENT. Five columns answer
+ * what a stranger arrives wanting to know; seven say what it is like to be
+ * inside a document. It paired with the four-step rail first; that rail is gone,
+ * and the FAQ inherited the slot.
  *
- * This one survives because it shows something no sentence here can: a word
- * looked up without leaving the line it sits in. `--reader-highlight` keeps its
- * blue, and that is not an inconsistency with a monochrome page - a highlight
- * painted in white is not a highlight, it is emphasis. */
+ * THREE FEATURES ACROSS, AND DELIBERATELY NOT A NUMBERED RAIL. Marking, resuming
+ * and type settings are independent things a reader can do in any order, so
+ * numbering them would assert a progression that does not exist. A spec sheet
+ * says "capabilities"; a rail would say "stages", which would be a lie told in
+ * layout. (The page did carry such a rail, beside this cell, for the four-step
+ * pipeline - where the sequence was real.)
+ *
+ * It was four. Define left the list when the drawing above started actually
+ * showing it - see the note on READER_FEATURES.
+ *
+ * EVERY CLAIM HERE IS THE FAQ'S, NOT A NEW ONE. The copy is drawn from the
+ * already-vetted answer to "Can I read books and PDFs inside FlowRecall?" -
+ * EPUB/PDF/pasted text, long-press to define in place, highlights that carry
+ * notes, per-document resume, three type faces and the warm eye filter. Nothing
+ * is claimed here that the app does not already do, and nothing was invented to
+ * fill the grid.
+ *
+ * THE DRAWING IS THE ONLY ONE LEFT ON THE PAGE, AND IT NOW EARNS THAT. Five
+ * sibling mocks were cut for restating their own captions. This one was nearly
+ * cut for a worse reason - it restated nothing because it said nothing: three
+ * grey bars and a chip. It now shows the thing no sentence can, a word looked up
+ * WITHOUT the line moving, in the Reader's own typeface.
+ *
+ * `--reader-highlight` keeps its blue, and that is not a break with a monochrome
+ * page - a highlight painted white is not a highlight, it is emphasis. It is
+ * also now the second place on this page carrying that exact azure, after the
+ * hero's live dot, which makes it read as the product's one colour rather than
+ * as a one-off. */
 function ReaderCell() {
   return (
     <article
-      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 flex flex-col justify-center gap-8 sm:col-span-6 lg:col-span-7`}
+      // `lg:self-start`, AND IT IS THE LESSER OF TWO BAD OPTIONS RATHER THAN A
+      // preference. The FAQ beside this cell runs taller - 894px against 721px,
+      // measured after the drawing was rebuilt - and a grid item stretches to its
+      // row by default, so this card was being handed height it had no content
+      // for. (The gap was 257px before the redesign and is 173px now; the fuller
+      // drawing closed a third of it. Not enough to stretch honestly, so the flag
+      // stays - re-measure if this cell grows again.)
+      //
+      // Both ways of spending that height were tried and looked at. `mt-auto` on
+      // the spec sheet pushed it to the bottom edge and opened a ~400px void
+      // between the drawing and the features - a hole in the middle of a card,
+      // which is precisely the "floating in a void" this page has been rebuilt
+      // twice to remove. `justify-between` only splits the same void into two
+      // smaller ones.
+      //
+      // `self-start` declines the height instead. The row is then two cards of
+      // honest different heights, top-aligned, with page ground below the shorter
+      // one - which is what a card that has said what it has to say should look
+      // like. Raggedness between cards is cheap; a void inside one is not.
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-12 lg:col-span-7 lg:self-start`}
     >
-      <div className="max-w-md">
-        <Effect>Encoding in context</Effect>
-        <h3 className="font-sans text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-white">
-          Read it where it came from
-        </h3>
-        <p className="mt-4 max-w-prose text-sm leading-relaxed text-white/60 sm:text-base">
-          EPUB, PDF, pasted text. <Hi>Any word defined in place</Hi>,{" "}
-          <Em>without leaving the page</Em>.
-        </p>
-      </div>
-      <div aria-hidden="true" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="h-1.5 w-full rounded bg-white/10" />
-        <div className="mt-2.5 flex items-center gap-1.5">
-          <span className="h-1.5 w-10 rounded bg-white/10" />
-          <span className="rounded bg-reader-highlight/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
-            afferent
-          </span>
-          <span className="h-1.5 flex-1 rounded bg-white/10" />
+      {/* The same two-voice headline as LoopCell: the sans states it, the serif
+          turns it. `font-normal` on the italic is the required reset - Newsreader
+          ships 400 only, and an inherited 600 makes the browser synthesise a
+          bold. Tracking loosens on the serif for the same reason it does there. */}
+      <h2
+        id="reader-heading"
+        className="font-sans text-[clamp(1.75rem,3.4vw,2.4rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white"
+      >
+        Read it where
+        <span className="mt-1 block font-editorial text-[1.1em] font-normal italic tracking-[-0.01em]">
+          it came from
+        </span>
+      </h2>
+
+      {/* IT NAMES DEFINING AGAIN, AND THE REASON IT DID NOT BEFORE IS GONE.
+          This line was deliberately silent about Define while "DEFINE: long-press
+          a word..." sat in the feature list eight lines below - two sentences
+          making one claim. The list no longer carries it (the drawing does), and
+          the drawing is `aria-hidden`, so if this line stays silent the single
+          most important thing the Reader does exists on this page only as a
+          picture. Prose has to carry it, and this is the prose.
+
+          The device claim rides along because it is the other thing a stranger
+          wants to know about a reader that holds their files, and it is the
+          library's own wording, not a new promise. */}
+      <p className="mt-5 max-w-xl text-sm leading-relaxed text-white/60 [text-wrap:pretty] sm:text-base">
+        EPUB, PDF, or notes you paste in, <Hi>kept on your device</Hi>. Long-press
+        any word and the definition opens <Em>over the page you are on</Em>.
+      </p>
+
+      {/* THE DRAWING, AND IT IS THE ONLY THING IN THIS CELL DOING THE TEACHING.
+          It was three grey bars and a blue chip. Bars say "some text exists".
+          They do not say "this is a book", and they say nothing whatsoever about
+          the feature this cell is built around - a word looked up WITHOUT the
+          page moving. That is the one claim no sentence here can make and a
+          picture can, and the old picture declined to make it.
+
+          SET IN THE READER'S OWN FACE, NOT A NEW ONE. `FONT_FAMILY_CSS.serif` is
+          literally what the Reader renders body text in by default (Georgia,
+          Cambria, Times), imported rather than retyped. So this is not an artist's
+          impression of the Reader - at this size it IS the Reader's typography.
+          A new display font would have cost bytes and told the truth less well.
+
+          THE POPOVER OVERLAPS THE PROSE ON PURPOSE, and that overlap is the whole
+          argument: the lines continue underneath it. Anchored below the word it
+          defines, so the eye goes word -> card without being told to. Its shape
+          is copied from the real `DefinitionPopover` - phrase in curly quotes at
+          13px semibold, a one-sentence body, then `✦ Define` / `▍ Highlight` /
+          `✎ + Note` - so the mock cannot drift into advertising a control that
+          does not exist.
+
+          NO ENTRANCE ANIMATION, AND THAT IS THE RULE RATHER THAN AN OVERSIGHT. A
+          definition card that fades in is exactly the tempting thing this page's
+          one-authored-moment rule (see the head of this file) exists to refuse;
+          everything below the fold is present at first paint. */}
+      <div aria-hidden="true" className="relative mt-8">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-3xl sm:p-7">
+          <p
+            className="text-[15px] leading-[1.85] text-white/70 sm:text-base"
+            style={{ fontFamily: FONT_FAMILY_CSS.serif }}
+          >
+            {READER_PASSAGE.before}
+            {/* The selection: the app's one sanctioned hue, and the same azure the
+                hero's live dot carries - two uses make it the product's colour
+                rather than a one-off. `decoration-2` under it so the word still
+                reads as marked where the fill alone is subtle. */}
+            <span className="rounded-[3px] bg-reader-highlight/25 px-0.5 text-white underline decoration-reader-highlight decoration-2 underline-offset-4">
+              {READER_PASSAGE.word}
+            </span>
+            {READER_PASSAGE.after}
+          </p>
         </div>
-        <div className="mt-2.5 h-1.5 w-2/3 rounded bg-white/10" />
+
+        {/* `static` below `sm`, absolute above it. At 360dp there is no room to
+            float a card over a paragraph without covering the sentence that gives
+            the word its sense, so on a phone it sits under the passage and the
+            overlap is simply not attempted. From `sm` it lifts onto the page. */}
+        <div className="mt-3 w-full sm:absolute sm:left-7 sm:top-[4.25rem] sm:mt-0 sm:w-[19rem]">
+          <div className="overflow-hidden rounded-2xl border border-white/15 bg-black/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_56px_-16px_rgba(0,0,0,0.95)] backdrop-blur-3xl backdrop-saturate-150">
+            <div className="border-b border-white/10 px-3.5 py-2.5">
+              <p className="truncate text-[13px] font-semibold text-white">
+                &ldquo;{READER_PASSAGE.word}&rdquo;
+              </p>
+            </div>
+            <p className="px-3.5 py-3 text-[13px] leading-relaxed text-white/70">
+              {READER_DEFINITION}
+            </p>
+            <div className="flex items-center gap-1.5 border-t border-white/10 px-3.5 py-2.5">
+              <span className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-semibold text-black">
+                ✦ Define
+              </span>
+              <span className="rounded-lg border border-reader-highlight/40 bg-reader-highlight/10 px-2.5 py-1 text-[11px] font-medium text-reader-highlight">
+                ▍ Highlight
+              </span>
+              <span className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] font-medium text-white/70">
+                ✎ Note
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* `sm:mt-28` IS A MEASUREMENT, NOT A ROUND NUMBER. From `sm` the card is
+          absolutely positioned and hangs past the bottom of the passage box - by
+          77px at 1440, measured off the live page rather than estimated. At the
+          64px this first carried, the card's lower edge crossed the first feature
+          rule by 14px and the hairline ran behind it. 112px clears the overhang
+          with ~35px of air left over, which is what keeps the card reading as
+          "over the page" rather than "colliding with the next section".
+          Below `sm` the card is in normal flow and needs no allowance at all. */}
+      <dl className="mt-9 grid grid-cols-1 gap-x-8 gap-y-0 sm:mt-28 sm:grid-cols-3">
+        {READER_FEATURES.map((feature) => (
+          <div key={feature.label} className="border-t border-white/10 py-5">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+              {feature.label}
+            </dt>
+            <dd className="mt-2.5 text-sm leading-relaxed text-white/60">{feature.body}</dd>
+
+            {/* COMFORT SHOWS THE EYE FILTER, AND THE SWATCHES ARE THE REAL COLOURS.
+                This slot used to hold three `Aa` chips in the reader's three faces.
+                The instinct was right - show, don't tell - but it showed the weaker
+                half of the claim: three text faces at 17px differ by a couple of
+                pixels of glyph width, so at a glance they read as three identical
+                boxes. The filter is the half of this feature a picture can actually
+                argue, and it appeared nowhere on this page but four words of copy.
+
+                `eyeFilterColor()` IS THE SHIPPED FUNCTION, not a hand-picked amber.
+                It is what EyeFilterOverlay.tsx calls to paint the live reader, so
+                these four tiles are the four stops a user actually gets, in the
+                reader's own words (`WARMTH_LABELS`). Reading them off the
+                implementation means they cannot drift from it.
+
+                WHY EACH TILE CARRIES TEXT, AND WHY THAT IS NOT DECORATION. The
+                filter is `mix-blend-mode: multiply`, which scales every channel
+                DOWN - so over a near-black tile it does exactly nothing, because
+                there is no light left to take away. The whole visible effect lives
+                in the light glyph on top: at `amber` a #FAFAFA "Aa" computes to
+                about rgb(250,186,137), a warm cream. A flat swatch with no text
+                under it would render as a black square AND would misrepresent the
+                feature as a tint rather than a filter.
+
+                `off` DRAWS NO OVERLAY AT ALL, because `eyeFilterColor` returns null
+                for it - the same branch the real overlay takes. The first tile is
+                therefore genuinely unfiltered rather than filtered by a no-op
+                colour, which is what makes the row read as a progression. */}
+            {feature.label === "Comfort" && (
+              <div className="mt-4 flex items-end gap-1.5">
+                {WARMTH_IDS.map((id) => {
+                  const tint = eyeFilterColor({ warmth: id, dim: 0 });
+                  return (
+                    <div key={id} className="min-w-0 flex-1">
+                      <div className="relative flex h-11 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+                        <span
+                          className="text-[17px] leading-none text-white/90"
+                          style={{ fontFamily: FONT_FAMILY_CSS.serif }}
+                        >
+                          Aa
+                        </span>
+                        {tint && (
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute inset-0"
+                            style={{ backgroundColor: tint, mixBlendMode: "multiply" }}
+                          />
+                        )}
+                      </div>
+                      <p className="mt-1.5 truncate text-center font-mono text-[9px] uppercase tracking-[0.14em] text-white/35">
+                        {WARMTH_LABELS[id]}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </dl>
     </article>
   );
 }
@@ -1023,59 +1314,112 @@ function ShowingUpCell() {
 }
 
 // ---------------------------------------------------------------------------
-// THE FOUR STEPS
+// THE READER
 // ---------------------------------------------------------------------------
 
-const HOW_IT_WORKS_STEPS = [
-  { n: "01", title: "Upload", body: "A PDF, or notes you paste in." },
-  { n: "02", title: "Map", body: "See what depends on what." },
-  { n: "03", title: "Recall", body: "Swipe, then type it from memory." },
-  { n: "04", title: "Hold", body: "Watch the projection move." },
-];
+/** THE CARD THE LOOP DIAGRAM DRAWS, copied verbatim from `STARTER_CONCEPTS`'
+ * `testing-effect` entry in src/lib/starterDeck.ts - the deck this app actually
+ * seeds every new account with. Not invented marketing content; a real card.
+ *
+ * COPIED RATHER THAN IMPORTED, AND THAT IS A BUNDLE DECISION WITH A NUMBER
+ * BEHIND IT. `starterDeck.ts` is ~20.9KB in a SINGLE `STARTER_CONCEPTS` const -
+ * twelve concepts, each carrying `explanation`, `misconception` and
+ * `whyItMatters` paragraphs. There is no way to import one entry; importing the
+ * name pulls the array. That is ~20KB of prose shipped to the landing route so a
+ * diagram can print four short strings, on the page whose entire header is an
+ * argument about what mid-range Android WebViews can afford.
+ *
+ * It is deliberately the OPPOSITE call to the one `ReaderCell` makes two hundred
+ * lines down, where `FONT_FAMILY_CSS` IS imported - because there the fonts were
+ * already loaded on this page and the import was genuinely free. Same instinct,
+ * different arithmetic; the arithmetic is what decided it.
+ *
+ * THE COST OF COPYING IS DRIFT, so the mitigation is named here: if the starter
+ * deck's `testing-effect` entry is ever reworded, this goes stale silently. The
+ * strings are short and the source is one grep away (`id: "testing-effect"`).
+ *
+ * THE CLAIM IS THE `answer`, NEVER THE `distractor`. SwipeChallenge.tsx:43 picks
+ * between them at random, which is right in a study feed and wrong here: the
+ * distractor reads "testing exposes gaps, which you then close by re-reading
+ * them", and a marketing page setting that in large type is publishing a false
+ * statement to everyone who skims rather than reads. The true/false mechanic is
+ * demonstrated just as well by a true claim, so there is nothing to weigh. */
+const LOOP_CARD = {
+  question: "Why does testing yourself beat re-reading?",
+  claim:
+    "retrieving an answer strengthens the memory, while re-reading mostly raises familiarity",
+  // The real cloze is "Testing yourself beats re-reading because retrieval _____
+  // the memory." - split here on the blank rather than shipping `normaliseBlank`
+  // (src/lib/conceptProse.ts) to the landing page for one static sentence.
+  clozeBefore: "Testing yourself beats re-reading because retrieval ",
+  clozeAfter: " the memory.",
+} as const;
 
-/** Five columns beside "Showing up".
+/** THREE capabilities, and Define is deliberately not among them.
  *
- * The numerals stay because the sequence is the information here - this is the
- * one place on the page where order is the content. They are mono and small
- * instead of the 7xl `font-black` ghosts they were: at 6% opacity those were
- * texture behind a heading, and in a five-column cell there is no room for
- * texture that large. It also retires the last weight above 600 on the page.
+ * It used to be the first of four. The drawing above these now shows a word
+ * selected and its definition sitting open over the page - which is the whole
+ * claim, made in the one medium that can actually make it. Leaving "DEFINE:
+ * long-press a word, the meaning arrives over the page" underneath that picture
+ * would be the failure this file cut five other mocks for: a diagram and its
+ * caption saying the same thing, so neither is evidence. The readable claim
+ * moves into the subhead, where it belongs (the drawing is `aria-hidden`).
  *
- * TWO BY TWO RATHER THAN A LIST OF FOUR, AND THAT IS A ROW DECISION RATHER THAN
- * A TASTE ONE. Grid stretches every cell to its row's tallest member, and four
- * stacked steps made this the tallest by roughly 300px - which its neighbour
- * then had to spend on nothing. Folding the steps into two rows brings the two
- * cells to within a hairline of each other's natural height, so the row reads
- * as a pair rather than as one cell with a hole beside it. The reading order
- * survives it: 01 and 02 on the first row, 03 and 04 under them. */
-function StepsCell() {
-  return (
-    <section
-      aria-labelledby="how-it-works-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-12 lg:col-span-5`}
-    >
-      <h2
-        id="how-it-works-heading"
-        className="font-sans text-[clamp(1.75rem,3.4vw,2.4rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white [text-wrap:balance]"
-      >
-        From a PDF to still knowing it, in four steps.
-      </h2>
-      <ol className="mt-8 grid grid-cols-1 gap-x-8 sm:grid-cols-2">
-        {HOW_IT_WORKS_STEPS.map((step) => (
-          <li key={step.n} className="border-t border-white/10 py-5">
-            <span className="font-mono text-[10px] tabular-nums tracking-[0.2em] text-white/60">
-              {step.n}
-            </span>
-            <h3 className="mt-3 text-lg font-semibold tracking-[-0.02em] text-white">
-              {step.title}
-            </h3>
-            <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-white/60">{step.body}</p>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
+ * What is left is the three things a still picture cannot show: that a mark
+ * persists, that a place is remembered, and that the type is yours. */
+const READER_FEATURES = [
+  {
+    label: "Mark",
+    body: "Highlight a passage and attach a note that stays on it.",
+  },
+  {
+    label: "Resume",
+    body: "Every document reopens on the exact line you left.",
+  },
+  {
+    // BOTH CLAIMS SURVIVE, ONLY THE DRAWING CHANGED. The three type faces are a
+    // real feature and are not dropped just because the swatches below stopped
+    // illustrating them - the filter is simply the half of this item that a
+    // still picture can actually make an argument about.
+    label: "Comfort",
+    body: "Three type faces, and a warm filter that takes the blue out.",
+  },
+] as const;
+
+/** The passage in the drawing. Real sentences, not lorem and not bars.
+ *
+ * IT IS ABOUT AFFERENT NERVES BECAUSE THE SELECTED WORD IS "afferent" - the
+ * chip in the old drawing already said so, and a definition is only legible as a
+ * definition if the word around it is in a context that needs one. Med students
+ * are the audience the FAQ argues for; this is their page, not lorem ipsum.
+ *
+ * Split into three spans so the highlight can sit mid-sentence rather than on a
+ * line of its own, which is the entire point - the word is IN the prose. */
+const READER_PASSAGE = {
+  // THE SELECTED WORD IS IN THE FIRST THREE WORDS, AND THAT IS A POSITIONING
+  // CONSTRAINT RATHER THAN a sentence-writing preference. The card below is
+  // absolutely placed, but the word it points at is INLINE - so where the word
+  // lands depends on where the paragraph happens to wrap, which changes with the
+  // cell's width. The first draft opened with a clause before it; at 788px that
+  // pushed "afferent" to the right-hand end of line one while the card sat at the
+  // bottom left, pointing at nothing and covering the sentence that gave the word
+  // its sense. Chasing it with `right-` anchoring only moves the failure to a
+  // different width. The start of a paragraph, on the other hand, is top-left at
+  // every width there is - so the word goes there and the card can be anchored to
+  // a fixed point with confidence.
+  before: "These ",
+  word: "afferent",
+  after:
+    " fibres carry their signal inward, from the periphery toward the cord, terminating in the dorsal horn — where the first synapse of the pathway decides how much of the message travels on.",
+} as const;
+
+/** The definition, in the shape the real API returns it: `DefinitionResponseSchema`
+ * (src/lib/definitionSchema.ts) promises "a razor-sharp 1-2 sentence definition".
+ * One sentence here, because the mock has to fit a card. */
+const READER_DEFINITION =
+  "Carrying inward — toward the brain or spinal cord, rather than away from it.";
+
+
 
 // ---------------------------------------------------------------------------
 // FAQ AND THE CLOSE
@@ -1090,34 +1434,102 @@ function FaqCell() {
   return (
     <section
       aria-labelledby="faq-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-12 lg:col-span-7`}
+      // FIVE COLUMNS, IN THE SLOT THE FOUR-STEP RAIL USED TO HOLD. This cell has
+      // now been three widths in three edits - seven borrowed beside the rail,
+      // twelve when the reader took those seven, and five now that the rail is
+      // gone and the FAQ inherited its place beside the reader. The number is
+      // whatever leaves no hole in the row; the content has not changed.
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-12 lg:col-span-5`}
     >
       {/* Google Rich Results: FAQPage — surfaces Q&As directly in search. */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(FAQPAGE_JSONLD) }}
       />
+
+      {/* THREE SHELVES SIDE BY SIDE, AND EVERY PART OF THAT IS LOAD-BEARING.
+          Widening this cell to twelve columns had left each question in one row
+          spanning the full 1368px, with `justify-between` throwing the "+" to the
+          far right - a question on the left and its own control eleven hundred
+          pixels away, which is not a control anyone associates with that
+          question. An editorial two-column (heading pinned left, questions right)
+          fixed half of it and was measured at 469px of dead space still sitting
+          between a short question and its toggle, plus a four-column rail that
+          was empty below the heading. Three columns of ~430px close that gap to
+          something the eye reads as one row, and spend the width on content
+          rather than on margin.
+
+          ONE COLUMN AGAIN, AND THE GROUPS ARE WHY THAT IS STILL FINE. The
+          three-across grid was built for a twelve-column cell; at five there is
+          no room for it, so this is the same stacked fallback the layout already
+          used on a phone. What survives the narrowing is the part that was doing
+          the work - the labels. A single run of seven is what needed breaking up,
+          and it is still broken up.
+
+          SEVEN UNDIFFERENTIATED ROWS MADE A READER SCAN ALL SEVEN. Three labelled
+          groups let them skip two thirds on sight, in the order a stranger
+          actually asks: what is this, how does it work, should I pick it. The
+          labels use the page's existing chrome voice (mono, 10px, wide tracking,
+          /40) rather than a new one - furniture pointing at content is exactly
+          what that style is already for here.
+
+          EACH GROUP IS ITS OWN GRID ITEM, WHICH IS WHY OPENING ONE IS SAFE. In a
+          single run of seven, an answer expanding pushes every question below it
+          down the page. Here it grows its own column and the other two are
+          untouched - no reflow of anything the reader was looking at. That is
+          also why the groups are columns rather than a masonry: masonry would
+          reflow across columns on open, which is the same problem wearing a
+          nicer name.
+
+          EVERY ANSWER STILL SHIPS IN THE MARKUP whether or not its `<details>` is
+          open, unchanged from before: `FAQPAGE_JSONLD` declares seven Q&A pairs
+          and Google requires the answer text present on the page for the rich
+          result. Grouping moves them in the DOM; it removes none, and nothing
+          here renders conditionally. */}
       <h2
         id="faq-heading"
         className="font-sans text-[clamp(1.75rem,3.4vw,2.4rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white"
       >
-        Frequently asked questions
+        Frequently asked
+        {/* `block`, not the inline `ml-3` this carried at twelve columns: at five
+            the two words no longer share a line, and an inline serif that wraps
+            on its own puts the italic at the start of line two with the sans
+            hanging above it. Breaking it deliberately is the same two-voice
+            composition the other headlines use. */}
+        <span className="mt-1 block font-editorial text-[1.1em] font-normal italic tracking-[-0.01em]">
+          questions
+        </span>
       </h2>
-      <div className="mt-8 divide-y divide-white/10 border-t border-white/10">
-        {FAQ_ITEMS.map(({ q, a }) => (
-          <details key={q} className="group py-4">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-1 [&::-webkit-details-marker]:hidden">
-              <h3 className="text-base font-medium tracking-[-0.01em] text-white/70 transition-colors group-open:text-white group-hover:text-white sm:text-lg">
-                {q}
-              </h3>
-              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 text-white/60 transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none">
-                <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
-                  <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                </svg>
-              </span>
-            </summary>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/60 sm:text-base">{a}</p>
-          </details>
+
+      <div className="mt-10 grid grid-cols-1 items-start gap-y-10">
+        {FAQ_GROUPS.map((group) => (
+          <div key={group}>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
+              {group}
+            </p>
+
+            <div className="mt-4 divide-y divide-white/10 border-t border-white/10">
+              {FAQ_ITEMS.filter((item) => item.group === group).map(({ q, a }) => (
+                <details key={q} className="group py-4">
+                  <summary className="flex cursor-pointer list-none items-start justify-between gap-4 py-1 [&::-webkit-details-marker]:hidden">
+                    <h3 className="text-[15px] font-medium leading-snug tracking-[-0.01em] text-white/70 transition-colors group-open:text-white group-hover:text-white sm:text-base">
+                      {q}
+                    </h3>
+                    {/* `items-start` + `mt-0.5`: at this column width most
+                        questions wrap to two lines, and a centred toggle floats
+                        beside the gap between them instead of beside the words.
+                        Pinned to the first line it stays where the eye is. */}
+                    <span className="relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 text-white/60 transition-transform duration-300 group-open:rotate-45 motion-reduce:transition-none">
+                      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5" aria-hidden="true">
+                        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    </span>
+                  </summary>
+                  <p className="mt-3 text-sm leading-relaxed text-white/60">{a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </section>
@@ -1152,7 +1564,22 @@ function CloseCell() {
       <p className="mt-5 max-w-md text-base leading-relaxed text-white/60 sm:text-lg">
         That&apos;s <Hi>the curve above</Hi>, <Em>not a guess</Em>.
       </p>
-      <div className="mt-9 flex w-full max-w-xs flex-col gap-3 sm:max-w-none sm:flex-row">
+      {/* `sm:justify-center` IS NOT COSMETIC - WITHOUT IT THIS ROW IS THE ONLY
+          THING IN A CENTRED CELL THAT IS NOT CENTRED. The section is
+          `items-center text-center`, which centres the heading and the subhead
+          because they are content-width. This row is not: it is `w-full`, and at
+          `sm` it drops `max-w-xs` for `max-w-none`, so it spans the whole cell
+          edge to edge. `items-center` has nothing left to centre - the box
+          already fills the axis - and the two `sm:w-auto` pills inside then sit
+          at its flex-start, i.e. hard against the left edge under a centred
+          headline.
+
+          It reads correctly on a phone by accident rather than by design: below
+          `sm` the row is `max-w-xs` (so `items-center` does centre the box) and
+          the pills are `w-full` (so they fill it). Both of those stop being true
+          at exactly the width the bug appears. Hence `sm:` - the alignment is
+          only ever needed where the row goes horizontal. */}
+      <div className="mt-9 flex w-full max-w-xs flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
         <PrimaryCta className="w-full sm:w-auto" />
         <SecondaryCta className="w-full sm:w-auto" />
       </div>
@@ -1173,7 +1600,16 @@ function SiteFooter() {
             <div className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-[28%] bg-gradient-to-br from-zinc-800 to-zinc-950 text-white">
               <LogoMark sheen className="h-[64%] w-[64%]" />
             </div>
-            <span className="font-retro text-lg text-white">FlowRecall</span>
+            {/* GEIST, NOT PACIFICO. This mark and the navbar's sat ~1500px apart on
+                the same page in two different faces - a script here, a grotesk up
+                there - which is a brand speaking with two voices to one reader.
+                spatial.ts records why the app shell dropped the script: inside the
+                product it "was the one element arguing a personality the rest of the
+                screen had spent its whole budget not having". The same is true at the
+                bottom of a page that has spent its whole budget the same way. */}
+            <span className="font-sans text-lg font-semibold tracking-[-0.02em] text-white">
+              FlowRecall
+            </span>
           </div>
           <p className="text-xs text-white/60">AI flashcards for active recall.</p>
         </div>
@@ -1186,9 +1622,6 @@ function SiteFooter() {
           </Link>
           <Link href="/reader" className="transition-colors hover:text-white">
             Reader
-          </Link>
-          <Link href="/map" className="transition-colors hover:text-white">
-            Mindmap
           </Link>
           <Link href="/pricing" className="transition-colors hover:text-white">
             Pricing
@@ -1245,16 +1678,11 @@ export default function Home() {
         <FactCell />
 
         <CurveCell />
-        <GapsCell />
 
-        <StatementCell />
-        <ReaderCell />
-
-        <MechanismsCell />
-        <ShowingUpCell />
-
-        <StepsCell />
+        {/* The pair: the questions a stranger arrives with (5), and what it is
+            like to be inside a document (7). */}
         <FaqCell />
+        <ReaderCell />
 
         <CloseCell />
       </div>

@@ -303,12 +303,20 @@ One material, one ground, **no accent colour at all**. Pure `#000`, and every su
 is the same frosted pane at one of two thicknesses. What separates a control from a card is
 how much light its glass holds — nothing else.
 
+There is now exactly one qualification to "no colour", and it is stated in full under
+[The mesh](#the-mesh-chroma-below-threshold-lifted-by-the-glass) below: a violet/cyan/coral
+mesh sits on the ground at 1.8–3.5% alpha, which is **below the threshold where a hue reads
+as a tint**, and the panes lift it with `backdrop-saturate` so it resolves *inside* glass and
+nowhere else. The accent is still luminance. The chroma is a property of the material, not
+of the palette — no token, no call site, and no control is coloured by it.
+
 | Recipe | Fill / edge | Used for |
 |---|---|---|
-| `GLASS_PANEL` | `bg-white/5` · `backdrop-blur-3xl` · `border-white/10` | cards, widgets, the sheet |
-| `GLASS_CONTROL` | `bg-white/10` · `backdrop-blur-2xl` · `border-white/20` | FAB, primary actions |
+| `GLASS_PANEL` | `bg-white/5` · `backdrop-blur-3xl` · `saturate-[2.2]` · `border-white/10` | cards, widgets, the sheet |
+| `GLASS_CONTROL` | `bg-white/10` · `backdrop-blur-2xl` · `saturate-[2.2]` · `border-white/20` | FAB, primary actions |
 | `GLASS_STATIC` | `bg-white/[0.06]` · no filter · `border-white/10` | **scrolling** surfaces (the library grid) |
-| `GLASS_PANEL_SOFT` | `bg-white/5` · `backdrop-blur-md` · `border-white/10` | a secondary widget beside a primary one |
+| `GLASS_PANEL_SOFT` | `bg-white/5` · `backdrop-blur-md` · `saturate-[2.2]` · `border-white/10` | a secondary widget beside a primary one |
+| `META_PILL` | `bg-white/[0.06]` · `saturate-[2.2]`, **no blur** · `border-white/10` | non-tappable counts and tags |
 
 10/20 against 5/10 is the entire hierarchy, and it has to be unambiguous because there is no
 accent to spend: 7/12 would not read.
@@ -333,10 +341,53 @@ to resolve, cannot depend on an ancestor, and cannot be scoped wrong. At this si
 fills, two borders, four text values — that is smaller than a token system and strictly more
 robust.
 
+### The mesh — chroma below threshold, lifted by the glass
+Three radial stops on the ground, painted once by `GlowField` and never animated:
+**violet `rgba(124,58,237,.035)`** top-left, **cyan `rgba(34,211,238,.022)`** off the right
+edge, **coral `rgba(251,113,133,.018)`** low and mostly below the fold, with the original
+white `.035` sheen layered on top. They are exported as `CHROMA` in `spatial.ts`.
+
+**The alphas are set from a screenshot, and the first pass was wrong by about 3×.** It
+shipped at 5.5–10%, reasoned on paper to land "one 8-bit step off the ground". Measured off
+an actual 390×844 capture the violet lobe read `rgb(14,10,22)` and the cyan lobe
+`rgb(3,15,17)` on **bare canvas**, with no pane over either — a channel spread of 11 and 13.
+That is not a step, that is a visible teal cast down the right edge: the exact wash
+[The accent is luminance, not hue](#the-accent-is-luminance-not-hue) rejected, rebuilt by
+hand. At a third of the alpha the same lobes measure a spread of about 4.
+
+> **The rule is a measurement.** Bare-canvas channel spread (max minus min channel, sampled
+> away from any pane) must stay at or under **~4**. Above that the hue is a tint and this
+> layer has failed at the only thing it is for. Re-measure after any change — the arithmetic
+> is not trustworthy at these values and has already proved it once.
+
+**`backdrop-saturate` is what makes it visible, and only where a pane is.** A saturate filter
+scales chroma around luma: it multiplies a colour that is already there and cannot invent one
+that is not, so over the achromatic parts of the ground it is an exact no-op. Measured, a
+pane over the violet lobe reads `rgb(29,26,32)` — spread **5.7** — against bare ground beside
+it at `rgb(8,7,11)`. Violet inside the glass, black next to it.
+
+**2.2 and not more, and the ceiling is set by content rather than by the mesh.** A pane does
+not only sit over the ground — the selection bar and the tab bar sit over cover art, which
+has real colour already. The mesh would take 3×; a book jacket would go lurid at it.
+
+**Saturate has no radius, which is why pills get it and blur.** 64px of blur inside a 24px
+pill samples almost entirely from outside the pill — paid for and not seen. Saturate is
+per-pixel and works identically at any size, so `META_PILL` and the library's sort control
+carry saturate with no blur. Written the other way first, and it showed: the library's chrome
+is pills and a segmented control, so with no saturate anywhere on that screen the hue was
+doing *only* the thing it must never do.
+
+**One constant reverses all of it.** Set every alpha in `CHROMA` to 0 and the world is
+achromatic again with no call site touched — saturate over a grey backdrop changes nothing.
+The hue is the newest and least proven idea in a system whose whole argument is restraint, so
+it is built to be withdrawn in one edit.
+
 ### Glass needs something behind it
 `backdrop-blur` blurs what is behind the pane, and over flat `#000` there is nothing to blur.
 `GlowField` therefore keeps one whisper-faint **achromatic** sheen (white at 3.5% peak, dead
-by 60%, anchored off the top-left) so the panes have something to refract. One
+by 60%, anchored off the top-left) so the panes have something to refract — and, since the
+mesh above, three sub-threshold chroma stops layered *under* that sheen, which is what gives
+a 64px filter something with structure to work on rather than a flat fill to recompute. One
 `background-image`, painted once, never animated. Delete that div and the screen still
 works — flatter, and the glass stops being glass.
 

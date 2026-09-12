@@ -60,6 +60,29 @@ export async function GET(request: Request) {
     timezoneOffsetMinutes,
   );
 
+  // DAYS LEFT ON THE ENTITLEMENT, and it is here because nothing else can tell a
+  // user their Pro is about to end.
+  //
+  // The Razorpay path is a ONE-TIME payment (see razorpay/verify/route.ts): it grants
+  // 30 or 365 days and then `resolveEffectivePlan` above silently drops the account to
+  // FREE. There is no recurring mandate to fail loudly, no dunning email, and no email
+  // provider in this project at all - `src/lib/notifications.ts` is Capacitor
+  // LocalNotifications, which is device-local and cannot be driven from a server. So a
+  // lapsing subscriber currently finds out by discovering a feature stopped working.
+  //
+  // Surfacing it on the one payload every screen already fetches is the cheapest honest
+  // fix: no new infrastructure, and it reaches the user on the day they open the app,
+  // which for a streak product is most days.
+  //
+  // `null` for FREE accounts and for grants with no expiry (a manually granted account
+  // has `currentPeriodEnd: null`, which means "never expires" - see
+  // isEntitlementActive). Callers must treat null as "nothing to say" rather than as
+  // zero, which would read as "expires today".
+  const proDaysRemaining =
+    plan === "PRO" && user.currentPeriodEnd
+      ? Math.max(0, Math.ceil((user.currentPeriodEnd.getTime() - Date.now()) / 86_400_000))
+      : null;
+
   return Response.json({
     plan,
     used,
@@ -67,5 +90,9 @@ export async function GET(request: Request) {
     // Clamped at zero: a limit lowered while an account was over it would otherwise
     // report a negative allowance, and no screen should have to defend against that.
     remaining: Math.max(0, limit - used),
+    proDaysRemaining,
+    // ISO so a client can format it in the reader's own locale rather than trusting
+    // a server-rendered string.
+    proEndsAt: plan === "PRO" ? (user.currentPeriodEnd?.toISOString() ?? null) : null,
   });
 }

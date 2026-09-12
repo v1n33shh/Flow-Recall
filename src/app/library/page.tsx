@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import BookCover from "@/components/BookCover";
 import GlowField from "@/components/GlowField";
 import UploadSheet from "@/components/UploadSheet";
-import { FOCUS, GLASS_CONTROL, GLASS_PANEL, GLASS_STATIC, PRESS, TAP, TRANSITION } from "@/lib/spatial";
+import { FOCUS, GLASS_CONTROL, GLASS_PANEL, GLASS_STATIC, META_PILL, PRESS, SCREEN_TITLE, TAP, TRANSITION } from "@/lib/spatial";
 import { LIBRARY_SORT_LABELS, sortBooks } from "@/lib/librarySort";
 import { getReaderPreferences, setReaderPreferences, type LibrarySort } from "@/lib/readerPreferences";
 import { deleteBooks, useBooks } from "@/lib/readerStorage";
@@ -109,7 +109,13 @@ function ShelfItem({
           </span>
         )}
 
-        <span className="absolute left-2 top-2 rounded-full border border-[rgb(255_255_255_/_0.1)] bg-[rgb(0_0_0_/_0.7)] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-[rgb(255_255_255_/_0.6)] backdrop-blur-md">
+        {/* NOT `META_PILL`, AND THE DIFFERENCE IS THE BACKDROP. Every other pill in this
+            view sits on the black ground, where a white/6 fill reads as glass. This one
+            sits on an arbitrary cover image - it could be a white page scan - so it needs
+            an opaque-ish dark base or it is illegible on exactly the books with pale
+            covers. Same geometry, same tracking, same type size: it stays in the family,
+            it just carries its own ground with it. */}
+        <span className="absolute left-2 top-2 inline-flex items-center rounded-full border border-white/10 bg-black/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/70 backdrop-blur-md">
           {TYPE_BADGE[book.type]}
         </span>
 
@@ -150,10 +156,62 @@ function SelectionBar({
     <div
       // z-[60] clears MobileTabBar (fixed, z-50): a destructive confirmation must never
       // sit under the navigation that can dismiss it.
-      className="fixed inset-x-0 bottom-0 z-[60] border-t border-[rgb(255_255_255_/_0.1)] bg-[rgb(0_0_0_/_0.92)] backdrop-blur-xl"
-      style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      //
+      // THE OUTER DIV IS NOW A POSITIONER AND NOTHING ELSE - no fill, no border - so it
+      // MUST NOT EAT TAPS. It spans the full width of the viewport across the bottom, and
+      // without `pointer-events-none` the transparent gutter either side of the floating
+      // card would swallow every tap aimed at the bottom row of covers. The card itself
+      // opts back in. MobileTabBar does exactly this, for exactly this reason.
+      className="pointer-events-none fixed inset-x-0 z-[60] px-4"
+      // IT SITS ON TOP OF THE TAB BAR, NOT OVER IT, AND THAT IS A BUG FIX RATHER THAN A
+      // PREFERENCE. This was `bottom-0` with its own safe-area padding, which put it in
+      // exactly the same rectangle as MobileTabBar. The old full-bleed `bg-black/92` hid
+      // that collision by being very nearly opaque - the tab bar was still underneath,
+      // simply invisible. Turning this into real glass made the nav legible THROUGH the
+      // confirmation, and "Cancel" landed on top of "Ingest".
+      //
+      // So the near-opaque fill was load-bearing, and the honest fix is not to put it back
+      // but to stop the two panes overlapping at all. MobileTabBar publishes its real
+      // rendered height - its own safe-area padding included - as `--tabbar-h` on <html>,
+      // and DeckUndoBar already floats off that exact variable. Same offset, same reason.
+      //
+      // NO `env(safe-area-inset-bottom)` OF ITS OWN: `--tabbar-h` already contains it, and
+      // adding it again is the double-count that cost this shell a commit once before.
+      // The variable collapses to 0 at sm:, where the bar is hidden and there is no inset
+      // to respect anyway.
+      style={{ bottom: "calc(var(--tabbar-h, 0px) + 1rem)" }}
     >
-      <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 px-5 py-3">
+      {/* A FLOATING PANE, NOT A DOCKED BAR. This was full-bleed at `bg-black/92` with a
+          hairline along its top edge - which is a toolbar, and a toolbar welded to the
+          bottom of the screen is the one shape in this shell that does not float. Lifted
+          off the edge it reads as the same material as the upload sheet and the tab bar it
+          sits above, which is the point: there is one glass in this world.
+
+          A DARK FILL AND NOT `bg-white/5`. Every other pane here is a white fill because
+          it sits on the black ground with nothing behind it. This one sits over a grid of
+          cover art and titles, and it is the surface that asks whether to delete something
+          irreversibly - so it carries its own dark ground. Legibility outranks material
+          consistency at exactly one place on this screen, and this is it.
+
+          /95, AND EACH STEP UP WAS MEASURED ON A SCREENSHOT RATHER THAN GUESSED. At /70 a
+          book title four pixels behind the pane came through at 30% and sat inside the
+          sentence asking whether to delete it - "Thinking, Fast" legible straight through
+          "Delete 2 documents?". At /90 it was a ghost rather than a word, which is better
+          and still not good enough for the one control in this app that destroys data.
+          The blur does not save it either: blur moves luminance around, it does not remove
+          it, so blurred white text under a thin scrim is a bright smear where a word
+          should be. Only the fill can fix that, so the fill is what was changed.
+
+          /95 IS ALSO THE HOUSE FIGURE, WHICH IS WHY IT IS WHERE THIS STOPS RATHER THAN AT
+          SOME NEARBY VALUE THAT ALSO WORKS. DeckUndoBar is the same shape doing the same
+          job - a floating pane above the tab bar, holding a sentence and an undo - and it
+          settled on `bg-surface/95` already. Two confirmations that float over the same
+          nav should not be two different densities of glass.
+
+          ROUNDED-[28px], NOT ROUNDED-FULL. It holds a sentence, and a pill that holds a
+          sentence is a lozenge. The pills in here are the two buttons, which is where the
+          geometry belongs - it marks the actions, not the container. */}
+      <div className="pointer-events-auto mx-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-[28px] border border-white/10 bg-black/95 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_18px_48px_-12px_rgba(0,0,0,0.9)] backdrop-blur-3xl backdrop-saturate-[2.2]">
         <p className="text-xs text-[rgb(255_255_255_/_0.6)]" aria-live="polite">
           {confirming
             ? `Delete ${count} ${count === 1 ? "document" : "documents"}? This can't be undone.`
@@ -197,6 +255,13 @@ export default function LibraryPage() {
   const [adding, setAdding] = useState(false);
 
   const ordered = sortBooks(books, sort);
+  // FINISHED IS >= 0.99, NOT === 1. `progress` is a read FRACTION computed from a scroll
+  // offset or a CFI, so the last page of a book that has genuinely been finished lands on
+  // 0.994 about as often as it lands on 1 - and a shelf that will not admit you finished
+  // anything is worse than one that is a percent generous. `reading` is the open interval
+  // below it, so the two can never double-count a book.
+  const finished = books.filter((book) => book.progress >= 0.99).length;
+  const reading = books.filter((book) => book.progress > 0 && book.progress < 0.99).length;
   // A document deleted in another tab must not keep occupying the count on the bar.
   const selected = selectedIds.filter((id) => books.some((book) => book.id === id));
 
@@ -231,41 +296,72 @@ export default function LibraryPage() {
       // Reserved only while selecting; the space is hidden under the bar anyway.
       style={
         selecting
-          ? { paddingBottom: "calc(8rem + env(safe-area-inset-bottom))" }
+          ? // Clears the floating confirmation, which now sits a bar-height higher than it
+            // used to - so the reservation is measured from the same variable the bar is
+            // positioned from, rather than from a constant that silently stops being
+            // enough the moment either height changes.
+            { paddingBottom: "calc(var(--tabbar-h, 0px) + 7rem)" }
           : undefined
       }
       className="relative isolate flex min-h-0 w-full flex-1 flex-col bg-black px-5 pt-[max(1.25rem,env(safe-area-inset-top))]"
     >
       <GlowField />
 
-      <header className="au-rise flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white">Library</h1>
-          {!loading && (
-            <p className="mt-1 text-[13px] text-[rgb(255_255_255_/_0.6)]">
-              {books.length === 0
-                ? "Nothing here yet."
-                : `${books.length} ${books.length === 1 ? "document" : "documents"}`}
-            </p>
+      <header className="au-rise">
+        <div className="flex items-start justify-between gap-4">
+          <h1 className={`${SCREEN_TITLE} text-white`}>Library</h1>
+
+          {books.length > 0 && (
+            <button
+              type="button"
+              onClick={() => (selecting ? leaveSelection() : setSelecting(true))}
+              className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-medium ${GLASS_STATIC} ${FOCUS}`}
+            >
+              {selecting ? "Done" : "Select"}
+            </button>
           )}
         </div>
 
-        {books.length > 0 && (
-          <button
-            type="button"
-            onClick={() => (selecting ? leaveSelection() : setSelecting(true))}
-            className={`min-h-11 shrink-0 rounded-full px-4 text-xs font-medium ${GLASS_STATIC} ${FOCUS}`}
-          >
-            {selecting ? "Done" : "Select"}
-          </button>
-        )}
+        {/* THE SHELF, IN THREE NUMBERS. This was one line of grey text reading "12
+            documents", which is a count, not a view of anything. Split into pills it
+            answers the question the screen is actually for - how much is here, how much is
+            open, how much is behind me - without adding a row of chrome: the pills wrap
+            into the space the sentence already occupied.
+
+            A ZERO IS NOT SHOWN. A pill reading "0 READING" is a statement about absence,
+            and absence does not deserve a surface. The pills that are here are always
+            non-trivially true, which is why the row never reads as a dashboard padding
+            itself out.
+
+            NOT TAPPABLE, AND IT MUST NOT LOOK IT. These are the same 44px-ish height as
+            the sort control directly below and carry the same fill, so the one signal
+            separating them is that these are `span`s with no hover, no press and no ring -
+            hence the deliberately lower text alpha (/60 against the control's white) and
+            the absence of any `PRESS`. If either ever gains an action, it stops being a
+            META_PILL and becomes a control. */}
+        {!loading &&
+          (books.length === 0 ? (
+            <p className="mt-1 text-[13px] text-[rgb(255_255_255_/_0.6)]">Nothing here yet.</p>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className={META_PILL}>
+                {books.length} {books.length === 1 ? "document" : "documents"}
+              </span>
+              {reading > 0 && <span className={META_PILL}>{reading} reading</span>}
+              {finished > 0 && <span className={META_PILL}>{finished} finished</span>}
+            </div>
+          ))}
       </header>
 
       {books.length > 1 && (
         <div
           role="group"
           aria-label="Sort library"
-          className="au-rise mt-5 inline-flex gap-0.5 self-start rounded-full border border-[rgb(255_255_255_/_0.1)] bg-[rgb(255_255_255_/_0.05)] p-0.5"
+          // `backdrop-saturate` with no blur, for the reason spelled out on META_PILL: this
+          // is a 40px-tall control, a 64px blur radius would sample almost entirely from
+          // outside it, and saturate is per-pixel so it does not care how small the pane
+          // is. It is what lets the mesh resolve inside the control and nowhere beside it.
+          className="au-rise mt-5 inline-flex gap-0.5 self-start rounded-full border border-[rgb(255_255_255_/_0.1)] bg-[rgb(255_255_255_/_0.05)] p-0.5 backdrop-saturate-[2.2]"
           style={{ animationDelay: "60ms" }}
         >
           {(["recent", "title", "progress"] as const).map((option) => (

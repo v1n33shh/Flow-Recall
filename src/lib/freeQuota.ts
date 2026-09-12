@@ -19,7 +19,25 @@ import { isNewLocalMonth } from "@/lib/localDay";
  * its paywall copy, and it is a client component in a static export where
  * src/app/api is moved aside (see scripts/build-capacitor.mjs). The database half
  * of the allowance lives in freeQuotaDb.ts. */
-export const FREE_DECKS_PER_MONTH = 3;
+/** RAISED FROM 3 FOR LAUNCH, and the reasoning is about stage rather than cost.
+ *
+ * Three decks is roughly a week for a student working through one chapter at a time,
+ * so the cap landed before the habit did - and a student who never formed the habit
+ * does not convert, they just stop opening the app. Pre-launch the risk that matters
+ * is indifference, not overspend.
+ *
+ * THE COST GATE IS UNAFFECTED, which is what makes this safe. As the note on
+ * FREE_GENERATION_REQUESTS_PER_MONTH below explains, deck COUNT structurally cannot
+ * bound spend - a book is not one request - so the 100-request ceiling is what
+ * actually holds the floor, and it has not moved. Measured there at ~$0.35/month on
+ * Groq's paid tier; five decks does not change that arithmetic because the requests
+ * were always the thing being counted.
+ *
+ * Revisit once there is conversion data. If five turns out to be past the point where
+ * anyone needs PRO, the number to move is this one - not the generation ceiling, and
+ * not FREE_LOOKUPS_PER_MONTH, which is the comprehension layer and the last thing to
+ * squeeze. */
+export const FREE_DECKS_PER_MONTH = 5;
 
 /** How many AI lookups a FREE account may spend per calendar month, shared by
  * /api/define (a word looked up in the reader), /api/ask (asking a card anything)

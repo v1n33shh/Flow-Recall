@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import type { MasteryLevel } from "@/lib/recallModel";
 import type { Concept, ConceptEdge } from "@/lib/types";
 import { contrastPairs, learningPath, validateEdges } from "@/lib/conceptGraph";
@@ -88,7 +87,6 @@ export default function DeckLearningPath({
   labelOf,
   levelOf,
   onJump,
-  showMapLink = false,
 }: {
   concepts: readonly Concept[];
   map: ConceptMap;
@@ -98,7 +96,6 @@ export default function DeckLearningPath({
   /** Offers the same deck as a drawing. Off by default because /map renders this
    * component itself for a deck it cannot draw yet, and a link from a screen to
    * itself is the sort of thing nobody notices until a student taps it. */
-  showMapLink?: boolean;
 }) {
   const { edges, busy, error, limitReached, run } = map;
 
@@ -130,18 +127,14 @@ export default function DeckLearningPath({
         <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
           {path.length > 0 ? "Learning path" : "How this deck fits together"}
         </p>
-        {/* The list and the map are two views of one set of edges - a sequence to
-            read down, and a shape to look at. The deck is already in the handoff
-            /revise arrived on, so /map picks it up with nothing passed. */}
-        {showMapLink && edges && edges.length > 0 && (
-          <Link
-            href="/map"
-            onClick={vibrateTap}
-            className="shrink-0 text-[11px] font-medium text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          >
-            Open the map
-          </Link>
-        )}
+        {/* THE "Open the map" LINK IS GONE WITH THE /map ROUTE. This component
+            still computes and renders the edge list - that is what /revise uses it
+            for - but the graph VIEW it used to hand off to no longer exists, and a
+            link to a deleted route is a 404 with extra steps. The `showMapLink`
+            prop went with it rather than being kept as a no-op: a prop that is
+            accepted and ignored is worse than one that is gone, because the next
+            reader has to prove it does nothing. RevisionSheet's call site was
+            updated in the same change. */}
       </div>
 
       {path.length > 0 ? (

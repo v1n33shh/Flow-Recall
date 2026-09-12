@@ -14,6 +14,9 @@ import { LIBRARY_SORT_LABELS, sortBooks } from "@/lib/librarySort";
 import { getReaderPreferences, setReaderPreferences, type LibrarySort } from "@/lib/readerPreferences";
 import { deleteBooks, getBookMeta, useBooks } from "@/lib/readerStorage";
 import type { BookMeta } from "@/lib/types";
+// The app-wide screen title (src/lib/spatial.ts); colour supplied here because this
+// screen is token-based and must follow the theme.
+import { SCREEN_TITLE } from "@/lib/spatial";
 
 const TYPE_BADGE: Record<BookMeta["type"], string> = {
   epub: "EPUB",
@@ -279,7 +282,7 @@ function ReaderLibrary({ onOpenBook }: { onOpenBook: (id: string) => void }) {
         FlowRecall
       </Link>
 
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Reader</h1>
+      <h1 className={`${SCREEN_TITLE} text-foreground`}>Reader</h1>
       <p className="mt-2 text-sm text-muted-foreground">
         Drop in an EPUB, a PDF, or paste raw notes, and read distraction-free.
         Highlight any word or phrase for an instant AI definition - no

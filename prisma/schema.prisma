@@ -32,6 +32,17 @@ model User {
   plan                   String    @default("FREE")
   planStatus             String?
   currentPeriodEnd       DateTime?
+  // WHICH period end a renewal reminder has already been sent for - the
+  // idempotency key for /api/cron/renewal-reminder, which runs DAILY and would
+  // otherwise email the same person every day of the week before they lapse.
+  //
+  // Stores the period end itself rather than a "sentAt" timestamp on purpose: the
+  // cron then simply asks "does this equal the user's CURRENT currentPeriodEnd?",
+  // which is exact, needs no interval arithmetic, and self-resets the moment the
+  // user renews (a new period end is by definition one we have not reminded about).
+  // A sentAt column would have needed to know the period LENGTH to decide whether a
+  // past send belonged to this cycle or the previous one.
+  renewalReminderFor     DateTime?
   // Gateway ids are nullable + unique: a given user pays through exactly one
   // gateway (Razorpay for IN, Stripe for INTL), and an id maps to one user.
   stripeCustomerId       String?   @unique

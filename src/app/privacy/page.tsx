@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+// Reached from the Account screen's footer link, so it is a screen like any other
+// and takes the same title voice (src/lib/spatial.ts).
+import { SCREEN_TITLE } from "@/lib/spatial";
 
 export const metadata: Metadata = {
   title: "Privacy Policy - FlowRecall",
@@ -23,7 +26,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function PrivacyPolicyPage() {
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-10 sm:px-6 sm:py-16">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Privacy Policy</h1>
+      <h1 className={`${SCREEN_TITLE} text-foreground`}>Privacy Policy</h1>
       <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
       <p className="mt-6 text-sm leading-relaxed text-muted-foreground">

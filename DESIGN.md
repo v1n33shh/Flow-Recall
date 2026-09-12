@@ -5,7 +5,7 @@ Both are pure black; neither inverts under `:root[data-theme="light"]`.
 
 | World | Where | Source of truth |
 |---|---|---|
-| **The Slab Stack** | the home page — `/` on the website **and** inside the APK | inline in `src/app/page.tsx` |
+| **The Bento Grid** | the home page — `/` on the website **and** inside the APK | inline in `src/app/page.tsx` |
 | **Spatial Glass** | `/library`, the tab bar, the upload sheet | `src/lib/spatial.ts` |
 
 Neither world's values flow through `globals.css`'s semantic layer, which is documented as
@@ -16,59 +16,97 @@ ingest surfaces.
 make.** For six commits the home page branched into marketing-on-web and a dashboard-in-app,
 and the result was an installed app with nothing on its first screen that said what
 FlowRecall is. `page.tsx` now renders the same introduction everywhere; `useIsNative()` is
-consulted **only** for spacing and for switching off two web-tuned decorations. Because it
-defaults to `false`, SSR and the static export both emit the full page and SEO is untouched.
+consulted for **two spacing values and nothing else** — the hero's vertical centring and the
+grid's top padding. Because it defaults to `false`, SSR and the static export both emit the
+full page and SEO is untouched.
 
 ---
 
-## The Slab Stack (the home page)
+## The Bento Grid (the home page)
 
 **Mode:** Introduce. A visitor — on the site or on their own phone — learns what this is.
 
-A deck of enormous rounded slabs dealt down a pitch-black page. Seven of them, each pulling
-up into the one before it so the page reads as layered cards rather than as stacked
-sections.
+One twelve-column grid on OLED black. Not a scroll of sections: every piece of content is a
+cell, and its span is a judgement about how much it is worth.
 
-### The slab recipe
-`bg-white/[0.02]` · `border border-white/10` · `rounded-[32px]`, `sm:rounded-[40px]` ·
-`shadow-[0_-40px_80px_-40px_rgba(0,0,0,0.95)]` · `-mt-8 sm:-mt-14` · `z` climbing 10 → 70.
+**The rows are uneven on purpose:** `7/5 · 12 · 8/4 · 4/4/4 · 5/4/3 · 7/5 · 7/5`. The hero and
+the recall loop are equals at the top. The chart is twice the width of its own commentary,
+because the chart is the argument and the prose is a caption. The seven product cards stop
+being seven identical rectangles — which is the failure mode a card grid always drifts toward,
+and the reason this is a bento rather than three columns of thirds.
 
-**The overlap is margin, z-index and one shadow — no JavaScript.** The shadow points
-*upward* (negative y), so it darkens the slab beneath at exactly the seam where they meet,
-which is what turns two translucent panes into a legible layer order. There is no scroll
-listener on this page at all.
+Reading order is unchanged from the version before it: hero, the fact, the curve, the product,
+the four steps, FAQ, close. **Every word of the copy is unchanged too.** The page has been
+rewritten twice for structure and never once for content.
 
-**32px of radius on a phone, 40px from `sm` up.** 40px of corner on a 360dp-wide slab eats
-into the first and last line of every paragraph inside it — a rounding decision the copy
-would have paid for.
+The gap is the only spacing between cells — no section padding, no vertical rhythm to keep in
+sync, and nothing that depends on a margin collapse behaving.
 
-### No `backdrop-filter` on the slabs
-The brief's recipe stops at a fill and a hairline, and it is right to. A `backdrop-filter`
-is re-evaluated as the page scrolls, and seven full-viewport blurred panes is the most
-reliable way to turn a smooth scroll into a slideshow on the cheap Android panels this
-ships to. Blur survives on two elements only — the hero pill and the section eyebrow, a few
-hundred pixels each.
+### One cell, two thicknesses of glass, and the split is measured
+`relative overflow-hidden rounded-[28px] border border-white/10 sm:rounded-[32px]`, plus one
+of:
 
-### The ground
-`Backlight()` is `fixed`, not absolute, so the light stays put while the slabs travel past
-it: the stack reads as lit from a fixed source in the room rather than carrying its own glow
-around. Two radial gradients, painted once, **never animated**, plus `FilmGrain`.
+| Recipe | Fill | Used for |
+|---|---|---|
+| `GLASS_SMALL` | `bg-white/[0.02]` · `backdrop-blur-3xl` | cells at a third of a viewport or less |
+| `GLASS_LARGE` | `bg-white/[0.03]` · **no filter** | the hero, the loop, the fact, the curve, the FAQ, the close |
 
-**The grain is not decoration here.** A gradient falling from 4% white to nothing across a
-viewport spans roughly one 8-bit step, and without a dither it bands into visible rings on
-exactly those panels.
+A `backdrop-filter` costs the area it covers, re-sampled whenever what is behind it moves —
+which on a scrolling page is every frame. Seven full-width blurred panes is the most reliable
+way to turn a smooth scroll into a slideshow on the cheap Android panels this ships to; that
+was measured on this page's predecessor, which carried no filter at all. Small cells can
+afford it, and they are where the material is most legible anyway: a small pane beside a large
+one reads as frost because its edges are close enough together to see the gradient bend.
 
-Hero-only, web-only: a masked 4rem ruled grid and three blurred achromatic orbs. Both are
-off on native — tuned for web's tall hero, they compress into a visibly gridded patch and an
-isolated grey blob in native's short content-fit box. Confirmed on device.
+**3% fill against 2%** is the compensation — a blurred pane picks up light from what it is
+blurring, so an unfiltered one needs slightly more of its own to read as the same material
+sitting beside it. In place the two are indistinguishable, which is the test that matters.
+
+There is something behind the panes to refract, which is the usual catch with glass on pure
+black: the film grain and the backlight both sit at `-z-10` under the whole grid.
+
+### The ground, and the six glows that are gone
+`Backlight()` is `fixed`, not absolute, so the light stays put while the grid travels past it.
+Two radial gradients, painted once, **never animated**, plus `FilmGrain`.
+
+**It is now the only light on the page.** The version before it also carried a masked 4rem
+ruled grid behind the hero, three blurred orbs, a 28rem wash behind the closing CTA, another
+behind the FAQ, and a fourth inside the flagship product card — six full-viewport-class
+blurred washes. A glow belongs on something you can press, not behind four different headings.
+
+The grain is not decoration: a gradient falling from 7% white to nothing across a viewport
+spans roughly one 8-bit step, and without a dither it bands into visible rings on exactly
+those panels.
+
+### The accent is luminance, not hue
+White spill (`0 8px 36px -6px rgba(255,255,255,0.35)`), and it appears in exactly two places:
+the primary CTA, and the **answer** beat of the recall loop. That is the accent spent where
+the loop pays off.
+
+An azure was considered and rejected on evidence rather than taste: at the low alpha a glow
+needs, chroma carries where luminance does not, so a saturated wash tints the whole upper page
+where the same value in white stays a glow. This page had already learned that once.
+
+### The recall loop — question, think, answer
+The flagship cell, five columns beside the hero, and the reason the grid is asymmetric.
+
+It used to be a headline, a paragraph, and a drawn mock of two study formats stacked
+underneath. The mock was doing the most important work on the page and reading as filler,
+because nothing said what its three pieces were. They are three beats now, on a hairline
+rhythm, in order, at the top of the page beside the headline.
+
+**The labels under each beat are the mock's own words.** "True or false" and "Type it from
+memory" are the formats' real names in the study feed, and "days later" was already the
+divider between them — because the two formats are not the same night. The harder one is
+scheduled for when the memory has had time to decay, which is the point of the chart two cells
+down.
 
 ### Type
-Geist for everything structural. `clamp(2.75rem, 10.5vw, 7.5rem)` on the headline, so
-display type tracks the viewport continuously instead of landing wrong between breakpoints.
+Geist for everything structural, `tracking-[-0.04em]` on display.
 
-**Instrument Serif, italic, carries the argument in two places** — the headline's second
-clause (`Stop re-reading.` in `white/40`, `Start recalling.` in serif) and the whole
-brain-fact slab. The headline argues by contrast, and the type now carries that contrast
+**Instrument Serif, italic, carries the argument in four places** and nowhere else: the
+headline's second clause, the whole brain-fact cell, "built" in the statement cell, and "by
+tomorrow" in the close. The headline argues by contrast, and the type carries that contrast
 instead of leaving it to the words.
 
 That font is wired as `--font-instrument-serif` in `layout.tsx` and mapped to the semantic
@@ -76,62 +114,89 @@ That font is wired as `--font-instrument-serif` in `layout.tsx` and mapped to th
 self-referential** — `--font-editorial: var(--font-editorial)` — so the token resolved to
 nothing and every serif span silently rendered in Geist.
 
-Paragraphs sit at `text-white/50` so headings keep the contrast; `<Hi>` lifts two or three
-words per paragraph to pure white. It is a `<span>`, not `<strong>`: a typographic emphasis,
-not a semantic one, and a screen reader announcing "PDF" with stress adds nothing.
+**The headline is capped by the sentence, and every number was measured in the browser with
+Geist actually loaded.** `clamp(2.4rem, 6vw, 5rem)`. "Stop re-reading." costs 7.1px of width
+per px of type, so it needs 312px at 44px; the columns it occupies are 286px at 360dp and
+462px at the lg breakpoint. At the 7.5rem the slab version used, it broke at its own hyphen
+into "Stop re- / reading." — three lines where two were authored, with the break mid-word.
 
-**Pacifico is down to one call site** — the footer wordmark (`page.tsx:932`). It is the
-least Linear-like element in a system that names Linear as its target, and it is brand
-identity, so it stays the owner's call rather than a styling one.
+A first pass at that calculation used a probe that ran before the webfont landed and measured
+17% light, which is exactly enough to look right on paper and wrap on a phone.
 
-### The stack, in order
-Hero (z10, no overlap) · the brain fact (z20) · the retention curve (z30) · the feature grid
-(z40) · how it works (z50) · FAQ (z60) · final CTA (z70) · footer, outside the stack.
+**Pacifico is down to one call site**, the footer wordmark. Brand identity, so it stays the
+owner's call.
 
-**Two things survived "cut the wall of text" deliberately:**
-- **The FAQ in full.** `FAQPAGE_JSONLD` declares seven Q&A pairs, and Google requires the
-  answer text to be *present on the page* for the rich result. A schema block whose answers
-  are absent is what earns a manual action.
-- **The retention curve.** The page's only evidence, and it is *computed* from `fsrs.ts` by
-  the same FSRS-6 scheduler that will schedule whoever reads it — not drawn.
+### Contrast, and why the muted end stops at /50
+Body copy is `text-white/50`; `<Hi>` lifts two or three words per paragraph to pure white.
+Labels that carry meaning — the `<Effect>` mechanism names, the loop's beat labels, the step
+numerals — are `/60`.
 
-`<Effect>` names the mechanism above each feature headline, mono and tiny so it reads as a
-citation rather than a second headline. That is the editorial move of the grid: every surface
-in this app exists because of a specific, checkable finding about memory, and saying which
-one converts a feature list into an argument.
+White at 40% over black composites to `#666`, which is **3.7:1** and under the 4.5:1 floor for
+body text. `/50` is `#808080` and 5.3:1; `/60` is 7.4:1. The two lighter values are a hair
+apart on screen and only one of them is readable. `/40` survives only on `aria-hidden`
+decoration, where there is nothing to read.
 
-### The brain fact slab
-One checkable fact, rotated **per visit** (not on a timer — text that changes while you read
-it is a bug wearing a feature's clothes) from the 24 lines in `src/lib/brainFacts.ts`. That
-file's standing rule governs the content: every claim is checkable and **none is attributed
-to anybody**, because a misattributed quotation is worse than no quotation.
+### What was cut, and why none of it was copy
+Three labels that named their own section — "The forgetting curve", "Why FlowRecall", "How it
+works" — sat above headings that already said the same thing. A caption on a caption; the
+heading carries its own weight.
 
-The cursor is shared with the library header, so a student who opens both screens meets two
-different facts and meets all 24 before meeting any twice.
+The six 44px icon chips went with them. Every product cell carried two labels for one idea:
+the mono `<Effect>` eyebrow naming the mechanism, and a glyph saying it wordlessly. The
+eyebrow is the informative one, and the statement cell's copy promises exactly that — "the
+mechanism each surface is built on is named on the card". The chips were also the only element
+on the page that did not re-theme.
 
-It is the one slab set in serif, with no eyebrow, no attribution and no explanation beneath
-it — a paragraph here would defeat the point of the rewrite.
+`<Effect>` itself stays for that reason: it is the claim, not decoration on it.
 
-### Motion
-`motion/react`, with one spring reused for every entrance: `SNAP`, stiffness **700** /
-damping **18**. That ratio overshoots and rings, and the constant's own comment says so
-outright — *"snap aggressively into place instead of gently fading in."* **A calmer 200/26
-was built and measured in an earlier revision and is not what ships here**; if the entrances
-ever read as twitchy rather than crisp, that is the number to revisit, and it is one constant
-at `page.tsx:42`.
+### Motion — one authored moment, and no JavaScript
+**`motion/react` is not imported by this route at all.** It drove one spring entrance per
+section — nine of them, identical, which is a default rather than a design — plus a
+scroll-reveal on every block.
 
-Scroll reveals use a separate, much softer 120/20 via `reveal()`.
+What ships is `.fr-rise`: four staggered entrances in the hero, 90ms apart, a CSS keyframe on
+`cubic-bezier(0.16, 1, 0.3, 1)`. Everything below the fold is simply present when you arrive.
+No spring integrator on the main thread of a mid-range phone, and no element anywhere on the
+page whose visibility depends on JS having run.
 
-**Not used, on technical grounds:** no scroll-driven CSS (`animation-timeline` is Chromium
-115+) and no React `<ViewTransition>` (needs Chromium 125+). The Android floor is **WebView
-111**, set deliberately in `capacitor.config.ts`. Below 115 an `animation-timeline` keyframe
-runs immediately, which can strand an element at `opacity: 0` — a silently blank section on
-exactly the cheap phones that floor exists to protect.
+The delay is passed per element as `--fr-d`, so the stagger lives at the call site next to the
+element it delays rather than as four nth-child rules that break the moment the markup order
+changes.
+
+**`.fr-lift` gates its hover scale behind `(hover: hover) and (pointer: fine)`**, and that gate
+is load-bearing here rather than tidy: Android WebView can latch `:hover` on a tap, which would
+leave a cell scaled up until the next tap lands elsewhere — and on a `GLASS_SMALL` cell that
+scale re-samples a 64px filter for every frame it runs.
+
+Reduced motion removes both outright rather than running them faster, and `.fr-rise` resolves
+to its **visible** end.
+
+**No `animation-timeline` anywhere.** Scroll-driven CSS is Chromium 115+; the Android floor is
+WebView 111, set deliberately in `capacitor.config.ts`. Below 115 the keyframe runs
+immediately, which can strand an element at `opacity: 0` — a blank hero on exactly the cheap
+phones that floor exists to protect.
+
+**Performance contract** (inherited, restated in eleven files): animation drives `transform`
+and `opacity` only.
+
+### Two cells that had to be measured against each other
+Grid stretches every cell to its row's tallest member, which is what makes a bento read as a
+bento and also what puts a hole in it when two neighbours disagree about height.
+
+"Showing up" and the four steps share the last product row. As a four-row list the steps cell
+was roughly 300px taller, and its neighbour had to spend that on nothing — a headline and
+seven small squares floating in the middle of a void. The steps fold into **two by two**, and
+the streak calendar became a **full-width band on the floor of its cell**, its squares
+`flex-1` so they grow into a week you can read at a glance. Same height, spent on purpose.
 
 ### `aw-page`
-The slabs are hard-coded white-on-black, but `RetentionCurve` and `TodaySession` draw
+The cells are hard-coded white-on-black, but `RetentionCurve` and `TodaySession` draw
 themselves from `--foreground` / `--accent`. Without that class pinning the dark token values
-for the subtree, a visitor in light mode gets a near-black chart line on a black slab.
+for the subtree, a visitor in light mode gets a near-black chart line on a black cell.
+
+It also carries the surfaces the page did not draw: `::selection`, the focus outline, and a
+themed scrollbar. On a pure-black page the platform default scrollbar — a light trough with a
+grey thumb — is the loudest thing in the viewport.
 
 ---
 

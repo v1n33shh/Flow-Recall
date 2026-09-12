@@ -288,134 +288,6 @@ body {
   animation: signed-out-glow-shift 12s ease-in-out infinite;
 }
 
-/* ============================================================================
-   THE MARKETING PAGE'S ATMOSPHERE — the drift under src/components/AmbientOrb.tsx,
-   and the browser surfaces that page ships with.
-
-   WHY THE DRIFT IS CSS AND NOT motion/react, given that every other animation in this
-   repo is a spring in a component. Three things, and the first is the one that decides
-   it:
-
-     1. IT HAS TO BE GATED ON A BREAKPOINT. An animated backdrop forces every
-        `backdrop-filter` on screen to re-resolve its blur on every frame, which is the
-        exact cost src/lib/liquidGlass.ts already documents ("the orbs behind the glass
-        animate, which means the backdrop is dirty every frame"). MG_GLASS gates its
-        blur at `md:`, so the drift has to stop at `md:` too, or a phone pays for an
-        animation whose only purpose is to feed a filter that phone is not running.
-        A media query does that in one line; motion/react needs a matchMedia hook, a
-        client component, and a hydration story.
-     2. IT KEEPS AmbientOrb OFF THE CLIENT. No "use client", no bundle, no JS at all for
-        the page's entire background layer.
-     3. prefers-reduced-motion is answered in the same query rather than threaded down
-        from a parent as a prop. The house rule is honoured exactly as BrainFactTicker
-        states it: under reduced motion the drift does not run slower, it does not run.
-        The orbs are already in their rest position, so nothing is lost but the movement.
-
-   transform ONLY — StreakCounter.tsx's PERFORMANCE CONTRACT, restated in eleven files.
-   Nothing here touches filter, box-shadow or background-position. The blur on each orb
-   is applied once at paint and never animated.
-
-   The three cycles are deliberately not multiples of each other (34s / 47s / 61s,
-   doubled by `alternate` to 68s, 94s and 122s). With equal durations the three lights realign every cycle
-   and the eye catches the loop within a minute; co-prime-ish periods mean the composition
-   does not visibly repeat for the length of any real visit. Same reasoning as the
-   26/31/38s cycles in FlowStateHub's Atmosphere.
-
-   Percentages in translate3d resolve against the element's own size, so the drift scales
-   with the orb instead of becoming a 40px twitch on a 1180px sphere at one width and a
-   lurch at another.
-   ========================================================================== */
-@keyframes mg-orb-drift-a {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(3.5%, 2.5%, 0) scale(1.07);
-  }
-  100% {
-    transform: translate3d(-2.5%, 1%, 0) scale(0.97);
-  }
-}
-
-@keyframes mg-orb-drift-b {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(-5%, -3.5%, 0) scale(0.92);
-  }
-  100% {
-    transform: translate3d(2%, -6%, 0) scale(1.1);
-  }
-}
-
-@keyframes mg-orb-drift-c {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
-  50% {
-    transform: translate3d(4%, -4.5%, 0) scale(1.08);
-  }
-  100% {
-    transform: translate3d(-3%, 3%, 0) scale(0.94);
-  }
-}
-
-@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
-  .mg-orb-drift-a {
-    animation: mg-orb-drift-a 34s ease-in-out infinite alternate;
-  }
-
-  .mg-orb-drift-b {
-    animation: mg-orb-drift-b 47s ease-in-out infinite alternate;
-  }
-
-  .mg-orb-drift-c {
-    animation: mg-orb-drift-c 61s ease-in-out infinite alternate;
-  }
-}
-
-/* THE SURFACES THE PAGE DID NOT DRAW. Selection and the focus ring ship with browser
-   defaults that belong to no design system - a blue-grey highlight and a 1px dotted
-   outline, neither of which has been told there is glass here. Both are scoped to
-   `.mg-page` (set on the home page's <main>) rather than themed globally on purpose:
-   the reader's own selection is load-bearing for DefinitionPopover's "select a phrase to
-   define it" feature, and it must not inherit a marketing page's taste. The ring is
-   scoped for a duller reason - eight components already ship the house
-   `focus-visible:ring-2 focus-visible:ring-accent/60`, and a global outline would draw a
-   second edge around every one of them. Chrome outside this page states its own ring at
-   the call site, exactly as those eight do. */
-.mg-page ::selection {
-  /* Near-solid light on near-black, with the page's own ink on top - the same
-     figure/ground relationship the primary button already uses, so a selected phrase
-     reads as a lit block rather than as a tinted one. */
-  background: hsl(var(--mg-paper) / 0.86);
-  color: hsl(var(--mg-void));
-}
-
-.mg-page :focus-visible {
-  /* --accent, NOT the Midnight Gallery neon this briefly carried. Two reasons, and the
-     first is the one that decided it: the Navbar sits on this page, it renders on every
-     other route too, and it takes the repo's house ring (`focus-visible:ring-2
-     focus-visible:ring-accent/60` - see the note in Navbar.tsx). A lime outline here
-     would have meant two different focus colours inside one viewport, one of them on
-     chrome shared with the monochrome half of the app. The second is that the header of
-     this very file names focus states as one of the three things contrast alone is the
-     tool for, and --accent inverts with the theme where a hue cannot.
-
-     NO `border-radius` HERE, and the line that used to set it to 4px was a bug rather
-     than a detail: border-radius in a :focus-visible rule applies to the ELEMENT, so
-     every focused pill on the page - the primary CTA, the ghost button, the eyebrow -
-     snapped from a 980px pill to 4px corners for as long as it held focus. Outlines
-     follow the element's own radius in every browser this app supports, so the correct
-     value for this property is not one at all.
-
-     `outline` rather than Tailwind's ring because this is one rule covering roughly
-     thirty links, summaries and buttons on the marketing page; the ring is a per-element
-     utility and would have to be repeated at each. Both resolve to the same 2px edge. */
-  outline: 2px solid hsl(var(--accent) / 0.6);
-  outline-offset: 2px;
-}
 
 /* ============================================================================
    THE APP SHELL'S ENTRANCE, IN CSS.
@@ -529,4 +401,124 @@ body {
 .aw-page :focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.65);
   outline-offset: 3px;
+}
+
+/* The scrollbar is the last surface on this page the design did not draw, and on
+   a pure-black page the platform default is the loudest thing in the viewport: a
+   light trough with a grey thumb, sitting against #000. Scoped to `.aw-page` for
+   the same reason selection and the ring are - the reader has its own column
+   scroller and must not inherit a marketing page's taste.
+
+   `scrollbar-color` is the standards property and `::-webkit-scrollbar` covers
+   the Chromium the APK actually runs; Android WebView paints an overlay
+   scrollbar that ignores both, which is fine - there is nothing to correct
+   there. */
+.aw-page {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scrollbar-width: thin;
+}
+
+.aw-page ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.aw-page ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aw-page ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.18);
+}
+
+.aw-page ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================================
+   THE HOME PAGE'S ONE AUTHORED MOMENT.
+
+   `.fr-rise` is the whole motion budget of src/app/page.tsx. That page used to
+   import motion/react and spend it on nine identical spring entrances plus a
+   scroll-reveal per section; it now has one staggered entrance, in the hero,
+   and nothing below the fold animates at all.
+
+   WHY CSS AND NOT A SPRING: a spring integrator runs on the main thread for the
+   length of every entrance, and the page ships inside a Capacitor WebView on
+   mid-range Android. A keyframe is handed to the compositor once. `transform`
+   and `opacity` only - StreakCounter.tsx's PERFORMANCE CONTRACT, restated in
+   eleven files.
+
+   cubic-bezier(0.16, 1, 0.3, 1) is expo-out: it covers most of its distance
+   immediately and then settles, which is what reads as weight. The spring it
+   replaces was stiffness 700 / damping 18, a ratio that overshoots and rings -
+   its own comment admitted it "snaps aggressively into place".
+
+   NO `animation-timeline` ANYWHERE, and that is a floor decision rather than a
+   taste one: scroll-driven CSS is Chromium 115+, the Android floor here is
+   WebView 111 (capacitor.config.ts), and below 115 the keyframe runs
+   immediately - which can strand an element at `opacity: 0` forever. A blank
+   hero on exactly the cheap phones that floor exists to protect.
+
+   The delay is passed per element as `--fr-d` so the stagger lives at the call
+   site next to the element it delays, rather than as four nth-child rules here
+   that silently break the moment the hero's markup order changes.
+   ========================================================================== */
+@keyframes fr-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fr-rise {
+  animation: fr-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: var(--fr-d, 0ms);
+}
+
+/* THE HOVER LIFT, AND WHY IT IS NOT `hover:scale-[1.02]` IN A CLASS NAME.
+
+   Android WebView can latch `:hover` on a tap. With Tailwind's unqualified
+   `hover:` that leaves a bento cell scaled up until the next tap lands
+   elsewhere - and because several of those cells carry `backdrop-blur-3xl`, the
+   scale re-samples a 64px filter for every frame it runs. Gating on a real
+   pointer means the phone never enters that state at all, and the desktop
+   pointer gets the full 500ms lift.
+
+   `transform` only, and the transition is declared on the base class rather than
+   inside the media query so a cell that is mid-lift when a pointer disappears
+   still animates back. */
+.fr-lift {
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .fr-lift:hover {
+    transform: scale(1.02);
+  }
+}
+
+/* Reduced motion removes both outright rather than running them faster. The
+   house rule, stated the same way in eight other call sites: under the
+   preference an entrance does not shorten, it does not happen - and `.fr-rise`
+   must resolve to its VISIBLE end, never its `opacity: 0` start. */
+@media (prefers-reduced-motion: reduce) {
+  .fr-rise {
+    animation: none;
+  }
+
+  .fr-lift {
+    transition: none;
+  }
+
+  .fr-lift:hover {
+    transform: none;
+  }
 }

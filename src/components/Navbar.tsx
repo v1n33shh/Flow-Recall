@@ -1,16 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "motion/react";
 import { useSession } from "next-auth/react";
-import { Capacitor } from "@capacitor/core";
 import { useIsNative } from "@/lib/useIsNative";
 import LogoMark from "@/components/LogoMark";
 import StreakCounter from "@/components/StreakCounter";
 import StreakModal from "@/components/StreakModal";
+
+/** THE FOCUS RING, and it is quoted from this repo rather than invented.
+ *
+ * `outline-none focus-visible:ring-2 focus-visible:ring-accent/60` is byte-identical to
+ * MobileTabBar.tsx, StreakCounter.tsx and DeckTitle.tsx - which matters twice over here:
+ * MobileTabBar is this bar's phone counterpart (same job, same chrome, other breakpoint),
+ * and StreakCounter renders INSIDE this bar. So until now the one control in the nav that
+ * answered the keyboard was a child component that brought its own ring, while the five
+ * section links, the brand and the account link beside it fell through to the UA default -
+ * a 1px `auto` outline that computes to rgb(16,16,16) on a #050505 page, which is to say
+ * invisible. A keyboard user could tab the whole bar and never see where they were.
+ *
+ * WHY ACCENT AND NOT THE MARKETING PAGE'S NEON. globals.css's header names focus states
+ * outright as one of the three things contrast alone is the tool for ("contrast itself is
+ * the only tool used to signal primary actions, focus states, and intent"). The acid lime
+ * belongs to the Midnight Gallery palette, which is scoped to one page; this bar renders on
+ * every route including the library and pricing, and a neon here would be the token leak
+ * midnightGallery.ts's own docblock forbids. --accent is white in dark mode and near-black
+ * in light, so this ring inverts correctly with the theme, which a hue would not.
+ *
+ * ON `ring` RATHER THAN `outline`. Tailwind's ring is a box-shadow, so it follows the
+ * element's radius and costs no layout - and it is what the three call sites above already
+ * use. src/app/page.tsx's marketing surfaces use an `outline` instead (see globals.css's
+ * `.mg-page :focus-visible`) because thirty links, summaries and buttons there would
+ * otherwise each need the utility repeated; both resolve to the same 2px accent edge.
+ */
+const RING = "outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 const LINKS = [
   { href: "/library", label: "Library" },
@@ -53,10 +79,13 @@ export default function Navbar() {
         className="sticky top-4 z-20 flex justify-center px-4 sm:top-6"
       style={{ marginTop: "env(safe-area-inset-top)" }}
     >
-      <nav className="flex w-full max-w-2xl items-center justify-between gap-2 rounded-full border border-white/10 bg-surface px-3 py-2.5 sm:gap-3 sm:px-5">
+      {/* GLASS, not `bg-surface`. This was the one opaque bar left on a site whose every
+          other surface is a frosted pane. Same recipe the app shell uses (src/lib/spatial.ts),
+          so the website and the APK are made of the same material. */}
+      <nav className="flex w-full max-w-2xl items-center justify-between gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl sm:gap-3 sm:px-5">
         <Link
           href="/"
-          className="group flex shrink-0 items-center gap-1.5 sm:gap-3"
+          className={`group flex shrink-0 items-center gap-1.5 sm:gap-3 ${RING} rounded-full`}
         >
           {/* Brand mark: monochrome "Flag Mark" F on its own fixed-dark chip,
               independent of site theme - same treatment as the app icon.
@@ -66,7 +95,7 @@ export default function Navbar() {
             <LogoMark sheen className="h-[64%] w-[64%]" />
             <div className="absolute inset-0 rounded-[28%] ring-1 ring-inset ring-white/10 pointer-events-none" />
           </div>
-          <span className="font-retro text-lg text-white transition-colors group-hover:text-zinc-200 sm:text-2xl mt-0.5 sm:mt-1">
+          <span className="font-sans text-[17px] font-semibold tracking-[-0.02em] text-white transition-colors group-hover:text-white/80 sm:text-lg">
             FlowRecall
           </span>
         </Link>
@@ -81,7 +110,7 @@ export default function Navbar() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="relative rounded-full px-1.5 py-1 text-xs font-medium sm:text-sm sm:px-4 sm:py-2"
+                className={`relative rounded-full px-1.5 py-1 text-xs font-medium sm:text-sm sm:px-4 sm:py-2 ${RING}`}
               >
                 {active && (
                   <motion.span
@@ -109,7 +138,7 @@ export default function Navbar() {
           {status === "authenticated" ? (
             <Link
               href="/account"
-              className="flex shrink-0 items-center gap-1.5 rounded-full p-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-300 sm:py-1 sm:pl-1 sm:pr-3"
+              className={`flex shrink-0 items-center gap-1.5 rounded-full p-1 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-300 sm:py-1 sm:pl-1 sm:pr-3 ${RING}`}
             >
               {session.user?.image ? (
                 <Image
@@ -120,7 +149,7 @@ export default function Navbar() {
                   className="rounded-full"
                 />
               ) : (
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-accent text-[10px] font-bold text-white">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/20 bg-white/10 text-[10px] font-bold text-white">
                   {(session.user?.name ?? session.user?.email ?? "?").charAt(0).toUpperCase()}
                 </span>
               )}
@@ -128,9 +157,24 @@ export default function Navbar() {
             </Link>
           ) : (
             status !== "loading" && (
+              /* THE ONE CONTROL IN THIS BAR THAT DOES NOT TAKE `RING`, and it is not a
+                 preference. This button already carries `ring-1 ring-inset ring-accent/30`
+                 at rest, and `ring-inset` sets --tw-ring-inset for the element - which the
+                 focus ring then inherits. The result was a 2px accent ring painted INSIDE
+                 a pill that is filled with the accent, i.e. white on white, plus the
+                 offset ring drawn as a dark band inside its own edge. Measured, not
+                 guessed: the focused button reported `rgb(15,15,15) 0 0 0 2px inset`.
+
+                 An outline cannot be inset, so it is the right tool here rather than a
+                 workaround: 2px of accent at 2px offset lands on the nav's own surface
+                 just outside the pill, which is the only place a ring on a white fill can
+                 be seen at all. Same colour, same width, same offset as everything else. */
               <Link
                 href="/login"
-                className="shrink-0 rounded-full bg-accent ring-1 ring-inset ring-accent/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_8px_24px_-6px_rgba(0,0,0,0.4)] px-2.5 py-1 text-xs sm:px-3 sm:py-1.5 sm:text-sm font-medium text-accent-foreground transition-all duration-200 hover:bg-accent/90 active:scale-[0.97]"
+                // The glass CONTROL recipe (10% fill / 20% edge) against the bar's own
+                // 5%/10%. On a surface with no accent colour, a primary action is the same
+                // material holding more light - that ratio is the entire hierarchy.
+                className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-2xl transition-all duration-300 ease-out hover:bg-white/[0.16] active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 sm:px-3 sm:py-1.5 sm:text-sm"
               >
                 Sign In
               </Link>

@@ -413,12 +413,29 @@ export function useBooks(): { books: BookMeta[]; loading: boolean } {
     let cancelled = false;
 
     function refresh() {
-      listBooks().then((result) => {
-        if (!cancelled) {
-          setBooks(result);
-          setLoading(false);
-        }
-      });
+      listBooks()
+        .then((result) => {
+          if (!cancelled) {
+            setBooks(result);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          // A REJECTED READ MUST STILL END THE LOADING STATE. Without this branch
+          // `loading` stayed true forever on any IndexedDB failure - a blocked or deleted
+          // database, a private window that refuses persistent storage, a corrupted store
+          // - and every consumer renders its skeleton indefinitely. Found by deleting the
+          // database underneath a live connection: the home screen sat on a mute grey box
+          // with no text and no way out, which is the worst thing an empty-looking screen
+          // can do.
+          //
+          // Falling through to an EMPTY list rather than an error state is deliberate:
+          // every caller already renders a real empty state ("Nothing open yet", "Your
+          // shelf is empty") whose only action is to add a document, and that is also the
+          // right next step when the library could not be read. An error banner here would
+          // be a second failure mode to design for that resolves to the same tap.
+          if (!cancelled) setLoading(false);
+        });
     }
 
     refresh();

@@ -2,7 +2,6 @@
 
 import { startTransition, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, useReducedMotion } from "motion/react";
 import { useSession } from "next-auth/react";
 import type { Deck } from "@/lib/types";
 import { buildSession } from "@/lib/sessionBuilder";
@@ -17,7 +16,6 @@ const BUDGETS = [10, 20, 40] as const;
 export default function TodaySession({ decks }: { decks: Deck[] }) {
   const router = useRouter();
   const { data: session } = useSession();
-  const reduceMotion = useReducedMotion();
   const userId = session?.user?.id;
 
   const [inputs, setInputs] = useState<SessionInputs | null>(null);
@@ -69,12 +67,17 @@ export default function TodaySession({ decks }: { decks: Deck[] }) {
   if (nothingDue) return null;
 
   return (
-    <motion.section
+    <section
       aria-labelledby="tonight-heading"
-      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 280, damping: 24 }}
-      className="mt-10 w-full max-w-md rounded-2xl border border-border bg-surface/60 p-4 text-left md:backdrop-blur-xl"
+      // NO motion/react HERE ANY MORE, AND IT WAS THE LAST ONE ON THIS ROUTE. page.tsx's
+      // header claims the home page mounts no JS animation runtime; that was true of the
+      // file and false of the route, because this child still imported a spring for one
+      // entrance. `.fr-rise` is the same move as a CSS keyframe, on the compositor.
+      //
+      // `p-6` rather than `p-4`, and no `mt-10`: this card is the primary action of the
+      // slab it sits in now rather than an afterthought under two buttons, so it gets the
+      // padding of a card and the parent owns the space above it.
+      className="fr-rise w-full max-w-md rounded-2xl border border-border bg-surface/60 p-6 text-left md:backdrop-blur-xl"
     >
       {/* ONE LINE, NO COUNTS. This slot carried "Start 108 cards", then "11 slipping · 97
           new · across 6 decks", then "Eleven questions are nearly gone" - each one a wall
@@ -117,6 +120,6 @@ export default function TodaySession({ decks }: { decks: Deck[] }) {
           ))}
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 }

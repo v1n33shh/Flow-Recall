@@ -378,7 +378,7 @@ function HeroCluster({
   isNative: boolean;
 }) {
   return (
-    <div className="col-span-1 grid grid-cols-1 gap-3 sm:col-span-6 sm:gap-4 lg:col-span-12 lg:grid-cols-12">
+    <div className="col-span-1 grid grid-cols-1 gap-4 sm:col-span-6 sm:gap-6 lg:col-span-12 lg:grid-cols-12">
       {/* THE HEADLINE SLAB. A reading block, so it is left-aligned at every
           width - centred display type over a left-aligned subhead is the tell
           of a hero assembled rather than set.
@@ -442,25 +442,59 @@ function HeroCluster({
         </div>
       </section>
 
-      {/* THE ACTION SLAB. Both CTAs stacked full-width of the tile, so the pair
-          is one block with one left edge rather than two pills adrift in a row.
+      {/* THE ACTION SLAB, AND IT HAS TWO FACES BECAUSE ITS AUDIENCE DOES.
+          
+          A stranger reading an introduction needs the two CTAs. A signed-in
+          student with something due tonight needs exactly one thing - the door
+          back into the session - and two white pills above it were competing
+          with the only action that matters. So the session card is the primary
+          action when it exists, and the CTAs demote to text links beneath it.
+
+          THE SWITCH IS CSS, NOT STATE, AND THAT IS THE ONLY WAY IT IS HONEST.
+          Whether TodaySession renders depends on four things it resolves
+          asynchronously and privately: a user id, at least one deck, a plan the
+          scheduler has finished building, and something actually being due. The
+          page cannot know any of that at render time, and guessing from
+          `decks.length` would demote the CTAs to a text link on a screen where
+          the session card then declines to appear - leaving no primary action at
+          all. `group-has-[#tonight-heading]` keys off the card that actually
+          rendered, so the two can never disagree.
+
+          Both forms ship in the markup and CSS picks one. The hidden branch is
+          `display:none`, so it is not announced and not tabbable.
 
           NO `.fr-rise` ON THIS SLAB OR THE PROOF SLAB, AND THAT WAS A BUG BEFORE
-          IT WAS A DECISION. Entrances belong to the text inside the headline
-          slab; putting one on a whole pane meant the primary action did not
-          exist for the first second of the page, and an entire glass slab
-          fading in reads as a layout jump rather than as a reveal. The slabs
-          are present at first paint; only the words move.
-          TodaySession lives here too and renders nothing at all when signed out,
-          which is the right answer for a stranger reading an introduction - and
-          the reason this tile is sized by its buttons rather than by it. */}
+          IT WAS A DECISION. Putting an entrance on a whole pane meant the primary
+          action did not exist for the first second of the page. The slabs are
+          present at first paint; only the words move. */}
       <section
         aria-label="Get started"
-        className={`${GLASS_LARGE} ${PAD} flex flex-col justify-center gap-3 sm:p-10 lg:col-span-4 lg:col-start-1 lg:row-start-2`}
+        className={`${GLASS_LARGE} ${PAD} group/action flex flex-col justify-center gap-6 sm:p-10 lg:col-span-4 lg:col-start-1 lg:row-start-2`}
       >
-        <PrimaryCta className="w-full" />
-        <SecondaryCta className="w-full" />
         <TodaySession decks={decks} />
+
+        {/* No session: the pair of pills, full-width, one left edge. */}
+        <div className="flex flex-col gap-3 group-has-[#tonight-heading]/action:hidden">
+          <PrimaryCta className="w-full" />
+          <SecondaryCta className="w-full" />
+        </div>
+
+        {/* Session present: the same two destinations, demoted to what they are -
+            somewhere to go afterwards. */}
+        <div className="hidden flex-wrap items-center gap-x-6 gap-y-2 group-has-[#tonight-heading]/action:flex">
+          <Link
+            href="/ingest"
+            className="text-sm text-white/40 underline-offset-4 transition-colors hover:text-white hover:underline"
+          >
+            Start ingesting notes
+          </Link>
+          <Link
+            href="/pricing"
+            className="text-sm text-white/40 underline-offset-4 transition-colors hover:text-white hover:underline"
+          >
+            View Pro Plans
+          </Link>
+        </div>
       </section>
 
       {/* THE PROOF SLAB. A visual block rather than a reading block, so it is
@@ -475,7 +509,7 @@ function HeroCluster({
         aria-label="What the scheduler predicts"
         className={`${GLASS_LARGE} ${PAD} flex flex-col items-center justify-center text-center sm:p-10 lg:col-span-3 lg:col-start-5 lg:row-start-2`}
       >
-        <p className="text-[15px] leading-relaxed text-white/60 sm:text-base">
+        <p className="max-w-xs text-[15px] leading-relaxed text-white/60 [text-wrap:balance] sm:text-base">
           Three reviews in six months.{" "}
           <span className="font-medium tabular-nums text-white">
             {asPercent(CURVE.endRecall.reviewed)}% recalled
@@ -801,7 +835,7 @@ function StatementCell() {
         Every screen is one finding about memory,{" "}
         <span className="font-editorial italic">built</span>.
       </h2>
-      <p className="mt-5 text-sm leading-relaxed text-white/60 sm:text-base">
+      <p className="mt-5 max-w-prose text-sm leading-relaxed text-white/60 sm:text-base">
         Not a flashcard app with the science in the marketing copy.{" "}
         <Hi>The mechanism each surface is built on is named on the card.</Hi>
       </p>
@@ -836,7 +870,7 @@ function ReaderCell() {
         <h3 className="font-sans text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-white">
           Read it where it came from
         </h3>
-        <p className="mt-4 text-sm leading-relaxed text-white/60 sm:text-base">
+        <p className="mt-4 max-w-prose text-sm leading-relaxed text-white/60 sm:text-base">
           EPUB, PDF, pasted text. <Hi>Any word defined in place</Hi>,{" "}
           <Em>without leaving the page</Em>.
         </p>
@@ -967,7 +1001,7 @@ function ShowingUpCell() {
         <h3 className="font-sans text-[clamp(1.6rem,3.4vw,2.25rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-white">
           The part no scheduler can do
         </h3>
-        <p className="mt-4 text-sm leading-relaxed text-white/60 sm:text-base">
+        <p className="mt-4 max-w-prose text-sm leading-relaxed text-white/60 sm:text-base">
           <Hi>Ten, twenty or forty minutes</Hi>, built from <Em>whatever is closest to slipping</Em>.
         </p>
       </div>
@@ -1035,7 +1069,7 @@ function StepsCell() {
             <h3 className="mt-3 text-lg font-semibold tracking-[-0.02em] text-white">
               {step.title}
             </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-white/60">{step.body}</p>
+            <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-white/60">{step.body}</p>
           </li>
         ))}
       </ol>
@@ -1202,8 +1236,8 @@ export default function Home() {
           rhythm to keep in sync, and nothing that needs a margin collapse to
           behave. */}
       <div
-        className={`mx-auto grid w-full max-w-[88rem] grid-cols-1 gap-3 px-3 sm:grid-cols-6 sm:gap-4 sm:px-5 lg:grid-cols-12 ${
-          isNative ? "pt-2" : "pt-3 sm:pt-5"
+        className={`mx-auto grid w-full max-w-[88rem] grid-cols-1 gap-4 px-3 pb-32 sm:grid-cols-6 sm:gap-6 sm:px-5 sm:pb-40 lg:grid-cols-12 ${
+          isNative ? "pt-2" : "pt-4 sm:pt-6"
         }`}
       >
         <HeroCluster decks={decks} isNative={isNative} />

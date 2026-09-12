@@ -2,25 +2,26 @@
 // physical, filmic surface instead of a flat void. A static background-image, no
 // filter/blur animation, so it costs one paint on any device and is never gated to desktop.
 //
-// 0.20, AND THE NUMBER COST THE TEXT RAMP A STEP TO GET THERE.
+// 0.02, AND THIS VALUE HAS NOW BEEN SET THREE TIMES, SO HERE IS THE WHOLE ARGUMENT.
 //
-// This value has been argued twice. The first time it went to 0.08 with the note that 20%
-// fractal noise "drops effective contrast on text-white/60 by roughly a stop" - true, and
-// the wrong conclusion, because the fix is not a quieter grain, it is a body colour that
-// accounts for the ground the grain creates.
+//   0.20  asked for, twice. Shipped once and looked at on a device: over a translucent
+//         tab bar that is blurring whatever is behind it, 20% fractal noise does not read
+//         as film, it reads as a dirty screen. That is the finding that settled it, and it
+//         is not one the arithmetic below would ever have produced.
+//   0.08  the compromise before that, argued from contrast alone.
+//   0.02  here. Enough to dither a gradient, not enough to see as texture.
 //
-// The arithmetic, since it decides the value: fractal noise averages ~50% luminance, so at
-// alpha 0.20 over #000 the ground composites to a mean of about #1a1a1a rather than pure
-// black. Body copy at white/50 (#808080) reads 4.39:1 against that - under the 4.5:1 floor.
-// At white/60 (#999999) it is 6.08:1, which is BETTER than the 5.32:1 the old /50 managed on
-// flat black. So the page took the full grain the brief asked for and got more readable
-// doing it, which is the only version of this trade worth making.
+// THE POINT OF THE GRAIN WAS NEVER TEXTURE. It is a dither. A radial gradient falling from
+// 7% white to nothing across a viewport spans roughly one 8-bit step, and without noise it
+// bands into visible rings on exactly the cheap Android panels this app ships to. Breaking
+// up that step needs a couple of percent, not twenty; everything above ~0.05 is decoration,
+// and decoration laid over the entire product including its chrome.
 //
-// The display clause "Stop re-reading." moved /40 -> /45 for the same reason: 3.02:1 against
-// the grained ground is inside the 3:1 large-text floor by nothing at all, and 3.69:1 is not.
-//
-// TO PUSH IT FURTHER: this one value, and then re-measure the ramp in src/app/page.tsx.
-// Nothing else reads it, and nothing else compensates for it.
+// THE TEXT RAMP KEEPS THE STEP THE 20% BUILD BOUGHT IT. Body copy went white/50 -> /60 and
+// the display clause /40 -> /45 to stay legible against the lighter ground 20% noise
+// creates. At 0.02 the ground is back to near-black, where /60 measures 7.4:1 instead of
+// the 6.08:1 it managed under the heavy grain. Nothing needs reverting: the page is simply
+// more readable than it was before either change.
 //
 // Extracted from src/app/page.tsx when /library gained the same treatment: the
 // inline fractal-noise SVG below is a ~330-character data URI, and two copies of
@@ -36,7 +37,7 @@ export default function FilmGrain() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-0 opacity-20"
+      className="pointer-events-none fixed inset-0 z-0 opacity-[0.02]"
       style={{ backgroundImage: NOISE_BACKGROUND }}
     />
   );

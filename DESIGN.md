@@ -89,16 +89,20 @@ The grain is not decoration: a gradient falling from 7% white to nothing across 
 spans roughly one 8-bit step, and without a dither it bands into visible rings on exactly
 those panels.
 
-**The grain runs at `opacity-20`, and it cost the text ramp a step to get there.** The value
-was argued twice and settled at 0.08 the first time, on the note that 20% noise "drops
-effective contrast on text-white/60 by roughly a stop" — true, and the wrong conclusion,
-because the fix is not a quieter grain but a body colour that accounts for the ground the
-grain creates. Fractal noise averages ~50% luminance, so at alpha 0.20 over `#000` the ground
-composites to a mean of about `#1a1a1a`. Body copy at white/50 reads **4.39:1** against that,
-under the floor; at white/60 it reads **6.08:1**, better than the 5.32:1 the old /50 managed on
-flat black. The display clause "Stop re-reading." moved /40 → /45 for the same reason: 3.02:1
-is inside the large-text floor by nothing at all, and 3.69:1 is not. The page took the full
-grain and got more readable doing it.
+**The grain runs at `opacity-[0.02]`, and this value has been set three times.** 0.20 was
+asked for twice and shipped once; on a device, over a translucent tab bar blurring what is
+behind it, 20% fractal noise does not read as film, it reads as a dirty screen. No amount of
+contrast arithmetic finds that — only looking at it does.
+
+**Its job was never texture, it is a dither.** A radial gradient falling from 7% white to
+nothing across a viewport spans roughly one 8-bit step, and without noise it bands into visible
+rings on exactly the cheap Android panels this ships to. Breaking that step needs a couple of
+percent; everything above ~0.05 is decoration laid over the whole product, chrome included.
+
+**The text ramp keeps the step the heavy grain bought it.** Body went `/50 → /60` and the
+display clause `/40 → /45` to survive the lighter ground 20% noise creates. At 0.02 the ground
+is near-black again, where `/60` measures **7.4:1** rather than the 6.08:1 it managed under the
+grain. Nothing was reverted: the page is simply more readable than before either change.
 
 ### The accent is luminance, not hue
 White spill (`0 8px 36px -6px rgba(255,255,255,0.35)`), and it appears in exactly two places:
@@ -152,6 +156,19 @@ columns 8–12 of row 2 as a hole in the grid.
 not exist for the first second of the page, and a glass slab fading in reads as a layout jump.
 The entrances belong to the text inside the headline slab; the slabs are present at first
 paint.
+
+**The action slab has two faces, and the switch is CSS rather than state.** A stranger reading
+an introduction needs both CTAs as pills. A signed-in student with something due tonight needs
+exactly one thing — the door back into the session — and two white pills above it compete with
+the only action that matters, so they demote to `text-white/40` links beneath the card.
+
+Whether `TodaySession` renders depends on four things it resolves asynchronously and privately:
+a user id, at least one deck, a plan the scheduler has finished building, and something
+actually being due. The page cannot know any of that at render time, and guessing from
+`decks.length` would demote the pills on a screen where the card then declines to appear —
+leaving no primary action at all. `group-has-[#tonight-heading]` keys off the card that
+actually rendered, so the two cannot disagree. Both branches ship in the markup; the hidden one
+is `display:none`, so it is neither announced nor tabbable.
 
 ### The controls
 `h-14` — 56px, the same figure on every breakpoint, fixed rather than derived from padding.

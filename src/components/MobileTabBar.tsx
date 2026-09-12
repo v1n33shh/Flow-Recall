@@ -38,29 +38,36 @@ import { vibrateTap } from "@/lib/haptics";
  * bar that is trying not to look like anything else). The only motion left in the shell is
  * the upload sheet's drag. See the performance note at the head of src/lib/spatial.ts.
  *
- * THE FAB, AND HOW ITS SPACE IS RESERVED. Centred, sitting entirely ABOVE the pill rather
- * than straddling it. An earlier build straddled - the classic docked-FAB look - and the
- * emulator killed it in one screenshot: at three tabs the centre of the bar IS a tab, so
- * the FAB landed squarely on Library's icon and left only its label showing.
+ * THE FAB SITS AT THE PILL'S RIGHT END, ABOVE IT, AND IT USED TO BE CENTRED.
  *
- * At FOUR tabs the centre is the seam between Library and Ingest, so a straddling FAB is
- * newly possible - and it is still not taken. It would cover the inner edge of two 44px
- * targets instead of one, which is a worse trade than the 76px of chrome this costs, and
- * "without blocking the tabs" is the requirement. Clearing the pill entirely is the only
- * arrangement where every tab keeps its whole hit area at every tab count.
+ * It has never straddled the pill, and that part has not changed: an early build docked it
+ * the classic way and the emulator killed it in one screenshot - at three tabs the centre of
+ * the bar IS a tab, so the FAB landed squarely on Library's icon and left only its label
+ * showing. At five tabs the centre is a tab again. Clearing the pill entirely is the only
+ * arrangement where every tab keeps its whole 44px hit area at every tab count.
  *
- * `pt-[4.75rem]` on the nav is the FAB's `h-16` (64px) plus a 12px gap, and the FAB's
- * `-top-[4.75rem]` lifts it by the same amount from the pill's top edge. Those two values
- * are one measurement and must move together.
+ * WHAT CHANGED IS LEFT-TO-RIGHT, AND THE REASON IS THE 76dp IT WAS COSTING EVERY SCREEN.
+ * `pt-[4.75rem]` on the nav is the FAB's `h-16` plus a 12px gap, and while the FAB was
+ * centred that whole band had to be reserved as empty space - because content scrolling
+ * beneath a centred control is blocked in the MIDDLE of every row that passes it. Measured
+ * on a 1080x2400 device, the page ended at y=1473: 61% of the display, and 267 of the
+ * missing pixels were this band.
  *
- * THAT 76dp BAND IS THE PRICE OF A CENTRED FAB, and it is worth knowing what it buys. It
- * was removed once, on the reasoning that a floating control should not reserve layout -
- * and the FAB promptly came to rest on top of the "10m" session chip, because centred is
- * the one position where scrolling content cannot pass a FAB safely. It is reserved again.
- * A corner FAB would free it; that is a design decision, not a spacing one.
+ * Reserving it was tried away once with the FAB still centred, and the FAB immediately came
+ * to rest on top of the "10m" session-length chip. At the right end it clips where rows END
+ * instead of where they read, which is why every Material app puts it in a corner and lets
+ * content pass under. The spacer now reserves the pill alone (--tabbar-pill).
  *
- * The nav is `pointer-events-none` with `auto` on the pill, which is correct either way: a
- * fixed, full-width, invisible 76dp strip should never eat a tap, reserved or not.
+ * THE RESIDUAL, STATED RATHER THAN DISCOVERED LATER: a floating FAB still passes over
+ * content mid-scroll. At the right edge that is the end of a line of prose or the last chip
+ * in a row, and the FAB's own `backdrop-blur-2xl` frosts whatever is behind it rather than
+ * hiding it. If a screen ever puts something load-bearing hard against the right margin at
+ * the bottom, this is the thing that will cover it.
+ *
+ * The nav is `pointer-events-none` with `auto` on the pill and the FAB, which is now
+ * load-bearing rather than tidy: that 76dp band sits over live content, and a fixed,
+ * full-width, invisible strip that ate every tap in it would be a dead ribbon across the
+ * page.
  */
 
 type Tab = {
@@ -172,6 +179,7 @@ export default function MobileTabBar() {
   const pathname = usePathname();
   const router = useRouter();
   const navRef = useRef<HTMLElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
   const [adding, setAdding] = useState(false);
 
   // TWO MEASUREMENTS, BECAUSE "how tall is the bar" AND "how much must content clear"
@@ -181,16 +189,26 @@ export default function MobileTabBar() {
   // top of it and two other screens pad against it, so its meaning is fixed and this
   // change does not touch it.
   //
-  // Measured on a 1080x2400 device: with the safe area double-counted below, page content
-  // stopped 960 device pixels short of the bottom of the screen.
+  // TWO MEASUREMENTS, BECAUSE "how tall is the bar" AND "how much must content clear" stopped
+  // being the same question when the FAB moved to the corner.
+  //
+  // --tabbar-h is the whole bar including the FAB's zone. DeckUndoBar positions off it and
+  // two other screens pad against it, so its meaning is unchanged.
+  //
+  // --tabbar-pill is the pill alone, and it is what the spacer reserves.
   useEffect(() => {
     const nav = navRef.current;
-    if (!nav) return;
+    const pill = pillRef.current;
+    if (!nav || !pill) return;
     const root = document.documentElement;
-    const publish = () => root.style.setProperty("--tabbar-h", `${nav.offsetHeight}px`);
+    const publish = () => {
+      root.style.setProperty("--tabbar-h", `${nav.offsetHeight}px`);
+      root.style.setProperty("--tabbar-pill", `${pill.offsetHeight}px`);
+    };
     publish();
     const observer = new ResizeObserver(publish);
     observer.observe(nav);
+    observer.observe(pill);
     return () => observer.disconnect();
   }, []);
 
@@ -205,28 +223,27 @@ export default function MobileTabBar() {
       {/* In-flow spacer so scrollable content clears the floating bar. It shares this
           component's render conditions, so it vanishes on /reader, /study and at sm:+.
 
-          IT COUNTS THE SAFE AREA ONCE, AND THAT IS THE WHOLE FIX. It used to read
+          IT RESERVES THE PILL, AND IT COUNTS THE SAFE AREA ONCE.
+
+          Two bugs lived in one line. It used to read
           `var(--tabbar-h) + env(safe-area-inset-bottom) + 1rem`, and --tabbar-h is the
           nav's offsetHeight - which ALREADY contains the nav's own
-          `paddingBottom: calc(env(safe-area-inset-bottom) + 1rem)`. Both were counted
-          twice: about 40dp of every screen in this app, spent on nothing.
+          `paddingBottom: calc(env(safe-area-inset-bottom) + 1rem)`, so both were counted
+          twice. And --tabbar-h includes the FAB's 4.75rem zone, which was held empty on
+          every screen for a control that floats.
 
-          IT STILL RESERVES THE FAB'S 4.75rem ZONE, AND THAT WAS TRIED THE OTHER WAY FIRST.
-          Reserving only the pill recovered another 76dp and looked like a clear win in a
-          screenshot of a fresh scroll position - then the FAB, which is CENTRED, came to
-          rest exactly on top of the "10m" session-length chip and covered it. A floating
-          FAB over scrolling content is an ordinary pattern when the FAB is in a corner,
-          because it only ever obscures the edge of a row. Centred, it blocks the middle of
-          whatever passes beneath it, and there is no scroll position at which that is
-          safe. Moving the FAB to a corner would free those 76dp honestly; until someone
-          decides that, the zone stays reserved and this comment is the receipt.
+          Measured on a 1080x2400 device: page content stopped at y=1473 - 61% of the
+          display. Reserving the pill alone takes it to y=1740. The FAB's zone was 267 of
+          those pixels and the double count was the rest.
 
-          The 0.5rem is the only judgement left in the line - a hairline of air so the last
-          row of a library grid does not touch the FAB's own glass edge. */}
+          RESERVING THE PILL ONLY IS SAFE **BECAUSE THE FAB MOVED TO THE CORNER**. It was
+          tried once while the FAB was still centred and the FAB came to rest exactly on
+          top of the "10m" session-length chip. A floating control that content passes
+          beneath has to sit where rows end, not where they read. */}
       <div
         aria-hidden="true"
         className="sm:hidden"
-        style={{ height: "calc(var(--tabbar-h, 8rem) + 0.5rem)" }}
+        style={{ height: "calc(var(--tabbar-pill, 4rem) + env(safe-area-inset-bottom) + 1.5rem)" }}
       />
 
       <nav
@@ -247,6 +264,7 @@ export default function MobileTabBar() {
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
       >
         <div
+          ref={pillRef}
           className="pointer-events-auto relative flex w-full max-w-[420px] items-center gap-0.5 rounded-full border border-white/10 bg-white/5 px-1.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl"
         >
           {TABS.map((tab) => (
@@ -267,7 +285,7 @@ export default function MobileTabBar() {
               setAdding(true);
             }}
             aria-label="Upload document"
-            className={`absolute -top-[4.75rem] left-1/2 flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full text-white shadow-[0_12px_36px_-8px_rgba(0,0,0,0.9)] ${GLASS_CONTROL} ${PRESS} ${FOCUS}`}
+            className={`pointer-events-auto absolute -top-[4.75rem] right-0 flex h-16 w-16 items-center justify-center rounded-full text-white shadow-[0_12px_36px_-8px_rgba(0,0,0,0.9)] ${GLASS_CONTROL} ${PRESS} ${FOCUS}`}
           >
             <PlusIcon className="h-7 w-7" />
           </button>

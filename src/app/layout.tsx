@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Serif, Pacifico } from "next/font/google";
+import { Geist, Geist_Mono, Newsreader, Pacifico } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
@@ -34,25 +34,31 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// THE EDITORIAL VOICE: one italic serif, 400, used for nothing but the highlighted words
-// inside the landing page's statement block. No serif existed in this project - the stack
-// was Geist, Geist Mono and Pacifico - so this is a real addition rather than a lookup.
+// THE EDITORIAL VOICE: one italic serif, 400, carrying the closing clause of a line and the
+// whole pull-quote. No serif existed in this project - the stack was Geist, Geist Mono and
+// Pacifico - so this was a real addition rather than a lookup.
 //
-// Instrument Serif rather than the usual suspects. A display serif with actual character at
-// large sizes is the whole point of the contrast; reaching for Playfair or Cormorant here
-// would be the choice you make when you have stopped looking.
+// NEWSREADER, NOT PLAYFAIR, AND THAT IS A LEGIBILITY DECISION RATHER THAN A TASTE ONE.
+// Both were named in the brief. Playfair is a Didone: its thick-to-thin contrast is the
+// drama, and that drama is exactly what fails here, because this face is not only a display
+// face in this app. `<Em>` sets the tail of body lines at roughly 15px, in white at 70% on
+// pure black - and a Didone hairline at that size and alpha thins to under a device pixel
+// and drops out, so the word half-disappears instead of reading as elegant. Newsreader was
+// drawn for screen text and its italic still has real flow at 3rem, which is the one face
+// that can do both jobs. Instrument Serif, which it replaces, could too; the swap is because
+// the brief asked for one of these two by name.
 //
-// ITALIC ONLY, WEIGHT 400. It is never used upright and never at body size, so shipping the
-// roman would be bytes on a phone for a face no call site can ask for.
-const instrumentSerif = Instrument_Serif({
+// ITALIC ONLY, WEIGHT 400. It is never used upright, so shipping the roman would be bytes on
+// a phone for a face no call site can ask for.
+const editorialSerif = Newsreader({
   weight: "400",
   style: "italic",
-  // NAMED --font-instrument-serif, NOT --font-editorial, and the distinction bit once.
+  // NAMED --font-newsreader, NOT --font-editorial, and the distinction bit once.
   // next/font sets THIS variable to the real family name; globals.css's `@theme` then maps
   // the semantic token `--font-editorial` onto it plus a fallback stack. Naming both the
   // same made that mapping self-referential - `--font-editorial: var(--font-editorial)` -
   // so the token resolved to nothing and every "serif" span silently rendered in Geist.
-  variable: "--font-instrument-serif",
+  variable: "--font-newsreader",
   subsets: ["latin"],
   display: "swap",
 });
@@ -166,7 +172,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} ${instrumentSerif.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} ${editorialSerif.variable} h-full antialiased`}
     >
       <head>
         {capacitorCsp && <meta httpEquiv="Content-Security-Policy" content={capacitorCsp} />}

@@ -150,7 +150,7 @@
   /* The landing page's editorial serif - Instrument Serif italic, wired up in layout.tsx.
      Used ONLY for highlighted words inside the statement block; nothing else in either
      surface is allowed to reach for it. */
-  --font-editorial: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+  --font-editorial: var(--font-newsreader), Georgia, "Times New Roman", serif;
 
   /* (Historical) The app shell's display face - Alumni Sans at weight 100, wired up in layout.tsx and
      used only through kinpaku.ts's NK_DISPLAY. The fallback chain is deliberate rather

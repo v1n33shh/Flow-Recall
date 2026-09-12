@@ -89,6 +89,17 @@ The grain is not decoration: a gradient falling from 7% white to nothing across 
 spans roughly one 8-bit step, and without a dither it bands into visible rings on exactly
 those panels.
 
+**The grain runs at `opacity-20`, and it cost the text ramp a step to get there.** The value
+was argued twice and settled at 0.08 the first time, on the note that 20% noise "drops
+effective contrast on text-white/60 by roughly a stop" — true, and the wrong conclusion,
+because the fix is not a quieter grain but a body colour that accounts for the ground the
+grain creates. Fractal noise averages ~50% luminance, so at alpha 0.20 over `#000` the ground
+composites to a mean of about `#1a1a1a`. Body copy at white/50 reads **4.39:1** against that,
+under the floor; at white/60 it reads **6.08:1**, better than the 5.32:1 the old /50 managed on
+flat black. The display clause "Stop re-reading." moved /40 → /45 for the same reason: 3.02:1
+is inside the large-text floor by nothing at all, and 3.69:1 is not. The page took the full
+grain and got more readable doing it.
+
 ### The accent is luminance, not hue
 White spill (`0 8px 36px -6px rgba(255,255,255,0.35)`), and it appears in exactly two places:
 the primary CTA, and the **answer** beat of the recall loop. That is the accent spent where
@@ -112,8 +123,53 @@ divider between them — because the two formats are not the same night. The har
 scheduled for when the memory has had time to decay, which is the point of the chart two cells
 down.
 
+### The hero cluster
+Four slabs in a nested twelve-column grid that spans the outer one, so the gap rhythm is
+identical and the seams line up with every other cell:
+
+```
+┌───────────────────────────┬───────────────┐
+│  headline + subhead  (7)  │               │
+├─────────────┬─────────────┤   loop  (5)   │
+│  CTAs  (4)  │  proof (3)  │   rows 1-2    │
+└─────────────┴─────────────┴───────────────┘
+```
+
+It replaces one 678px cell holding six things with 240px of content in it — 219px of nothing
+above the eyebrow and 219 below the subhead. **An element centred in empty space is what
+reads as floating**, so the headline slab is `justify-between`: label pinned to the top edge,
+the sentence sitting on the bottom one, the air between them deliberate. Same height, spent
+on purpose.
+
+**Placement is explicit on `lg` because DOM order and visual order disagree deliberately.**
+Stacked on a phone the buttons must come directly under the headline — a primary action below
+a tall product panel is one nobody reaches — so the DOM runs headline, CTAs, proof, loop. On
+`lg` the loop belongs beside the headline, spanning both rows, which auto-flow cannot express
+from that order. Without its `row-span-2` the loop auto-placed into row 1 only and left
+columns 8–12 of row 2 as a hole in the grid.
+
+**No entrance on the CTA or proof slabs.** Animating a whole pane meant the primary action did
+not exist for the first second of the page, and a glass slab fading in reads as a layout jump.
+The entrances belong to the text inside the headline slab; the slabs are present at first
+paint.
+
+### The controls
+`h-14` — 56px, the same figure on every breakpoint, fixed rather than derived from padding.
+The pills before them were `px-6 py-3.5 text-base` and full-bleed on a phone: 52px of button
+whose height moved with its font, so the two CTAs never quite agreed with each other or with
+the tab bar's controls, and at 16px type on a 336px pill the shape read as a balloon. Both
+CTAs stack full-width inside the action tile, so the pair is one block with one left edge.
+
 ### Type
 Geist for everything structural, `tracking-[-0.04em]` on display.
+
+**Newsreader italic, not Playfair, and that is legibility rather than taste.** Both were named
+in a brief. Playfair is a Didone — its thick-to-thin contrast is the drama, and that drama is
+what fails here, because this face is not only a display face in this app: `<Em>` sets the tail
+of body lines at ~15px in white at 70% on near-black, where a Didone hairline thins below a
+device pixel and drops out. Newsreader was drawn for screen text and its italic still has flow
+at 3rem. It replaced Instrument Serif, which could also do both jobs; the swap was because the
+brief asked for one of these two by name.
 
 **Instrument Serif italic is a rule, not a sprinkle: it always carries the CLOSING clause of
 a line, never a phrase in the middle of one.** `<Hi>` owns the middle of a sentence in white
@@ -149,7 +205,7 @@ A first pass at that calculation used a probe that ran before the webfont landed
 owner's call.
 
 ### Contrast, and why the muted end stops at /50
-Body copy is `text-white/50`; `<Hi>` lifts two or three words per paragraph to pure white.
+Body copy is `text-white/60`; `<Hi>` lifts two or three words per paragraph to pure white.
 Labels that carry meaning — the `<Effect>` mechanism names, the loop's beat labels, the step
 numerals — are `/60`.
 

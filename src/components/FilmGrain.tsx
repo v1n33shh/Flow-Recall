@@ -2,14 +2,25 @@
 // physical, filmic surface instead of a flat void. A static background-image, no
 // filter/blur animation, so it costs one paint on any device and is never gated to desktop.
 //
-// 0.08, NOT 0.20, AND THE NUMBER IS THE WHOLE DECISION. The brief asked for "opacity-20 or
-// similar". Twenty percent fractal noise over 14px body copy is not film grain, it is
-// snow: it drops effective contrast on `text-white/60` by roughly a stop and turns small
-// type mushy on exactly the cheap Android panels this app ships to. Real cinematic grain
-// lives around 3-8%, and this sits at the top of that range - three times what it was, and
-// clearly visible against the black, which is what the brief actually wanted.
+// 0.20, AND THE NUMBER COST THE TEXT RAMP A STEP TO GET THERE.
 //
-// TO PUSH IT FURTHER: this one value. Nothing else reads it.
+// This value has been argued twice. The first time it went to 0.08 with the note that 20%
+// fractal noise "drops effective contrast on text-white/60 by roughly a stop" - true, and
+// the wrong conclusion, because the fix is not a quieter grain, it is a body colour that
+// accounts for the ground the grain creates.
+//
+// The arithmetic, since it decides the value: fractal noise averages ~50% luminance, so at
+// alpha 0.20 over #000 the ground composites to a mean of about #1a1a1a rather than pure
+// black. Body copy at white/50 (#808080) reads 4.39:1 against that - under the 4.5:1 floor.
+// At white/60 (#999999) it is 6.08:1, which is BETTER than the 5.32:1 the old /50 managed on
+// flat black. So the page took the full grain the brief asked for and got more readable
+// doing it, which is the only version of this trade worth making.
+//
+// The display clause "Stop re-reading." moved /40 -> /45 for the same reason: 3.02:1 against
+// the grained ground is inside the 3:1 large-text floor by nothing at all, and 3.69:1 is not.
+//
+// TO PUSH IT FURTHER: this one value, and then re-measure the ramp in src/app/page.tsx.
+// Nothing else reads it, and nothing else compensates for it.
 //
 // Extracted from src/app/page.tsx when /library gained the same treatment: the
 // inline fractal-noise SVG below is a ~330-character data URI, and two copies of
@@ -25,7 +36,7 @@ export default function FilmGrain() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-0 opacity-[0.08]"
+      className="pointer-events-none fixed inset-0 z-0 opacity-20"
       style={{ backgroundImage: NOISE_BACKGROUND }}
     />
   );

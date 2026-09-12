@@ -210,7 +210,7 @@ const FAQPAGE_JSONLD = {
 
 /** A key phrase, lifted out of a muted paragraph in pure white.
  *
- * The paragraphs on this page are set at `text-white/50` so the headings keep
+ * The paragraphs on this page are set at `text-white/60` so the headings keep
  * the contrast, and this is how a long line still hands the eye the two or
  * three words worth carrying away from it. It is a span rather than <strong>
  * on purpose: this is a typographic emphasis, not a semantic one, and a screen
@@ -305,43 +305,72 @@ function Backlight() {
 // THE HERO
 // ---------------------------------------------------------------------------
 
+/** THE CONTROL. One height, one radius, one text size, and the height is fixed
+ * rather than derived from padding.
+ *
+ * The pills before these were `px-6 py-3.5 text-base` and full-bleed on a phone,
+ * which is 52px of button whose height moved with its font - so the two CTAs and
+ * the tab bar's own controls never quite agreed, and at 16px type on a 336px-wide
+ * pill the shape read as a balloon rather than as a control. `h-14` is 56px: it
+ * is the same figure on every breakpoint, it clears the 44px touch floor with
+ * room, and it makes the pair a matched set instead of two similar shapes. */
+const CTA_BASE =
+  "inline-flex h-14 items-center justify-center rounded-full px-8 text-[15px] tracking-[-0.01em] transition-[transform,box-shadow,background-color] duration-300 ease-out active:scale-[0.97] motion-reduce:transition-none motion-reduce:hover:scale-100";
+
 /** The primary action, and the only element on the page wearing the accent. */
 function PrimaryCta({ className = "" }: { className?: string }) {
   return (
     <Link
       href="/ingest"
-      className={`rounded-full bg-white px-6 py-3.5 text-center text-base font-semibold text-black transition-[transform,box-shadow] duration-300 ease-out hover:scale-[1.03] active:scale-[0.97] motion-reduce:transition-none motion-reduce:hover:scale-100 sm:py-3 sm:text-sm ${GLOW} ${GLOW_HOVER} ${className}`}
+      className={`${CTA_BASE} bg-white font-semibold text-black hover:scale-[1.02] ${GLOW} ${GLOW_HOVER} ${className}`}
     >
       Start ingesting notes
     </Link>
   );
 }
 
-/** The secondary action: a hairline, no fill, no glow. The blur here is a pill
- * a few hundred pixels wide, which is the size at which a filter is free. */
+/** The secondary action: a hairline, no fill, no glow. The blur here is a pill a
+ * few hundred pixels wide, which is the size at which a filter is free. */
 function SecondaryCta({ className = "" }: { className?: string }) {
   return (
     <Link
       href="/pricing"
-      className={`rounded-full border border-white/15 px-6 py-3.5 text-center text-base font-medium text-white backdrop-blur-md transition-[transform,background-color] duration-300 ease-out hover:scale-[1.03] hover:bg-white/10 active:scale-[0.97] motion-reduce:transition-none motion-reduce:hover:scale-100 sm:py-3 sm:text-sm ${className}`}
+      className={`${CTA_BASE} border border-white/15 font-medium text-white backdrop-blur-md hover:scale-[1.02] hover:bg-white/10 ${className}`}
     >
       View Pro Plans
     </Link>
   );
 }
 
-/** THE HERO CELL. Seven columns of twelve, beside the recall loop.
- *
- * It carries the page's one authored motion moment: four staggered `.fr-rise`
- * entrances, CSS keyframes, exponential ease-out, `transform` and `opacity`
- * only. The stagger is 90ms and it is the only delay on the page.
- *
- * Native gets `justify-start` and no minimum height. Navbar.tsx hides itself
- * entirely on native (MobileTabBar is its only chrome), and the web layout's
- * vertical centering was tuned against that navbar's presence - with nothing
- * above it, the same centering leaves a dead zone under the status bar instead
- * of anchoring near the top. */
-function HeroCell({
+// ---------------------------------------------------------------------------
+// THE HERO CLUSTER
+// ---------------------------------------------------------------------------
+// The hero was ONE cell holding six things: an eyebrow pill, the headline, the
+// subhead, two buttons, the proof line and the session link. At 678px tall with
+// its contents centred, most of it was air - which is what "floating in a void"
+// describes, and it was a fair description.
+//
+// It is four slabs now, in a nested twelve-column grid that spans the outer
+// one, so the gap rhythm is identical and the seams line up with every other
+// cell on the page:
+//
+//     ┌───────────────────────────┬───────────────┐
+//     │  headline + subhead  (7)  │               │
+//     ├─────────────┬─────────────┤   loop  (5)   │
+//     │  CTAs  (4)  │  proof (3)  │   rows 1-2    │
+//     └─────────────┴─────────────┴───────────────┘
+//
+// PLACEMENT IS EXPLICIT ON `lg` BECAUSE DOM ORDER AND VISUAL ORDER DISAGREE ON
+// PURPOSE. Stacked on a phone the buttons have to come directly under the
+// headline - a primary action below a tall product panel is a primary action
+// nobody reaches - so the DOM runs headline, CTAs, proof, loop. On `lg` the loop
+// belongs beside the headline, which auto-flow cannot express from that order.
+// `col-start`/`row-start` says it in four lines instead.
+// ---------------------------------------------------------------------------
+
+/** The nested grid the four hero slabs live in. Same twelve columns and the same
+ * gap as the page grid, so it reads as part of it rather than as a panel. */
+function HeroCluster({
   decks,
   isNative,
 }: {
@@ -349,94 +378,115 @@ function HeroCell({
   isNative: boolean;
 }) {
   return (
-    <section
-      aria-labelledby="hero-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-10 lg:col-span-7 lg:p-14 ${
-        isNative ? "justify-start" : "justify-center lg:min-h-[34rem]"
-      }`}
-    >
-      {/* THE PITCH, ON BOTH PLATFORMS. This was web-only for six commits on the
-          argument that an installed app is past being introduced, and that was
-          the root of everything that followed: with it gone the app stopped
-          saying what it was. The home page IS the introduction to FlowRecall,
-          and the app and the website show the same one. */}
-      <p
-        className="fr-rise inline-flex w-fit items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/80 backdrop-blur-md sm:gap-2 sm:px-4 sm:py-1.5 sm:text-xs"
-        style={{ "--fr-d": "0ms" } as React.CSSProperties}
+    <div className="col-span-1 grid grid-cols-1 gap-3 sm:col-span-6 sm:gap-4 lg:col-span-12 lg:grid-cols-12">
+      {/* THE HEADLINE SLAB. A reading block, so it is left-aligned at every
+          width - centred display type over a left-aligned subhead is the tell
+          of a hero assembled rather than set.
+
+          `justify-between`, NOT `justify-center`, AND THAT IS THE WHOLE FIX FOR
+          "floating in a void". The loop slab beside this one spans both rows, so
+          grid stretches this one to match it: 678px of slab holding 240px of
+          content. Centred, that put 219px of nothing above the eyebrow and 219
+          below the subhead, and an element centred in empty space is exactly
+          what reads as floating. Pushed apart, the same height becomes a
+          composition - label pinned to the top edge, the sentence sitting on the
+          bottom one, the air between them deliberate. It is the cover of a
+          magazine rather than a slide. */}
+      <section
+        aria-labelledby="hero-heading"
+        className={`${GLASS_LARGE} ${PAD} flex flex-col justify-between gap-12 sm:p-12 lg:col-span-7 lg:col-start-1 lg:row-start-1 lg:p-14 ${
+          isNative ? "" : "lg:min-h-[26rem]"
+        }`}
       >
-        <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_10px_2px_rgba(255,255,255,0.55)]" />
-        Active recall, disguised as doomscrolling
-      </p>
+        {/* THE PITCH, ON BOTH PLATFORMS. This was web-only for six commits on the
+            argument that an installed app is past being introduced, and that was
+            the root of everything that followed: with it gone the app stopped
+            saying what it was. */}
+        <p
+          className="fr-rise inline-flex w-fit items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.2em] text-white/80 backdrop-blur-md sm:gap-2 sm:px-4 sm:py-1.5 sm:text-xs"
+          style={{ "--fr-d": "0ms" } as React.CSSProperties}
+        >
+          <span className="h-1.5 w-1.5 rounded-full bg-white shadow-[0_0_10px_2px_rgba(255,255,255,0.55)]" />
+          Active recall, disguised as doomscrolling
+        </p>
 
-      {/* THE SENTENCE, BROKEN WHERE ITS OWN FULL STOP ALREADY BREAKS IT. Two
-          clauses, two lines, and the second set in the editorial serif: the
-          headline argues by contrast ("stop this / start that") and the type
-          carries that contrast instead of leaving it to the words alone.
-          Not one word changed. */}
-      {/* THE SIZE IS CAPPED BY THE SENTENCE, NOT BY TASTE, AND EVERY NUMBER HERE
-          WAS MEASURED IN THE BROWSER WITH GEIST ACTUALLY LOADED.
+        {/* THE SENTENCE, BROKEN WHERE ITS OWN FULL STOP ALREADY BREAKS IT. Two
+            clauses, two lines, the second in the editorial serif: the headline
+            argues by contrast and the type now carries that contrast instead of
+            leaving it to the words. Not one word changed.
 
-          This headline ran to 7.5rem across a full-width slab. In a
-          seven-of-twelve cell that is 104px against a 603px column, and
-          "Stop re-reading." broke at its own hyphen into "Stop re- / reading." -
-          three lines where two were authored, and the break landed mid-word.
+            THE SIZE IS CAPPED BY THE SENTENCE, AND EVERY NUMBER WAS MEASURED IN
+            THE BROWSER WITH THE WEBFONT LOADED. "Stop re-reading." costs about
+            7.1px of width per px of type, so it needs 312px at 44px. The columns
+            it occupies are 286px at 360dp and 462px at the lg breakpoint, which
+            is what 6vw with a 2.4rem floor and a 5rem cap clears. At the 7.5rem
+            an earlier revision used it broke at its own hyphen - "Stop re- /
+            reading." - three lines where two were authored. */}
+        <div>
+        <h1
+          id="hero-heading"
+          className="fr-rise pb-1 font-sans text-[clamp(2.4rem,6vw,5rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-white [text-wrap:balance]"
+          style={{ "--fr-d": "90ms" } as React.CSSProperties}
+        >
+          <span className="block text-white/45">Stop re-reading.</span>
+          <span className="block font-editorial italic">Start recalling.</span>
+        </h1>
 
-          The clause needs 312px at 44px, so it costs 7.1px of width per px of
-          type. Every column it occupies has to clear that:
+        <p
+          className="fr-rise mt-7 max-w-xl text-lg leading-relaxed text-white/60 [text-wrap:balance] sm:text-xl"
+          style={{ "--fr-d": "180ms" } as React.CSSProperties}
+        >
+          <Hi>Upload a PDF.</Hi> Read it, map it, and review it{" "}
+          <Hi>right before you&apos;d forget</Hi>.
+        </p>
+        </div>
+      </section>
 
-            360dp   286px available · 2.4rem floor = 272px   ✓
-            1024px  462px available · 6vw = 61px  = 435px    ✓  (the tightest)
-            1280px  603px available · 6vw = 77px  = 545px    ✓
-            1408px+ 686px available · 5rem cap    = 567px    ✓
+      {/* THE ACTION SLAB. Both CTAs stacked full-width of the tile, so the pair
+          is one block with one left edge rather than two pills adrift in a row.
 
-          A first pass at this used a probe that ran before the webfont landed
-          and measured 267px at 44px - 17% light, which is exactly enough to
-          look right in a calculation and wrap on a phone. */}
-      <h1
-        id="hero-heading"
-        className="fr-rise mt-8 pb-1 font-sans text-[clamp(2.4rem,6vw,5rem)] font-semibold leading-[0.92] tracking-[-0.04em] text-white [text-wrap:balance]"
-        style={{ "--fr-d": "90ms" } as React.CSSProperties}
+          NO `.fr-rise` ON THIS SLAB OR THE PROOF SLAB, AND THAT WAS A BUG BEFORE
+          IT WAS A DECISION. Entrances belong to the text inside the headline
+          slab; putting one on a whole pane meant the primary action did not
+          exist for the first second of the page, and an entire glass slab
+          fading in reads as a layout jump rather than as a reveal. The slabs
+          are present at first paint; only the words move.
+          TodaySession lives here too and renders nothing at all when signed out,
+          which is the right answer for a stranger reading an introduction - and
+          the reason this tile is sized by its buttons rather than by it. */}
+      <section
+        aria-label="Get started"
+        className={`${GLASS_LARGE} ${PAD} flex flex-col justify-center gap-3 sm:p-10 lg:col-span-4 lg:col-start-1 lg:row-start-2`}
       >
-        <span className="block text-white/40">Stop re-reading.</span>
-        <span className="block font-editorial italic">Start recalling.</span>
-      </h1>
+        <PrimaryCta className="w-full" />
+        <SecondaryCta className="w-full" />
+        <TodaySession decks={decks} />
+      </section>
 
-      <p
-        className="fr-rise mt-7 max-w-xl text-lg leading-relaxed text-white/50 [text-wrap:balance] sm:text-xl"
-        style={{ "--fr-d": "180ms" } as React.CSSProperties}
+      {/* THE PROOF SLAB. A visual block rather than a reading block, so it is
+          centred - the one place on this page where centring is right, because
+          there is no second line to align a ragged edge against.
+
+          It stays a sentence rather than becoming a big-number tile. Both
+          figures come from CURVE, computed by the same FSRS-6 scheduler that
+          will schedule whoever reads them, and a number lifted out of the
+          sentence that qualifies it is a statistic without its own conditions. */}
+      <section
+        aria-label="What the scheduler predicts"
+        className={`${GLASS_LARGE} ${PAD} flex flex-col items-center justify-center text-center sm:p-10 lg:col-span-3 lg:col-start-5 lg:row-start-2`}
       >
-        <Hi>Upload a PDF.</Hi> Read it, map it, and review it{" "}
-        <Hi>right before you&apos;d forget</Hi>.
-      </p>
+        <p className="text-[15px] leading-relaxed text-white/60 sm:text-base">
+          Three reviews in six months.{" "}
+          <span className="font-medium tabular-nums text-white">
+            {asPercent(CURVE.endRecall.reviewed)}% recalled
+          </span>{" "}
+          instead of{" "}
+          <span className="tabular-nums">{asPercent(CURVE.endRecall.studiedOnce)}%</span>.
+        </p>
+      </section>
 
-      <div
-        className="fr-rise mt-9 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row"
-        style={{ "--fr-d": "270ms" } as React.CSSProperties}
-      >
-        <PrimaryCta className="w-full sm:w-auto" />
-        <SecondaryCta className="w-full sm:w-auto" />
-      </div>
-
-      {/* THE PROOF, IN THE HERO. A claim without a number reads as fluff, and
-          this app computes its own proof. Both figures come from CURVE, which is
-          plotted by the same FSRS-6 scheduler that will schedule the reader - so
-          this is evidence rather than encouragement, which is the only kind of
-          motivation worth putting on a page for students. */}
-      <p className="mt-8 text-sm text-white/50">
-        Three reviews in six months.{" "}
-        <span className="font-medium tabular-nums text-white">
-          {asPercent(CURVE.endRecall.reviewed)}% recalled
-        </span>{" "}
-        instead of{" "}
-        <span className="tabular-nums">{asPercent(CURVE.endRecall.studiedOnce)}%</span>.
-      </p>
-
-      {/* The one thing an introduction owes a returning student: a way back into
-          tonight's study. One line and a button, no counts - see TodaySession.
-          Renders nothing at all when signed out, which is the right answer for a
-          stranger who is here to read an introduction. */}
-      <TodaySession decks={decks} />
-    </section>
+      <LoopCell />
+    </div>
   );
 }
 
@@ -467,13 +517,19 @@ function HeroCell({
 function LoopCell() {
   return (
     <article
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-10 lg:col-span-5`}
+      // Explicitly placed: the loop is the right-hand column of the hero
+      // cluster and spans BOTH its rows, so the action and proof tiles sit
+      // under the headline rather than under the loop. Without the row-span it
+      // auto-placed into row 1 only and left columns 8-12 of row 2 as a hole in
+      // the grid - which is the same "floating in a void" the cluster exists to
+      // remove, just relocated.
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-10 lg:col-span-5 lg:col-start-8 lg:row-span-2 lg:row-start-1`}
     >
       <Effect>The testing effect</Effect>
       <h2 className="font-sans text-[clamp(1.75rem,4.4vw,2.5rem)] font-semibold leading-[1.02] tracking-[-0.035em] text-white">
         Answer it before you&apos;re told
       </h2>
-      <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/50 sm:text-base">
+      <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/60 sm:text-base">
         Drop a PDF in. <Hi>Swipe a claim true or false</Hi> — then{" "}
         <Hi>type it back from memory</Hi>.
       </p>
@@ -495,7 +551,7 @@ function LoopCell() {
             <div className="mt-1.5 h-1.5 w-3/5 rounded bg-white/10" />
             <div className="mt-3.5 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full border border-white/10">
-                <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-white/50">
+                <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3 text-white/60">
                   <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                 </svg>
               </span>
@@ -657,12 +713,12 @@ function CurveCell() {
           {asPercent(CURVE.endRecall.studiedOnce)}%.
         </span>
       </h2>
-      <p className="mt-5 max-w-xl text-base leading-relaxed text-white/50 sm:text-lg">
+      <p className="mt-5 max-w-xl text-base leading-relaxed text-white/60 sm:text-lg">
         <Hi>Plotted by the scheduler itself</Hi>, <Em>not drawn</Em>.
       </p>
 
       <figure className="mt-10">
-        <figcaption className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-white/50 sm:text-sm">
+        <figcaption className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-white/60 sm:text-sm">
           <span className="flex items-center gap-2">
             <span className="h-[3px] w-6 rounded-full bg-white" />
             Reviewed when FlowRecall asks
@@ -675,7 +731,7 @@ function CurveCell() {
 
         <RetentionCurve />
 
-        <p className="mt-7 border-t border-white/10 pt-5 text-xs text-white/50 sm:text-sm">
+        <p className="mt-7 border-t border-white/10 pt-5 text-xs text-white/60 sm:text-sm">
           Dashed line: 90% recall — where the next review lands.
         </p>
       </figure>
@@ -745,7 +801,7 @@ function StatementCell() {
         Every screen is one finding about memory,{" "}
         <span className="font-editorial italic">built</span>.
       </h2>
-      <p className="mt-5 text-sm leading-relaxed text-white/50 sm:text-base">
+      <p className="mt-5 text-sm leading-relaxed text-white/60 sm:text-base">
         Not a flashcard app with the science in the marketing copy.{" "}
         <Hi>The mechanism each surface is built on is named on the card.</Hi>
       </p>
@@ -780,7 +836,7 @@ function ReaderCell() {
         <h3 className="font-sans text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-white">
           Read it where it came from
         </h3>
-        <p className="mt-4 text-sm leading-relaxed text-white/50 sm:text-base">
+        <p className="mt-4 text-sm leading-relaxed text-white/60 sm:text-base">
           EPUB, PDF, pasted text. <Hi>Any word defined in place</Hi>,{" "}
           <Em>without leaving the page</Em>.
         </p>
@@ -875,7 +931,7 @@ function MechanismsCell() {
             <h3 className="font-sans text-[clamp(1.35rem,2.4vw,1.7rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-white">
               {title}
             </h3>
-            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/50 sm:text-base">
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60 sm:text-base">
               {body}
             </p>
           </li>
@@ -911,7 +967,7 @@ function ShowingUpCell() {
         <h3 className="font-sans text-[clamp(1.6rem,3.4vw,2.25rem)] font-semibold leading-[1.05] tracking-[-0.035em] text-white">
           The part no scheduler can do
         </h3>
-        <p className="mt-4 text-sm leading-relaxed text-white/50 sm:text-base">
+        <p className="mt-4 text-sm leading-relaxed text-white/60 sm:text-base">
           <Hi>Ten, twenty or forty minutes</Hi>, built from <Em>whatever is closest to slipping</Em>.
         </p>
       </div>
@@ -979,7 +1035,7 @@ function StepsCell() {
             <h3 className="mt-3 text-lg font-semibold tracking-[-0.02em] text-white">
               {step.title}
             </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-white/50">{step.body}</p>
+            <p className="mt-1.5 text-sm leading-relaxed text-white/60">{step.body}</p>
           </li>
         ))}
       </ol>
@@ -1026,7 +1082,7 @@ function FaqCell() {
                 </svg>
               </span>
             </summary>
-            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/50 sm:text-base">{a}</p>
+            <p className="mt-3 max-w-2xl text-sm leading-relaxed text-white/60 sm:text-base">{a}</p>
           </details>
         ))}
       </div>
@@ -1059,7 +1115,7 @@ function CloseCell() {
         You&apos;ll forget most of this{" "}
         <span className="font-editorial italic">by tomorrow</span>.
       </h2>
-      <p className="mt-5 max-w-md text-base leading-relaxed text-white/50 sm:text-lg">
+      <p className="mt-5 max-w-md text-base leading-relaxed text-white/60 sm:text-lg">
         That&apos;s <Hi>the curve above</Hi>, <Em>not a guess</Em>.
       </p>
       <div className="mt-9 flex w-full max-w-xs flex-col gap-3 sm:max-w-none sm:flex-row">
@@ -1150,8 +1206,7 @@ export default function Home() {
           isNative ? "pt-2" : "pt-3 sm:pt-5"
         }`}
       >
-        <HeroCell decks={decks} isNative={isNative} />
-        <LoopCell />
+        <HeroCluster decks={decks} isNative={isNative} />
 
         <FactCell />
 

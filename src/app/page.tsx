@@ -74,6 +74,32 @@ import TodaySession from "@/components/TodaySession";
  * holds - a rounding decision the copy pays for. */
 const CELL = "relative overflow-hidden rounded-[28px] border border-white/10 sm:rounded-[32px]";
 
+/** A NOTE ON backdrop-filter ON THIS ROUTE, BECAUSE IT SHIPPED A VISIBLE BUG.
+ *
+ * On a real Android phone the FAQ card rendered with a hard horizontal seam across
+ * it: flat luminance 8 above, flat 16 below, no ramp between. `bg-white/[0.03]` over
+ * black computes to 7.65 - so 16 is that fill composited TWICE, and the dark region
+ * overhung the card's own rounded corner, which no CSS box can do. It did not
+ * reproduce headless at the same width and scroll offset, where the card measured a
+ * uniform 8 throughout. A compositor tile boundary, not a stylesheet mistake.
+ *
+ * The trigger was volume: ELEVEN elements on this page carried `backdrop-filter`,
+ * four of them `blur(64px)`, over a `position: fixed` backdrop (Backlight). Chrome
+ * snapshots the backdrop root per tile, and with that many layers a tile edge becomes
+ * a seam.
+ *
+ * FOUR OF THOSE BLURS WERE BUYING NOTHING, which is what made this cheap to fix. The
+ * docblock below already says it: a blur over flat #000 is a no-op because there is
+ * nothing behind it to blur. The loop panes, the reader passage and the definition
+ * popover all sit INSIDE a card, on a black page - they were paying a compositing
+ * layer each to blur nothing. They keep their fill and their lit edge, which is what
+ * the material was always made of, and look identical.
+ *
+ * THE RULE THIS LEAVES: `backdrop-filter` on this route only where something real is
+ * behind the element - the sticky Navbar over scrolling content, the tab bar, the
+ * upload sheet. Not on a pane that sits on a card. If a seam ever returns, the next
+ * lever is making Backlight `absolute` rather than `fixed`; that is held back because
+ * a fixed backlight is why the glow stays put while the grid travels past it. */
 /** SMALL CELLS GET REAL FROSTED GLASS.
  *
  * `backdrop-blur-3xl` is a 64px filter, and a filter costs the area it covers,
@@ -676,7 +702,7 @@ function LoopCell() {
               it is not part of it. */}
           <p className="mb-2.5 text-[13px] leading-snug text-white/50">{LOOP_CARD.question}</p>
 
-          <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-3xl">
+          <div className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
             {/* `← False` / `True →` in the corners, 10px uppercase and widely
                 tracked, copied from SwipeChallenge.tsx:185-193. They are the whole
                 instruction: two directions and a claim between them. Bars could
@@ -712,7 +738,7 @@ function LoopCell() {
           <figcaption className="mb-2.5 font-mono text-[10px] uppercase tracking-[0.2em] text-white/40">
             Answer
           </figcaption>
-          <div className={`min-w-0 rounded-2xl border border-white/20 bg-white/[0.07] p-4 backdrop-blur-3xl ${GLOW}`}>
+          <div className={`min-w-0 rounded-2xl border border-white/20 bg-white/[0.07] p-4 ${GLOW}`}>
             <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/60">
               Type it from memory
             </div>
@@ -1056,7 +1082,7 @@ function ReaderCell() {
           one-authored-moment rule (see the head of this file) exists to refuse;
           everything below the fold is present at first paint. */}
       <div aria-hidden="true" className="relative mt-8">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-3xl sm:p-7">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 sm:p-7">
           <p
             className="text-[15px] leading-[1.85] text-white/70 sm:text-base"
             style={{ fontFamily: FONT_FAMILY_CSS.serif }}
@@ -1078,7 +1104,7 @@ function ReaderCell() {
             the word its sense, so on a phone it sits under the passage and the
             overlap is simply not attempted. From `sm` it lifts onto the page. */}
         <div className="mt-3 w-full sm:absolute sm:left-7 sm:top-[4.25rem] sm:mt-0 sm:w-[19rem]">
-          <div className="overflow-hidden rounded-2xl border border-white/15 bg-black/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_56px_-16px_rgba(0,0,0,0.95)] backdrop-blur-3xl backdrop-saturate-150">
+          <div className="overflow-hidden rounded-2xl border border-white/15 bg-black/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_56px_-16px_rgba(0,0,0,0.95)]">
             <div className="border-b border-white/10 px-3.5 py-2.5">
               <p className="truncate text-[13px] font-semibold text-white">
                 &ldquo;{READER_PASSAGE.word}&rdquo;

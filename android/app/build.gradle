@@ -21,9 +21,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // Play rejects a versionCode it has already seen, and the rejection arrives
         // AFTER the build - so this goes up on every upload, before bundleRelease.
-        // 1 (1.0), 2 (1.1), and 3 (1.2) are already on Play.
-        versionCode 4
-        versionName "1.3"
+        // 1 (1.0), 2 (1.1), 3 (1.2) and 4 (1.3) are already on Play.
+        versionCode 5
+        versionName "1.4"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

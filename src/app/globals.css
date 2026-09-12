@@ -22,13 +22,14 @@
                           "pops", precisely because it's the polar opposite of
                           the background rather than a hue                     (#FFFFFF / #050505)
      accent-foreground    text/icon color ON the accent - inverted             (#050505 / #FFFFFF)
-     pulse-accent         "is this alive" signal color - electric blue in dark
-                          mode (a real hue, the deliberate exception below),
-                          but INVERTS to plain black in light mode rather than
-                          staying blue - a saturated dot reads as premium on
-                          near-black, but as a loud notification badge on
-                          near-white, so light mode keeps the quieter
-                          monochrome look instead              (#3B82F6 / #050505)
+     pulse-accent         "is this alive" signal color. NO LONGER A HUE: this
+                          was electric blue in dark mode and the first of the
+                          three exceptions below; it is now the accent itself,
+                          which is to say pure contrast in both themes. Kept as
+                          its own token rather than folded into accent because
+                          the NAME is the intent - a status dot is not a primary
+                          action, and something later may want to move only this
+                          one                                  (#FFFFFF / #050505)
      success/danger/pending  answer-correctness feedback in the study feed
                           only (correct / incorrect / awaiting verification) -
                           a third confined exception, never structural chrome
@@ -68,11 +69,20 @@
      box-shadow instead. Structural chrome (panel borders, backgrounds, page
      text) stays monochrome, exactly as before. */
   --reader-highlight: 217 91% 60%;
-  /* Unlike reader-highlight above, THIS one deliberately DOES invert per
-     theme - see the token-map comment's "pulse-accent" entry for why. Same
-     blue as reader-highlight in dark mode purely for consistency (one signal
-     hue app-wide, not two unrelated blues). */
-  --pulse-accent: 217 91% 60%;
+  /* WAS 217 91% 60%, the same blue as reader-highlight above, and it was the
+     only hue left on the home page once that page's six zinc icon chips went.
+     The argument for it was that "a saturated dot reads as premium on
+     near-black" - and against a page built to be a Vercel/Linear-tier
+     monochrome instrument, it read as the one thing on screen that had not got
+     the memo. reader-highlight keeps its blue because a highlight painted in
+     white genuinely is not a highlight; a status dot painted in white is still
+     a status dot, so this exception had no such defence and is retired.
+
+     Light mode already resolved to plain contrast, so this change makes the
+     two themes agree instead of one being a special case.
+
+     TO PUT THE BLUE BACK: one value, here. Every call site reads the token. */
+  --pulse-accent: 0 0% 100%;
   /* A third, confined exception to "no hue anywhere": answer-correctness
      feedback in the study feed (SwipeChallenge/ClozeChallenge). Judging
      whether a recalled answer was right is a real legibility need, unlike
@@ -108,8 +118,9 @@
   --foreground: 0 0% 6%;
   --accent: 0 0% 2%;
   --accent-foreground: 0 0% 100%;
-  /* Inverts to plain black here, unlike reader-highlight - see this file's
-     token-map comment's "pulse-accent" entry for why. */
+  /* Matches --accent, exactly as the dark value now does. This used to be the
+     interesting half of the token - the theme where the blue was dropped - and
+     it is now simply the other end of one monochrome signal. */
   --pulse-accent: 0 0% 2%;
   /* Darker/more saturated than the dark-mode values above - the same
      lightness would wash out against a near-white background. */
@@ -136,6 +147,17 @@
   --font-mono: var(--font-geist-mono);
   /* Retro cursive display font (Pacifico), wired up in layout.tsx. */
   --font-retro: var(--font-pacifico);
+  /* The landing page's editorial serif - Instrument Serif italic, wired up in layout.tsx.
+     Used ONLY for highlighted words inside the statement block; nothing else in either
+     surface is allowed to reach for it. */
+  --font-editorial: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+
+  /* (Historical) The app shell's display face - Alumni Sans at weight 100, wired up in layout.tsx and
+     used only through kinpaku.ts's NK_DISPLAY. The fallback chain is deliberate rather
+     than decorative: if the self-hosted file ever fails, a hairline sentence must fall
+     back to something with real weights available, and Helvetica Neue Thin is the closest
+     thing that exists on a device by default. */
+  --font-display: var(--font-alumni), "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 body {
@@ -264,4 +286,247 @@ body {
     radial-gradient(40% 35% at 50% 50%, hsl(var(--accent) / 0.1), transparent 70%);
   background-size: 160% 160%, 160% 160%;
   animation: signed-out-glow-shift 12s ease-in-out infinite;
+}
+
+/* ============================================================================
+   THE MARKETING PAGE'S ATMOSPHERE — the drift under src/components/AmbientOrb.tsx,
+   and the browser surfaces that page ships with.
+
+   WHY THE DRIFT IS CSS AND NOT motion/react, given that every other animation in this
+   repo is a spring in a component. Three things, and the first is the one that decides
+   it:
+
+     1. IT HAS TO BE GATED ON A BREAKPOINT. An animated backdrop forces every
+        `backdrop-filter` on screen to re-resolve its blur on every frame, which is the
+        exact cost src/lib/liquidGlass.ts already documents ("the orbs behind the glass
+        animate, which means the backdrop is dirty every frame"). MG_GLASS gates its
+        blur at `md:`, so the drift has to stop at `md:` too, or a phone pays for an
+        animation whose only purpose is to feed a filter that phone is not running.
+        A media query does that in one line; motion/react needs a matchMedia hook, a
+        client component, and a hydration story.
+     2. IT KEEPS AmbientOrb OFF THE CLIENT. No "use client", no bundle, no JS at all for
+        the page's entire background layer.
+     3. prefers-reduced-motion is answered in the same query rather than threaded down
+        from a parent as a prop. The house rule is honoured exactly as BrainFactTicker
+        states it: under reduced motion the drift does not run slower, it does not run.
+        The orbs are already in their rest position, so nothing is lost but the movement.
+
+   transform ONLY — StreakCounter.tsx's PERFORMANCE CONTRACT, restated in eleven files.
+   Nothing here touches filter, box-shadow or background-position. The blur on each orb
+   is applied once at paint and never animated.
+
+   The three cycles are deliberately not multiples of each other (34s / 47s / 61s,
+   doubled by `alternate` to 68s, 94s and 122s). With equal durations the three lights realign every cycle
+   and the eye catches the loop within a minute; co-prime-ish periods mean the composition
+   does not visibly repeat for the length of any real visit. Same reasoning as the
+   26/31/38s cycles in FlowStateHub's Atmosphere.
+
+   Percentages in translate3d resolve against the element's own size, so the drift scales
+   with the orb instead of becoming a 40px twitch on a 1180px sphere at one width and a
+   lurch at another.
+   ========================================================================== */
+@keyframes mg-orb-drift-a {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(3.5%, 2.5%, 0) scale(1.07);
+  }
+  100% {
+    transform: translate3d(-2.5%, 1%, 0) scale(0.97);
+  }
+}
+
+@keyframes mg-orb-drift-b {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-5%, -3.5%, 0) scale(0.92);
+  }
+  100% {
+    transform: translate3d(2%, -6%, 0) scale(1.1);
+  }
+}
+
+@keyframes mg-orb-drift-c {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(4%, -4.5%, 0) scale(1.08);
+  }
+  100% {
+    transform: translate3d(-3%, 3%, 0) scale(0.94);
+  }
+}
+
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .mg-orb-drift-a {
+    animation: mg-orb-drift-a 34s ease-in-out infinite alternate;
+  }
+
+  .mg-orb-drift-b {
+    animation: mg-orb-drift-b 47s ease-in-out infinite alternate;
+  }
+
+  .mg-orb-drift-c {
+    animation: mg-orb-drift-c 61s ease-in-out infinite alternate;
+  }
+}
+
+/* THE SURFACES THE PAGE DID NOT DRAW. Selection and the focus ring ship with browser
+   defaults that belong to no design system - a blue-grey highlight and a 1px dotted
+   outline, neither of which has been told there is glass here. Both are scoped to
+   `.mg-page` (set on the home page's <main>) rather than themed globally on purpose:
+   the reader's own selection is load-bearing for DefinitionPopover's "select a phrase to
+   define it" feature, and it must not inherit a marketing page's taste. The ring is
+   scoped for a duller reason - eight components already ship the house
+   `focus-visible:ring-2 focus-visible:ring-accent/60`, and a global outline would draw a
+   second edge around every one of them. Chrome outside this page states its own ring at
+   the call site, exactly as those eight do. */
+.mg-page ::selection {
+  /* Near-solid light on near-black, with the page's own ink on top - the same
+     figure/ground relationship the primary button already uses, so a selected phrase
+     reads as a lit block rather than as a tinted one. */
+  background: hsl(var(--mg-paper) / 0.86);
+  color: hsl(var(--mg-void));
+}
+
+.mg-page :focus-visible {
+  /* --accent, NOT the Midnight Gallery neon this briefly carried. Two reasons, and the
+     first is the one that decided it: the Navbar sits on this page, it renders on every
+     other route too, and it takes the repo's house ring (`focus-visible:ring-2
+     focus-visible:ring-accent/60` - see the note in Navbar.tsx). A lime outline here
+     would have meant two different focus colours inside one viewport, one of them on
+     chrome shared with the monochrome half of the app. The second is that the header of
+     this very file names focus states as one of the three things contrast alone is the
+     tool for, and --accent inverts with the theme where a hue cannot.
+
+     NO `border-radius` HERE, and the line that used to set it to 4px was a bug rather
+     than a detail: border-radius in a :focus-visible rule applies to the ELEMENT, so
+     every focused pill on the page - the primary CTA, the ghost button, the eyebrow -
+     snapped from a 980px pill to 4px corners for as long as it held focus. Outlines
+     follow the element's own radius in every browser this app supports, so the correct
+     value for this property is not one at all.
+
+     `outline` rather than Tailwind's ring because this is one rule covering roughly
+     thirty links, summaries and buttons on the marketing page; the ring is a per-element
+     utility and would have to be repeated at each. Both resolve to the same 2px edge. */
+  outline: 2px solid hsl(var(--accent) / 0.6);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+   THE APP SHELL'S ENTRANCE, IN CSS.
+
+   The shell used to mount a motion/react component for every section just to fade it up
+   twelve pixels on arrival. That is a JS animation runtime, a React component and a
+   subscription per element, to do something the compositor does for free - and on the
+   Android WebViews this app ships to, "for free" is the only price worth paying for
+   decoration. See the performance note at the head of src/lib/aurora.ts.
+
+   transform + opacity only, so it never touches layout. `both` holds the from-state before
+   the delay elapses, which is what stops a staggered list flashing at full opacity for one
+   frame before it starts.
+
+   Reduced motion removes it outright rather than shortening it - the house rule in every
+   useReducedMotion call site in this repo, stated in BrainFactTicker.tsx.
+   ========================================================================== */
+@keyframes au-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.au-rise {
+  animation: au-rise 0.5s cubic-bezier(0.19, 1, 0.22, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .au-rise {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+   THE POWER MOVE BOLT'S PULSE.
+
+   opacity ONLY, which is the whole reason this is three lines of CSS rather than a
+   component: opacity is compositor-owned, so a pane that breathes forever costs the
+   Android WebView nothing per frame. The shell's standing rule (DESIGN.md) is that
+   motion/react is reserved for gestures, and a glyph that fades is not a gesture.
+
+   `alternate` rather than a three-stop keyframe, so 2.6s is a one-way trip and the full
+   cycle is 5.2s. That is deliberately slower than it sounds on paper: anything under about
+   4s round-trip stops reading as "alive" and starts reading as a notification badge
+   demanding to be dealt with, which is the opposite of what an ambient hint should do.
+
+   Reduced motion resolves it to its BRIGHT end, not its dim one. The animation exists to
+   draw the eye; removing it must not leave the glyph permanently at 50%, which would read
+   as a disabled control rather than as a calm one.
+   ========================================================================== */
+@keyframes power-pulse {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.power-pulse {
+  animation: power-pulse 2.6s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .power-pulse {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE LANDING PAGE IS A FIXED DARK SURFACE
+   ---------------------------------------------------------------------------
+   src/app/page.tsx is written white-on-black by brief: pitch-black ground,
+   slabs at bg-white/[0.02], copy at text-white/50. Those are literal values and
+   they do not follow the theme.
+
+   Two components inside it still draw themselves from the semantic tokens -
+   RetentionCurve (stroke-foreground, fill-background) and TodaySession
+   (bg-surface, bg-accent). In light mode --foreground resolves to near-black,
+   which would put a black chart line on a black slab and an invisible "Start"
+   button beside it.
+
+   So the page re-declares the dark values for its own subtree. It is not a
+   theme override for the app - `[data-theme="light"]` still governs every other
+   route. It is one page opting out, and saying so in one place instead of in
+   thirty class names.
+   --------------------------------------------------------------------------- */
+.aw-page {
+  --background: 0 0% 0%;
+  --surface: 0 0% 6%;
+  --border: 0 0% 15%;
+  --muted-foreground: 0 0% 64%;
+  --foreground: 0 0% 98%;
+  --accent: 0 0% 100%;
+  --accent-foreground: 0 0% 2%;
+}
+
+/* Selection and focus, scoped the same way: on a black page the app's themed
+   selection colour is the light-mode one half the time. */
+.aw-page ::selection {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.aw-page :focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 3px;
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Pacifico } from "next/font/google";
+import { Geist, Geist_Mono, Instrument_Serif, Pacifico } from "next/font/google";
 import { SessionProvider } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import MobileTabBar from "@/components/MobileTabBar";
@@ -32,6 +32,29 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// THE EDITORIAL VOICE: one italic serif, 400, used for nothing but the highlighted words
+// inside the landing page's statement block. No serif existed in this project - the stack
+// was Geist, Geist Mono and Pacifico - so this is a real addition rather than a lookup.
+//
+// Instrument Serif rather than the usual suspects. A display serif with actual character at
+// large sizes is the whole point of the contrast; reaching for Playfair or Cormorant here
+// would be the choice you make when you have stopped looking.
+//
+// ITALIC ONLY, WEIGHT 400. It is never used upright and never at body size, so shipping the
+// roman would be bytes on a phone for a face no call site can ask for.
+const instrumentSerif = Instrument_Serif({
+  weight: "400",
+  style: "italic",
+  // NAMED --font-instrument-serif, NOT --font-editorial, and the distinction bit once.
+  // next/font sets THIS variable to the real family name; globals.css's `@theme` then maps
+  // the semantic token `--font-editorial` onto it plus a fallback stack. Naming both the
+  // same made that mapping self-referential - `--font-editorial: var(--font-editorial)` -
+  // so the token resolved to nothing and every "serif" span silently rendered in Geist.
+  variable: "--font-instrument-serif",
+  subsets: ["latin"],
+  display: "swap",
 });
 
 // Retro cursive display font for the logo and landing headings.
@@ -143,7 +166,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${pacifico.variable} ${instrumentSerif.variable} h-full antialiased`}
     >
       <head>
         {capacitorCsp && <meta httpEquiv="Content-Security-Policy" content={capacitorCsp} />}

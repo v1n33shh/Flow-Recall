@@ -44,7 +44,31 @@
    than a theme.
    ========================================================================== */
 :root {
-  --background: 0 0% 2%;
+  /* PURE BLACK, AND IT USED TO BE 2% (#050505). THAT 2% WAS A VISIBLE BUG.
+     -------------------------------------------------------------------
+     The landing page scopes `--background: 0 0% 0%` on `.aw-page` and paints
+     <main> pure #000 for OLED, but <body> sits OUTSIDE that scope and kept this
+     token - so the page had TWO grounds, #000 and #050505, five levels apart.
+     A translucent card composites over whichever one is actually behind it, and
+     on mobile Chrome the boundary between them moves as the URL bar collapses
+     and the layout viewport grows.
+
+     Measured on a device screenshot, inside one FAQ card: flat luminance 8.0
+     above a hard horizontal line, flat 16.0 below it, no ramp between.
+     `bg-white/[0.03]` over #000 is 7.65 - the lower half was the same fill over
+     the lighter ground. It read as "the black getting cut off", and it never
+     reproduced in a desktop render at the same width because the desktop
+     viewport does not move.
+
+     Five levels of grey is invisible on a monitor and plainly visible on an
+     OLED panel in a dark room, which is where this app is actually read.
+
+     Setting it to 0% makes every surface in the app agree on one black. The
+     routes that already painted their own `bg-black` (home, library, reader)
+     are unchanged by definition; the token-based screens (Account) go from
+     #050505 to #000, which is the same direction their own design was already
+     pointing. Light mode is untouched - see the [data-theme="light"] block. */
+  --background: 0 0% 0%;
   --surface: 0 0% 6%;
   --border: 0 0% 15%;
   --muted-foreground: 0 0% 64%;

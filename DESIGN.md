@@ -29,15 +29,26 @@ full page and SEO is untouched.
 One twelve-column grid on OLED black. Not a scroll of sections: every piece of content is a
 cell, and its span is a judgement about how much it is worth.
 
-**The rows are uneven on purpose:** `7/5 · 12 · 8/4 · 4/4/4 · 5/4/3 · 7/5 · 7/5`. The hero and
+**The rows are uneven on purpose:** `7/5 · 12 · 8/4 · 5/7 · 7/5 · 5/7 · 12`. The hero and
 the recall loop are equals at the top. The chart is twice the width of its own commentary,
-because the chart is the argument and the prose is a caption. The seven product cards stop
-being seven identical rectangles — which is the failure mode a card grid always drifts toward,
-and the reason this is a bento rather than three columns of thirds.
+because the chart is the argument and the prose is a caption. The page opens and closes on a
+full-bleed twelve — the pull-quote and the close — so it is bracketed rather than merely
+ended.
+
+**Twelve cells, and not one word fewer than the fifteen before them.** A brief asked to prune
+the copy; the copy was measured first. Every body paragraph on this page put together is
+**189 words**, and the longest single one is 23 — three earlier passes had already done the
+cutting, and 345 of the page's other words are FAQ answers collapsed behind `<details>`.
+What made it feel cluttered was the furniture: six product cards, each a bordered pane with a
+mono label, a heading, one line of prose and a small drawn mock, stacking into six identical
+full-width boxes on a phone. Five of those mocks restated their own captions — a tick list
+reading "Got right / Left out / Had wrong" under a sentence containing "what you left out and
+what you had wrong" — and four of the cards were a list pretending to be a gallery. The mocks
+are down to two and the four cards are one hairline index. Every word survived.
 
 Reading order is unchanged from the version before it: hero, the fact, the curve, the product,
-the four steps, FAQ, close. **Every word of the copy is unchanged too.** The page has been
-rewritten twice for structure and never once for content.
+the four steps, FAQ, close. **Every word of the copy is unchanged too.** The page has now been
+rewritten three times for structure and never once for content.
 
 The gap is the only spacing between cells — no section padding, no vertical rhythm to keep in
 sync, and nothing that depends on a margin collapse behaving.
@@ -104,10 +115,21 @@ down.
 ### Type
 Geist for everything structural, `tracking-[-0.04em]` on display.
 
-**Instrument Serif, italic, carries the argument in four places** and nowhere else: the
-headline's second clause, the whole brain-fact cell, "built" in the statement cell, and "by
-tomorrow" in the close. The headline argues by contrast, and the type carries that contrast
-instead of leaving it to the words.
+**Instrument Serif italic is a rule, not a sprinkle: it always carries the CLOSING clause of
+a line, never a phrase in the middle of one.** `<Hi>` owns the middle of a sentence in white
+medium sans; `<Em>` owns its end in serif italic at /70, so the two never compete for the same
+words and the emphasis order cannot invert. The sentence changes voice as it finishes, the way
+a pull-quote does — a serif that could appear anywhere would just be a second body font.
+
+It carries nine moments: the headline's second clause, the whole brain-fact pull-quote, the
+loop's "days later", "built" in the statement cell, "by tomorrow" in the close, and the tails
+of the curve ("not drawn"), the mindmap, the teach-back ("Never a score."), the library and
+"whatever is closest to slipping".
+
+**The pull-quote is italic, and was not until the serif rule landed.** The fact cell had been
+set in Instrument Serif *roman* since the serif was introduced — which is why it read as a
+quiet heading rather than as a quotation, and why an earlier draft of this document described
+it as italic when the code said otherwise. Its faded quote mark sits at `white/10`.
 
 That font is wired as `--font-instrument-serif` in `layout.tsx` and mapped to the semantic
 `--font-editorial` in `globals.css`. **Naming both the same made the mapping

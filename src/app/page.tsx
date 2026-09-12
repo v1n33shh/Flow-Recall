@@ -20,11 +20,22 @@ import TodaySession from "@/components/TodaySession";
 // WHY IT IS A GRID AND NOT A STACK OF SECTIONS: the page was seven full-width
 // slabs dealt down a column, which is a vertical scroll of sections wearing
 // rounded corners. A 12-column grid of cells at uneven spans
-// (7/5 · 12 · 8/4 · 4/4/4 · 5/4/3 · 7/5 · 7/5) gives every piece of content a
-// size that means something - the hero and the recall loop are equals at the
-// top, the chart is twice its own commentary, the seven product cards stop
-// being seven identical rectangles. Reading order is exactly the order it was
-// in: hero, the fact, the curve, the product, the four steps, FAQ, close.
+// (7/5 · 12 · 8/4 · 5/7 · 7/5 · 5/7 · 12) gives every piece of content a size
+// that means something - the hero and the recall loop are equals at the top,
+// the chart is twice its own commentary, and the page opens and closes on a
+// full-bleed twelve. Reading order is exactly the order it always was: hero,
+// the fact, the curve, the product, the four steps, FAQ, close.
+//
+// TWELVE CELLS, DOWN FROM FIFTEEN, AND NOT ONE WORD LESS. The brief that
+// prompted this asked to prune the copy, so the copy was measured first: every
+// body paragraph on this page put together is 189 words, and the longest single
+// one is 23. There was nothing left to cut - three earlier passes had already
+// done it. What made the page feel cluttered was the furniture around the
+// words. Six product cards, each a bordered pane carrying a mono label, a
+// heading, one line of prose and a small drawn mock, stacked into six identical
+// full-width boxes on a phone. Five of those mocks restated their own captions
+// (see ReaderCell), and four of the cards were a list pretending to be a
+// gallery (see MechanismsCell). The words all survive; the repetition does not.
 //
 // NO JAVASCRIPT ANIMATION ON THIS ROUTE AT ALL. motion/react is gone from this
 // file. It drove one spring entrance per section - nine of them, all identical,
@@ -212,6 +223,24 @@ const FAQPAGE_JSONLD = {
  * decoration, where there is nothing to read. */
 function Hi({ children }: { children: ReactNode }) {
   return <span className="font-medium text-white">{children}</span>;
+}
+
+/** THE SERIF TAIL. Instrument Serif italic, and it is a rule rather than a
+ * sprinkle: it always carries the CLOSING clause of a line, never a phrase in
+ * the middle of one.
+ *
+ * That constraint is what keeps it editorial instead of decorative. A serif
+ * that can appear anywhere is a second body font and reads as indecision; a
+ * serif that only ever lands on the last few words reads as a cadence - the
+ * sentence changes voice as it finishes, the way a pull-quote does. `<Hi>`
+ * owns the middle of a sentence and `<Em>` owns its end, so the two never
+ * compete for the same words.
+ *
+ * It is set at /70 rather than pure white on purpose. The tail is the quiet
+ * half of the sentence - if it outweighs the phrase `<Hi>` lifted, the
+ * emphasis order inverts and the line reads backwards. */
+function Em({ children }: { children: ReactNode }) {
+  return <span className="font-editorial text-[1.06em] italic text-white/70">{children}</span>;
 }
 
 /** The mechanism a cell implements, named above its own headline.
@@ -570,12 +599,17 @@ function FactCell() {
     >
       <p
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 select-none font-editorial text-[9rem] leading-none text-white/[0.05] sm:text-[13rem]"
+        className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 select-none font-editorial text-[9rem] leading-none text-white/10 sm:text-[13rem]"
       >
         &ldquo;
       </p>
+      {/* Italic, and it was not until now - the cell has been set in Instrument
+          Serif roman since the serif was introduced, which is why it read as a
+          quiet heading rather than as a quotation. Italic is what makes a
+          pull-quote read as someone else's voice, and this is the one sentence
+          on the page nobody at FlowRecall wrote about FlowRecall. */}
       {hydrated && (
-        <p className="relative max-w-4xl text-center font-editorial text-2xl leading-[1.25] tracking-tight text-white/90 [text-wrap:balance] sm:text-4xl md:text-[2.75rem]">
+        <p className="relative max-w-4xl text-center font-editorial text-2xl italic leading-[1.3] tracking-tight text-white/90 [text-wrap:balance] sm:text-4xl md:text-[2.75rem]">
           {factAt(factCursor)}
         </p>
       )}
@@ -611,7 +645,7 @@ function CurveCell() {
   return (
     <section
       aria-labelledby="curve-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-10 lg:col-span-8`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-12 lg:col-span-8`}
     >
       <h2
         id="curve-heading"
@@ -624,7 +658,7 @@ function CurveCell() {
         </span>
       </h2>
       <p className="mt-5 max-w-xl text-base leading-relaxed text-white/50 sm:text-lg">
-        <Hi>Plotted by the scheduler itself</Hi>, not drawn.
+        <Hi>Plotted by the scheduler itself</Hi>, <Em>not drawn</Em>.
       </p>
 
       <figure className="mt-10">
@@ -702,7 +736,7 @@ function StatementCell() {
   return (
     <section
       aria-labelledby="features-heading"
-      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 flex flex-col justify-center sm:col-span-6 lg:col-span-4`}
+      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 flex flex-col justify-center sm:col-span-6 lg:col-span-5`}
     >
       <h2
         id="features-heading"
@@ -719,113 +753,135 @@ function StatementCell() {
   );
 }
 
-/** One product cell. The mock is a child rather than a prop shape, because no
- * two of them are the same drawing and a config object for five one-off
- * illustrations is indirection without reuse.
+/** THE READER, and the one product cell that keeps a drawing.
  *
- * `span` is passed in rather than composed here so every cell's place in the
- * grid is readable at the call site - the row arithmetic (4/4/4, then 5/4/3) is
- * the layout, and hiding it inside a component would make it unverifiable. */
-function ProductCell({
-  effect,
-  title,
-  children,
-  mock,
-  span,
-}: {
-  effect: string;
-  title: string;
-  children: ReactNode;
-  mock: ReactNode;
-  span: string;
-}) {
+ * Six of the seven product cards used to carry a small aria-hidden mock each -
+ * widening bars, three relationship pills, a tick list, a search field. Five of
+ * them are gone, and the reason is what they were saying: the tick list read
+ * "Got right / Left out / Had wrong" directly under a sentence containing the
+ * words "what you left out and what you had wrong", the pills read
+ * "needs / explains / vs" under a sentence naming all three, and the bars drew
+ * the same widening interval the 2/12/50 cell draws to scale two rows above. A
+ * diagram that repeats its own caption is not evidence, it is furniture - and
+ * seven of them stacked into one column on a phone is most of what made this
+ * page feel busy.
+ *
+ * This one survives because it shows something no sentence here can: a word
+ * looked up without leaving the line it sits in. `--reader-highlight` keeps its
+ * blue, and that is not an inconsistency with a monochrome page - a highlight
+ * painted in white is not a highlight, it is emphasis. */
+function ReaderCell() {
   return (
-    <article className={`${GLASS_SMALL} ${LIFT} ${PAD} flex flex-col justify-between ${span}`}>
-      <div>
-        <Effect>{effect}</Effect>
-        <h3 className="font-sans text-[1.4rem] font-semibold leading-[1.08] tracking-[-0.03em] text-white sm:text-2xl">
-          {title}
+    <article
+      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 flex flex-col justify-center gap-8 sm:col-span-6 lg:col-span-7`}
+    >
+      <div className="max-w-md">
+        <Effect>Encoding in context</Effect>
+        <h3 className="font-sans text-[clamp(1.5rem,3vw,2rem)] font-semibold leading-[1.06] tracking-[-0.03em] text-white">
+          Read it where it came from
         </h3>
-        <p className="mt-4 text-sm leading-relaxed text-white/50 sm:text-base">{children}</p>
+        <p className="mt-4 text-sm leading-relaxed text-white/50 sm:text-base">
+          EPUB, PDF, pasted text. <Hi>Any word defined in place</Hi>,{" "}
+          <Em>without leaving the page</Em>.
+        </p>
       </div>
-      <div className="mt-8" aria-hidden="true">
-        {mock}
+      <div aria-hidden="true" className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="h-1.5 w-full rounded bg-white/10" />
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <span className="h-1.5 w-10 rounded bg-white/10" />
+          <span className="rounded bg-reader-highlight/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            afferent
+          </span>
+          <span className="h-1.5 flex-1 rounded bg-white/10" />
+        </div>
+        <div className="mt-2.5 h-1.5 w-2/3 rounded bg-white/10" />
       </div>
     </article>
   );
 }
 
-/** Widening intervals, to scale with the real gaps in GapsCell. */
-function SchedulerMock() {
-  return (
-    <div className="flex items-end gap-1.5">
-      {[8, 20, 46, 100].map((width, i) => (
-        <span key={i} className="h-5 rounded bg-white/15" style={{ flexGrow: width }} />
-      ))}
-    </div>
-  );
-}
-
-function MindmapMock() {
-  return (
-    <div className="flex flex-wrap gap-1.5 text-[10px] font-medium">
-      <span className="rounded-full border border-white/10 px-2.5 py-1 text-white/60">needs</span>
-      <span className="rounded-full border border-white/10 px-2.5 py-1 text-white/60">explains</span>
-      <span className="rounded-full border border-dashed border-white/10 px-2.5 py-1 text-white/60">vs</span>
-    </div>
-  );
-}
-
-/** A line of prose with one word looked up in place. `--reader-highlight` keeps
- * its blue and that is not an inconsistency with a monochrome page: a highlight
- * painted in white is not a highlight, it is emphasis. */
-function ReaderMock() {
-  return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-      <div className="h-1.5 w-full rounded bg-white/10" />
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className="h-1.5 w-10 rounded bg-white/10" />
-        <span className="rounded bg-reader-highlight/25 px-1.5 py-0.5 text-[10px] font-medium text-white">
-          afferent
-        </span>
-        <span className="h-1.5 flex-1 rounded bg-white/10" />
-      </div>
-      <div className="mt-2 h-1.5 w-2/3 rounded bg-white/10" />
-    </div>
-  );
-}
-
-const TEACH_BACK_MARKS = [
-  { mark: "M5 12.5l4 4 10-10", label: "Got right" },
-  { mark: "M5 12h14", label: "Left out" },
-  { mark: "M6 6l12 12M18 6 6 18", label: "Had wrong" },
+/** THE OTHER FOUR MECHANISMS, AS ONE CELL RATHER THAN FOUR.
+ *
+ * Every word of all four cards survives - the mechanism name, the headline and
+ * the line under it. What is gone is the repetition around them: four separate
+ * bordered panes, four separate paddings, four drawings that restated their own
+ * captions. On a phone those were four full-width boxes in a row, each shaped
+ * exactly like the last, which is the shape a reader stops reading.
+ *
+ * A hairline list says the same things in one pane and reads as a contents page
+ * rather than as a carousel of identical cards. It is also the honest structure:
+ * these four are a list of mechanisms, and they always were. */
+const MECHANISMS = [
+  {
+    effect: "Spaced retrieval",
+    title: "A date per memory, not a daily pile",
+    body: (
+      <>
+        FSRS-6 asks again <Hi>on the day your recall is predicted to hit 90%</Hi>.
+      </>
+    ),
+  },
+  {
+    effect: "Relational encoding",
+    title: "See what holds the deck up",
+    body: (
+      <>
+        Needs, explains, easily confused — and <Em>the weak idea the others are built on</Em>.
+      </>
+    ),
+  },
+  {
+    effect: "Production, not recognition",
+    title: "Explain it back in your own words",
+    body: (
+      <>
+        Get back <Hi>what you left out and what you had wrong</Hi>. <Em>Never a score.</Em>
+      </>
+    ),
+  },
+  {
+    // The library is the one entry with a plain label rather than a borrowed
+    // effect name: it is a shelf, not a finding, and dressing it as one would be
+    // exactly the overclaim the statement cell exists to avoid.
+    effect: "Your shelf",
+    title: "Every deck, still findable in March",
+    body: (
+      <>
+        <Hi>Search titles and concepts</Hi>, rename in place,{" "}
+        <Em>undo a delete for six seconds</Em>.
+      </>
+    ),
+  },
 ];
 
-function TeachBackMock() {
+function MechanismsCell() {
   return (
-    <div className="flex flex-col gap-1.5 text-xs text-white/60">
-      {TEACH_BACK_MARKS.map(({ mark, label }) => (
-        <div key={label} className="flex items-center gap-2">
-          <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0">
-            <path d={mark} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <span>{label}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function LibraryMock() {
-  return (
-    <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2.5">
-      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 shrink-0 text-white/60">
-        <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.8" />
-        <path d="m16 16 4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-      <span className="h-1.5 w-24 rounded bg-white/15" />
-      <span className="h-3.5 w-px animate-pulse bg-white/40" />
-    </div>
+    <section
+      className={`${GLASS_SMALL} ${LIFT} ${PAD} col-span-1 sm:col-span-6 lg:col-span-7`}
+      aria-label="What each screen is built on"
+    >
+      {/* Two up from `sm`, and that is a row decision rather than a taste one:
+          as a single column of four this cell ran 635px against the 300px of
+          the "Showing up" cell beside it, and grid stretches both to the taller
+          - so its neighbour had to spend 335px on nothing. Two columns bring
+          the pair within a hairline of each other. */}
+      <ul className="grid grid-cols-1 gap-x-10 sm:grid-cols-2">
+        {MECHANISMS.map(({ effect, title, body }) => (
+          <li
+            key={effect}
+            className="border-t border-white/10 py-6 first:border-t-0 first:pt-0 sm:py-7 sm:[&:nth-child(2)]:border-t-0 sm:[&:nth-child(2)]:pt-0"
+          >
+            <Effect>{effect}</Effect>
+            <h3 className="font-sans text-[clamp(1.35rem,2.4vw,1.7rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-white">
+              {title}
+            </h3>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/50 sm:text-base">
+              {body}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -848,7 +904,7 @@ function LibraryMock() {
 function ShowingUpCell() {
   return (
     <article
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col justify-between gap-10 sm:col-span-6 sm:p-10 lg:col-span-7`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col justify-between gap-10 sm:col-span-6 sm:p-12 lg:col-span-5`}
     >
       <div className="max-w-xl">
         <Effect>Showing up</Effect>
@@ -856,7 +912,7 @@ function ShowingUpCell() {
           The part no scheduler can do
         </h3>
         <p className="mt-4 text-sm leading-relaxed text-white/50 sm:text-base">
-          <Hi>Ten, twenty or forty minutes</Hi>, built from whatever is closest to slipping.
+          <Hi>Ten, twenty or forty minutes</Hi>, built from <Em>whatever is closest to slipping</Em>.
         </p>
       </div>
       {/* `flex-1` on each square rather than a fixed size, so the band is the
@@ -906,7 +962,7 @@ function StepsCell() {
   return (
     <section
       aria-labelledby="how-it-works-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-10 lg:col-span-5`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col sm:col-span-6 sm:p-12 lg:col-span-5`}
     >
       <h2
         id="how-it-works-heading"
@@ -944,7 +1000,7 @@ function FaqCell() {
   return (
     <section
       aria-labelledby="faq-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-10 lg:col-span-7`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 sm:col-span-6 sm:p-12 lg:col-span-7`}
     >
       {/* Google Rich Results: FAQPage — surfaces Q&As directly in search. */}
       <script
@@ -994,7 +1050,7 @@ function CloseCell() {
   return (
     <section
       aria-labelledby="final-cta-heading"
-      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col justify-center sm:col-span-6 sm:p-10 lg:col-span-5`}
+      className={`${GLASS_LARGE} ${PAD} col-span-1 flex flex-col items-center justify-center text-center sm:col-span-6 sm:p-12 lg:col-span-12 lg:py-24`}
     >
       <h2
         id="final-cta-heading"
@@ -1004,7 +1060,7 @@ function CloseCell() {
         <span className="font-editorial italic">by tomorrow</span>.
       </h2>
       <p className="mt-5 max-w-md text-base leading-relaxed text-white/50 sm:text-lg">
-        That&apos;s <Hi>the curve above</Hi>, not a guess.
+        That&apos;s <Hi>the curve above</Hi>, <Em>not a guess</Em>.
       </p>
       <div className="mt-9 flex w-full max-w-xs flex-col gap-3 sm:max-w-none sm:flex-row">
         <PrimaryCta className="w-full sm:w-auto" />
@@ -1103,55 +1159,14 @@ export default function Home() {
         <GapsCell />
 
         <StatementCell />
-        <ProductCell
-          effect="Spaced retrieval"
-          title="A date per memory, not a daily pile"
-          mock={<SchedulerMock />}
-          span="col-span-1 sm:col-span-3 lg:col-span-4"
-        >
-          FSRS-6 asks again <Hi>on the day your recall is predicted to hit 90%</Hi>.
-        </ProductCell>
-        <ProductCell
-          effect="Relational encoding"
-          title="See what holds the deck up"
-          mock={<MindmapMock />}
-          span="col-span-1 sm:col-span-3 lg:col-span-4"
-        >
-          Needs, explains, easily confused — and <Hi>the weak idea the others are built on</Hi>.
-        </ProductCell>
+        <ReaderCell />
 
-        <ProductCell
-          effect="Encoding in context"
-          title="Read it where it came from"
-          mock={<ReaderMock />}
-          span="col-span-1 sm:col-span-3 lg:col-span-5"
-        >
-          EPUB, PDF, pasted text. <Hi>Any word defined in place</Hi>, without leaving the page.
-        </ProductCell>
-        <ProductCell
-          effect="Production, not recognition"
-          title="Explain it back in your own words"
-          mock={<TeachBackMock />}
-          span="col-span-1 sm:col-span-3 lg:col-span-4"
-        >
-          Get back <Hi>what you left out and what you had wrong</Hi>. Never a score.
-        </ProductCell>
-        {/* The library is the one cell with a plain label rather than a borrowed
-            effect name: it is a shelf, not a finding, and dressing it as one
-            would be exactly the overclaim the statement cell exists to avoid. */}
-        <ProductCell
-          effect="Your shelf"
-          title="Every deck, still findable in March"
-          mock={<LibraryMock />}
-          span="col-span-1 sm:col-span-6 lg:col-span-3"
-        >
-          <Hi>Search titles and concepts</Hi>, rename in place, undo a delete for six seconds.
-        </ProductCell>
-
+        <MechanismsCell />
         <ShowingUpCell />
-        <StepsCell />
 
+        <StepsCell />
         <FaqCell />
+
         <CloseCell />
       </div>
 
